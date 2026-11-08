@@ -18,6 +18,8 @@ module AcmeSelectableContext
   InvalidSelection = Class.new(StandardError)
   SelectionAlreadyEstablished = Class.new(StandardError)
 
+  public
+
   # Every (account, collective, unit, avatar) combination the principal may act as. For
   # optional and unsupported Avatar modes the nil slot is explicit. Avatar candidates require
   # current ownership by the membership's collective and surface-specific avatar.view permission.
@@ -54,6 +56,8 @@ module AcmeSelectableContext
         public_ids[:avatar_public_id].to_s == normalized[:avatar_public_id].to_s
     end
   end
+
+  private
 
   # Atomically write the chosen candidate's public ids onto the session token. Validation is
   # the caller's responsibility (candidate must already be confirmed). A changed selection
@@ -157,8 +161,6 @@ module AcmeSelectableContext
       }
     end
   end
-
-  private
 
   def persist_rp_org_avatar_selection!(selection, avatar_public_id)
     existing = RpBaseOrgSessionAvatarSelection.find_by(rp_session_id: selection.rp_session_id)
