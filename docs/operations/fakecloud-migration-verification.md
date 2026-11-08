@@ -37,10 +37,10 @@ Stale local state from the RustFS era is inert but worth clearing once per devel
 ```bash
 rm -f .secrets/rustfs-access-key .secrets/rustfs-secret-key .secrets/rustfs-rpc-secret
 podman secret rm dev_rustfs_access_key dev_rustfs_secret_key dev_rustfs_rpc_secret
-podman volume rm umaxicaappscosmosidentitydc_rustfs-data0 \
-                 umaxicaappscosmosidentitydc_rustfs-data1 \
-                 umaxicaappscosmosidentitydc_rustfs-data2 \
-                 umaxicaappscosmosidentitydc_rustfs-data3
+podman volume rm umaxicaappscosmosaccessdc_rustfs-data0 \
+                 umaxicaappscosmosaccessdc_rustfs-data1 \
+                 umaxicaappscosmosaccessdc_rustfs-data2 \
+                 umaxicaappscosmosaccessdc_rustfs-data3
 ```
 
 ### 1.2 `.devcontainer/compose.override.yml`
@@ -54,17 +54,17 @@ podman volume rm umaxicaappscosmosidentitydc_rustfs-data0 \
 +  # fakecloud needs no devcontainer override: compose.yaml already publishes it
 +  # on loopback for every developer, and it is not a Dev Container-only service.
    primary:
-     container_name: cosmos-identity-devcontainer-primary
+     container_name: cosmos-access-devcontainer-primary
    replica:
-     container_name: cosmos-identity-devcontainer-replica
+     container_name: cosmos-access-devcontainer-replica
    valkey-cache:
-     container_name: cosmos-identity-devcontainer-valkey-cache
+     container_name: cosmos-access-devcontainer-valkey-cache
    valkey-rate-limit:
-     container_name: cosmos-identity-devcontainer-valkey-rate-limit
+     container_name: cosmos-access-devcontainer-valkey-rate-limit
 -  # kafka needs no devcontainer override: it publishes no host port and its
 -  # container name is not referenced by tooling.
    loki:
-     container_name: cosmos-identity-devcontainer-loki
+     container_name: cosmos-access-devcontainer-loki
 ```
 
 ### 1.3 `.devcontainer/devcontainer.json`

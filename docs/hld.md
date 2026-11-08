@@ -7,7 +7,7 @@
 > route file each in `config/routes/`. Use `README.md` ("Routing") and `docs/architecture/` for the
 > current topology.
 
-## Project: Umaxica Apps Cosmos Identity
+## Project: Umaxica Apps Cosmos Access
 
 ### Conforms to ISO/IEC/IEEE 42010:2011 and IEEE 1016:2009
 
@@ -17,14 +17,14 @@
 
 ### 1.1 Purpose
 
-This document expresses the architecture of the Rails-based Umaxica Apps Cosmos Identity platform.
-It maps the SRS requirements to components, patterns, and deployment views that keep every public
+This document expresses the architecture of the Rails-based Umaxica Apps Cosmos Access platform. It
+maps the SRS requirements to components, patterns, and deployment views that keep every public
 Umaxica host—marketing, authentication, docs/news, help/support, BFF, and API—consistent and
 operable.
 
 ### 1.2 Scope
 
-- Rails application located at `/home/mslo/ghq/github.com/seahal/umaxica-apps-cosmos-identity`
+- Rails application located at `/home/mslo/ghq/github.com/seahal/umaxica-apps-cosmos-access`
 - Namespaced controllers for `Top`, `Sign`, `Help`, `Docs`, `News`, `Bff`, and `Api` surfaces
 - Turbo/React front-end with Bun-managed tooling (`src/**`)
 - Multi-database Active Record setup (`app_principal`, `op_base_org`, `com_setting`, etc.)

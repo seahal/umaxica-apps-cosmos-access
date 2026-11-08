@@ -1,7 +1,7 @@
-[![CI](https://github.com/seahal/umaxica-apps-cosmos-identity/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/seahal/umaxica-apps-cosmos-identity/actions/workflows/ci.yml)
-![GitHub last commit (branch)](https://img.shields.io/github/last-commit/seahal/umaxica-apps-cosmos-identity/main)
+[![CI](https://github.com/seahal/umaxica-apps-cosmos-access/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/seahal/umaxica-apps-cosmos-access/actions/workflows/ci.yml)
+![GitHub last commit (branch)](https://img.shields.io/github/last-commit/seahal/umaxica-apps-cosmos-access/main)
 
-# Umaxica Apps Cosmos Identity
+# Umaxica Apps Cosmos Access
 
 ## Routing
 
@@ -105,8 +105,8 @@ and no `corepack enable` step is required.
 A fresh clone needs no local file. Start the standard stack, install dependencies, and boot the app:
 
 ```bash
-git clone https://github.com/seahal/umaxica-apps-cosmos-identity.git
-cd umaxica-apps-cosmos-identity
+git clone https://github.com/seahal/umaxica-apps-cosmos-access.git
+cd umaxica-apps-cosmos-access
 
 # creating a local override is NOT required
 docker compose config     # resolves as-is
