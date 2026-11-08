@@ -1,9 +1,13 @@
-# Cosmos Identity Owns Authentication; Cosmos Global Owns Authorization (2026-11-08)
+# Cosmos Identity Executes Authentication and Authorization; Cosmos Global Is Its Control Plane (2026-11-08)
 
 ## Status
 
 Accepted (2026-11-08), architecture only. Implementation, migration order and the open questions
 below are not decided by this record.
+
+Revised the same day: an earlier draft of this record made Global a runtime authorization decision
+service behind an Identity relay. That model is replaced by the one below and is listed under
+Rejected Alternatives.
 
 This record changes the repository topology described in
 `adr/split-into-regional-and-global-repos.md` (one global repository combining identity provider and
@@ -12,103 +16,139 @@ them is follow-up work.
 
 ## Context
 
-The GitHub repositories were renamed from `umaxica-apps-jit-*` to `umaxica-apps-cosmos-*` and a new
-repository, `umaxica-apps-cosmos-identity`, was created as a copy of `umaxica-apps-cosmos-global`.
-At this decision both repositories contain the same code.
+The GitHub repositories were renamed from `umaxica-apps-jit-*` to `umaxica-apps-cosmos-*`.
+`umaxica-apps-cosmos-identity`, `umaxica-apps-cosmos-press` and `umaxica-apps-cosmos-regional` were
+created as copies of `umaxica-apps-cosmos-global`. At this decision all four contain the same code.
 
 That code combines, in one Rails application, the OpenID Provider (Visa), the credential ceremonies
 (Auth), the browser RP and identity/session surface (Base), and the authorization model (policies,
 organizations, roles and memberships). Credentials, signing keys and sessions live next to
-permission data and policy rules. Changes in one area have repeatedly risked silently breaking a
-boundary in another, and the combined surface has become too large to change safely.
+permission data and policy rules, and the same application both edits and evaluates authorization.
+Changes in one area have repeatedly risked silently breaking a boundary in another, and the combined
+surface has become too large to change safely.
 
-`umaxica-apps-cosmos-press` and `umaxica-apps-cosmos-regional` are new, empty repositories for
-ordinary end-user services. They need authentication and authorization without carrying either.
+Press and Regional are ordinary end-user services. They need authentication and authorization
+without carrying either.
 
-Splitting OpenID Connect and OAuth across two servers was considered and rejected: OpenID Connect
-sign-in is an OAuth authorization code flow, so the OpenID Provider is necessarily an OAuth
-authorization server. A second authorization server would double keys, client registrations, token
-endpoints and revocation, and add token-exchange steps in which services can use the wrong token.
+This record uses the XACML component vocabulary, which remains the common language for dividing
+authorization work: a Policy Administration Point (PAP) authors and manages policy; a Policy
+Decision Point (PDP) evaluates it; a Policy Information Point (PIP) supplies attributes; a Policy
+Retrieval Point (PRP) holds the policy the PDP reads; a Policy Enforcement Point (PEP) applies the
+decision. Using the vocabulary does not adopt the XACML policy language.
 
 ## Decision
 
-1. **Identity is the only authorization server.** `umaxica-apps-cosmos-identity` hosts the OpenID
-   Provider and all OAuth token issuance: sign-in, MFA, step-up, sessions, credentials, signing
-   keys, ID tokens and access tokens. Global does not become an OAuth authorization server.
-2. **Identity is the only entry point for services.** Press, Regional and other services are OpenID
-   Connect relying parties of Identity and send authorization queries and authorization changes to
-   Identity only. They do not call Global.
-3. **Identity relays authorization; it does not own it.** For authorization queries and changes,
-   Identity authenticates the calling service and user and forwards the request to Global with the
-   authentication context: user subject (`sub`), authentication context class (`acr`) and calling
-   client (`client_id`). Identity does not interpret permission content, store permission data,
-   validate permission changes, or branch on roles. Identity returns Global's answer unchanged.
-4. **Global owns authorization.** `umaxica-apps-cosmos-global` owns organizations, memberships,
-   roles, permissions, policy rules, authorization decisions, validation of permission changes, and
-   the audit records of those changes. Whether a user may change permissions is itself a Global
-   decision. The authorization model in the current code moves to Global. Global is an authorization
-   decision service (policy decision point), not an OAuth authorization server.
-5. **Global's administration screens are an Identity relying party.** Administrators change
-   permissions directly in Global's own screens after OpenID Connect sign-in at Identity. These
-   changes do not pass through Identity's relay.
-6. **Global sets required authentication strength; Identity enforces it alone.** The authentication
-   strength each operation requires (for example, a passkey, or re-authentication within a time
-   window) is an authorization requirement owned by Global. Global publishes it as a signed
-   authentication-requirement policy that Identity loads. At runtime Identity evaluates the loaded
-   policy by itself and performs any step-up; Global takes no part in authentication behavior and is
-   not called to decide authentication strength. The policy is bounded as follows:
-   - **Floors are Identity code.** Identity holds a minimum strength for every operation in code.
-     The policy can only raise a requirement above that floor, never lower it.
-   - **Scope is limited to strength.** The policy can express only required authentication strength
-     per operation. It cannot change clients, redirect URIs, keys, claims, token shape or lifetimes.
-   - **Unverified means floor-or-stronger.** Identity loads a policy only after verifying Global's
-     signature. When no valid policy is available, Identity keeps the last verified policy or the
-     code floors, whichever is stronger, and never runs weaker than the floors.
+### Roles
 
-   A Global compromise can therefore make authentication stricter than necessary, but cannot make it
-   weaker than Identity's floors.
+| Repository      | Components                                                 | Responsibility                                                   |
+| --------------- | ---------------------------------------------------------- | ---------------------------------------------------------------- |
+| Identity        | OpenID Provider, OAuth authorization server, PDP, PIP, PRP | Executes authentication and common authorization                 |
+| Global          | PAP (control plane)                                        | Manages and distributes authorization configuration              |
+| Press, Regional | PEP and a local PDP                                        | Apply Identity's decisions and add service-specific restrictions |
 
-7. **The Identity–Global channel is internal.** Global's decision and change interfaces are not
-   exposed publicly and accept only authenticated calls from Identity. Identity depends on the
-   contract of those interfaces, never on Global's database.
-8. **Unavailable Global means deny.** When Global cannot answer an authorization query or change,
-   Identity and services fail closed. Authentication does not depend on Global being available
-   (decision 6).
-9. **Identity serves ceremony screens only.** Identity renders only the screens that must run on its
-   own origin: sign-in, MFA, passkey ceremonies, consent, step-up and sign-out. Credentials are
-   entered only there, and passkeys are bound to Identity's origin. Identity has no administration
-   console and no dashboard. User self-service lists live outside Identity; registering or removing
-   a credential redirects to an Identity ceremony and back.
-10. **Configuration ownership follows the security boundary.** Roles, permissions, policies, the
-    meaning of scopes and the authentication-requirement policy (decision 6) are configured in
-    Global's administration screens. OpenID Connect and OAuth configuration (client registrations,
-    redirect URIs, client secrets, signing keys, token lifetimes and MFA requirements) is code in
-    the Identity repository, reviewed and deployed, and is not writable from Global or from any
-    screen. If Global could write redirect URIs, a Global compromise could register an attacker's
-    redirect URI and obtain users' tokens.
+1. **Identity is the only authorization server.** Identity hosts the OpenID Provider and all OAuth
+   token issuance: sign-in, MFA, step-up, sessions, credentials, signing keys, ID tokens and access
+   tokens. No other repository issues tokens.
+2. **Identity executes common authorization.** Identity is the PDP for authorization common to all
+   services (organizations, memberships, roles and permissions). It decides from the applied
+   configuration (decision 5) and its own attributes, such as `sub` and `acr`. Services send
+   authentication and common authorization requests to Identity only.
+3. **Global is the control plane.** Global authors and manages organizations, memberships, roles,
+   permissions, policy rules and authentication-strength requirements, validates changes to them,
+   records their audit history, and publishes them to Identity. Whether a user may change
+   permissions is decided by the published configuration, as for any other operation. Global is not
+   an OAuth authorization server, takes no part in runtime authentication or authorization, and is
+   never called while a request is being authenticated or authorized.
+4. **Services may only narrow Identity's decision.** Press, Regional and other services are OpenID
+   Connect relying parties of Identity. They enforce Identity's decision and may add a local
+   decision about resources they own, such as whether an article belongs to the organization and is
+   in an editable state. An operation is permitted only when both permit:
+   `Permit = IdentityPermit AND LocalPermit`. A local decision can never grant what Identity denied.
+   When a service finds that an operation needs stronger authentication, it signals a step-up
+   challenge (RFC 9470, OAuth 2.0 Step Up Authentication Challenge Protocol) and Identity performs
+   the step-up.
 
-11. **Identity and Global share no database.** Each owns its databases; neither reads nor writes the
-    other's, directly or through a replica. Only four things cross the boundary: the Identity
-    subject (`sub`) as the reference to a person, tokens, the internal interfaces of decisions 3, 6
-    and 7, and events. Global stores `sub` and no copy of credentials or profile data; display data
-    comes from token claims or a read-only Identity interface. Lifecycle changes such as account
-    deletion reach Global as events from Identity, and Global cleans up its own records. Audit
-    records on both sides carry `sub` and time so they can be correlated without a shared store.
+### Distribution
+
+5. **Global publishes consistent, signed snapshots.** Global distributes policy rules and the
+   attribute data they depend on (memberships and role assignments) together as one consistent
+   snapshot, carrying Global's signature, a monotonically increasing version and an expiry. Identity
+   applies a snapshot only after verifying signature, version (never older than the applied one),
+   internal consistency and expiry. A snapshot that fails verification is not applied and the
+   currently applied one stays in effect, subject to decision 7.
+6. **Identity's code fixes what configuration can change.** A signature proves origin and integrity,
+   not that the content is legitimate; a compromised Global can sign harmful configuration.
+   Identity's code therefore fixes:
+   - which kinds of configuration Identity accepts at all; OpenID Connect and OAuth configuration
+     (decision 11) is never among them;
+   - a minimum authentication strength for every operation, which configuration can raise but never
+     lower;
+   - safety constraints that configuration cannot remove.
+7. **Stale configuration is handled by direction of risk.**
+   - **Authentication strength:** staleness is safe in one direction. Identity uses the stronger of
+     the last verified requirement and its code floors, and never runs weaker than the floors.
+   - **Authorization data:** staleness is unsafe, because an old snapshot can still contain grants
+     that Global has revoked. Each snapshot has a maximum age. Beyond it, Identity denies operations
+     classified as sensitive and continues others only within a bound recorded with the snapshot
+     format. Revocations must reach Identity within a stated time limit.
+8. **Global's availability does not gate requests.** While Identity holds a valid snapshot, sign-in,
+   token issuance and authorization continue when Global is down; only configuration changes stop.
+
+### Surfaces and data
+
+9. **Global's administration screens are an Identity relying party.** Administrators sign in at
+   Identity through OpenID Connect and change configuration in Global's own screens.
+10. **Identity serves ceremony screens only.** Identity renders only the screens that must run on
+    its own origin: sign-in, MFA, passkey ceremonies, consent, step-up and sign-out. Credentials are
+    entered only there, and passkeys are bound to Identity's origin. Identity has no administration
+    console and no dashboard. User self-service lists live outside Identity; registering or removing
+    a credential redirects to an Identity ceremony and back.
+11. **OpenID Connect and OAuth configuration is Identity code.** Client registrations, redirect
+    URIs, client secrets, signing keys, token lifetimes and MFA requirements are code in the
+    Identity repository, reviewed and deployed, and are not writable from Global or from any screen.
+    If Global could write redirect URIs, a Global compromise could register an attacker's redirect
+    URI and obtain users' tokens.
+12. **Identity and Global share no database.** Each owns its databases; neither reads nor writes the
+    other's, directly or through a replica. Only these cross the boundary: the Identity subject
+    (`sub`) as the reference to a person, tokens, signed snapshots from Global to Identity, and
+    events from Identity to Global. Identity stores applied snapshots as a read-only copy; Global
+    remains the only writer of authorization data. Global stores `sub` and no copy of credentials or
+    profile data; display data comes from token claims or a read-only Identity interface. Lifecycle
+    changes such as account deletion reach Global as events, and Global cleans up its own records.
+    Audit records on both sides carry `sub` and time so they can be correlated without a shared
+    store.
+
+## Rejected Alternatives
+
+- **Splitting OpenID Connect and OAuth across two servers.** OpenID Connect sign-in is an OAuth
+  authorization code flow, so the OpenID Provider is necessarily an OAuth authorization server. A
+  second authorization server would double keys, client registrations, token endpoints and
+  revocation, and add token-exchange steps in which services can use the wrong token.
+- **Global as a token-issuing authorization server.** Two token issuers blur the boundary for the
+  same reason.
+- **Global as the runtime PDP behind an Identity relay.** Identity would forward every
+  authorization query to Global. Every request would pay an internal hop, and Global's outage would
+  deny all authorization. Separating the PAP from the PDP keeps the management tool out of the
+  request path.
+- **Sharing a database between Identity and Global.** It would reconnect the halves below the
+  application boundary.
 
 ## Open Questions
 
-- Whether access tokens carry coarse permissions obtained from Global at issuance, with fine-grained
-  decisions made through the relay (current proposal), and how revocation latency is bounded.
-- The service-to-service authentication for the Identity–Global channel (mutual TLS or signed
-  service tokens).
+- The snapshot format, the operation vocabulary shared by Global, Identity and services, and how
+  Identity's floors and fixed constraints are expressed.
+- Full snapshots versus a full snapshot plus deltas, and whether revocations use a faster path than
+  ordinary changes.
+- The revocation time limit, the maximum snapshot age, and which operations are sensitive (decision
+  7).
+- Whether Identity pulls snapshots or Global pushes them, and how that channel is authenticated.
+- Bootstrapping and recovery: how the first Global administrator is created when Global's own access
+  depends on configuration Global publishes, and how a broken or malicious snapshot is recovered
+  from.
+- Whether access tokens carry coarse permissions, and how that interacts with revocation latency.
 - Whether Global holds anything about a person beyond the Identity subject (`sub`).
-- The shape of the decision and change interfaces; OpenID AuthZEN Authorization API is the reference
-  candidate for decisions.
 - Placement of Base, which currently combines authentication screens with post-sign-in dashboards,
   and which application hosts user self-service lists (credentials, sessions).
-- How the authentication-requirement policy is distributed (Identity pulls or Global pushes), its
-  format, the operation vocabulary shared by both sides, how Identity's floors are expressed, and
-  how quickly a raised requirement must take effect.
 - How code-managed client registration scales if the number of clients grows beyond a small, known
   set.
 - Which current databases (`config/database.yml`) belong to Identity and which to Global, and how
@@ -116,13 +156,18 @@ endpoints and revocation, and add token-exchange steps in which services can use
 
 ## Consequences
 
-- A defect in Global cannot reach credentials, sessions or signing keys; a defect in Identity cannot
-  alter permission data except through Global's validated interfaces.
-- Services integrate with one endpoint and one token type.
-- Every authorization query from a service costs an extra internal hop through Identity; caching and
-  coarse token permissions are the mitigations to evaluate.
-- Identity's relay must stay thin. Any authorization rule added to Identity reintroduces the
-  coupling this record removes.
-- The split proceeds by first establishing the boundary inside one application (authorization code
-  reaches authentication code only through tokens and the decision interface), then deleting the
-  unowned half from each repository, so each step keeps a working application.
+- Global can be offline without stopping sign-in or authorization; its outage stops only
+  configuration changes.
+- Identity holds a read-only copy of authorization data next to credentials. This is an accepted
+  regression from fully separating credentials and permission data: the copy is read-only, signed
+  and versioned, and editing and validation remain in Global.
+- A Global compromise can sign harmful authorization configuration. Identity's fixed constraints
+  bound it, and authentication cannot be weakened below Identity's floors; it is not otherwise
+  prevented.
+- Permission changes take effect after distribution, not immediately; the revocation limit makes
+  that delay explicit.
+- Services integrate with one endpoint and one token type, and keep their own resource rules.
+- The split proceeds by first establishing the boundary inside one application (authorization
+  evaluation reads only the applied configuration, and authorization editing writes only through the
+  control plane), then deleting the unowned half from each repository, so each step keeps a working
+  application.
