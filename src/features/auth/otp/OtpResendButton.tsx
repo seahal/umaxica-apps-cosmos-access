@@ -1,6 +1,4 @@
-// React port of `src/controllers/otp_resend_controller.js`.
-//
-// The endpoint, the request body and the three outcomes are unchanged: 200 with `resendable` clears
+// The endpoint, the request body and the three outcomes: 200 with `resendable` clears
 // the code field and reports that a new code was sent, 429 starts the cooldown the server dictated
 // via `retry_after`, and anything else reports a failure. The resend state is an opaque server
 // token; the browser only echoes it back.

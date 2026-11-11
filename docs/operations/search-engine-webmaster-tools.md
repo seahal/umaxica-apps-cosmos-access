@@ -1,6 +1,10 @@
 # Search Engine Webmaster Tools
 
-The public content surfaces use the following registered search-engine management services:
+This historical service-registration note concerns public content properties that were previously
+served through local Rails routes. Access no longer serves content routes. Any current content
+property, verification, or sitemap work belongs to the repository that owns that public site.
+
+The prior registration note recorded these search-engine management services:
 
 | Service               | Registration status |
 | --------------------- | ------------------- |

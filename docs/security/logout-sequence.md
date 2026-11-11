@@ -1,8 +1,9 @@
 # Logout Sequence
 
-Visa is the OpenID Provider (OP); Base, Core, Warp, Edit, Palm and Tech are relying-party (RP)
-surfaces. Each surface owns its host-only cookies, local session and completion route. APP, COM and
-ORG are separate realms.
+Visa is the OpenID Provider (OP) for APP and ORG. User-approved Base, Core, Warp, Palm and other RP
+registrations remain external clients; their callbacks, host-only cookies, browser sessions and
+completion routes belong to their own repositories. Access exposes no local RP session or callback
+surface.
 
 ## RP initiation
 
@@ -23,11 +24,9 @@ no authority and returns through Jump to that registered RP completion. With an 
 the user can confirm stopping the OP device or leave it active. Either outcome leaves the initiating
 RP locally signed out. Other RP sessions are not copied or stopped by the local logout.
 
-The RP logout controllers in this checkout use the local-session-first launcher and do not read or
-send a stored ID Token hint. A separate shared-role branch in `BrowserRpAuthentication` still reads
-the OP grant chain for ordinary request authentication and refresh. That WU-A8 gap does not change
-the launcher behavior described above, and it leaves the end-to-end shared-role authentication
-surface unreconciled.
+The local RP logout controllers described in earlier implementation evidence were removed with the
+surface reset. This sequence remains the contract for external RP implementations; it does not
+establish that an RP callback, logout launcher or shared-role authentication path exists in Access.
 
 ## OP request and confirmation
 
@@ -73,9 +72,9 @@ Token and Logout Token use the grant public ID as `sid`.
 
 ## Boundaries and evidence
 
-Visa refuses `logout_challenge`; Auth sign-out clears its own ceremony state and hands off to Base.
-The RP, Visa and each receiver retain separate ownership of cookies, sessions, routes and state. See
-[session management](logout-session-management.md),
+Visa refuses `logout_challenge` and owns its OP logout flow. Auth owns credential ceremonies, not RP
+sign-out or browser sessions. Each external RP and receiver retains separate ownership of cookies,
+sessions, routes and state. See [session management](logout-session-management.md),
 [the OP host decision](../../adr/visa-op-host.md), and
 [the separated-store logout decision](../../adr/first-party-sign-out-op-commit-and-backchannel-logout-for-separated-rp-stores.md).
 Local checks do not establish production deployment or external RP delivery.

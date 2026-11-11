@@ -1,15 +1,12 @@
 # typed: false
 # frozen_string_literal: true
 
-# Requires `browser_rp_controller?`. Browser RP controllers provide a verified `browser_rp_access_state`;
-# root-auth controllers provide `current_session_token`. Base RP controllers also name their challenge layout.
-# Context is read from that owner, not actor data.
+# Auth and Visa resolve verification from the current OpenID Provider session.
 module VerificationBase
   extend ActiveSupport::Concern
 
   include CommonRedirect
   include ::RedirectsSignedTargetSupport
-  include ::BrowserNavigationRequest
   include VerificationStepUpGuard
   include StepUpCeremonyLogging
 
@@ -37,12 +34,6 @@ module VerificationBase
 
   def verification_satisfied?
     scope = verification_scope
-    if browser_rp_controller? && scope.present? && base_rp_local_session?
-      return false if standby_authentication_context?
-
-      return current_step_up_evidence.present?
-    end
-
     actor_token = current_actor_token
     return false unless actor_token
 
@@ -75,8 +66,6 @@ module VerificationBase
   end
 
   def recorded_step_up_satisfied?(token, scope:)
-    return current_step_up_evidence.present? if browser_rp_controller?
-
     StepUpResolver.call(
       token: token,
       requirement: step_up_requirement(scope: scope),
@@ -91,26 +80,12 @@ module VerificationBase
     return false if reject_step_up_for_authentication_context!
     return false if step_up_session_revoked?
 
-    if base_rp_actor_unavailable?
-      head :forbidden
-      return false
-    end
-
-    if browser_rp_controller? && base_rp_local_session? && policy.empty?
-      return require_local_rp_step_up!(scope)
-    end
-
     requirement = step_up_requirement(scope: scope, **policy)
     return if step_up_satisfied_with_requirement?(requirement)
 
     log_step_up_required!(requirement: requirement)
     require_verification!(scope)
     return false unless enforce_step_up_prereqs!(scope_override: scope)
-
-    if browser_rp_controller? && requirement.purpose == "step_up" && requirement.step_up_required?
-      render_step_up_challenge!
-      return false
-    end
 
     if request.get? || request.head?
       redirect_to(
@@ -164,77 +139,12 @@ module VerificationBase
   end
 
   def step_up_satisfied_with_requirement?(requirement)
-    if browser_rp_controller? && requirement.purpose == "step_up" && requirement.step_up_required?
-      return current_step_up_evidence.present?
-    end
-
     step_up = StepUpResolver.call(token: current_session_token, requirement: requirement)
     Actor.install_context!(step_up: step_up) if defined?(Actor)
     step_up.satisfied?
   end
 
   private
-
-  def base_rp_actor_unavailable?
-    browser_rp_controller? && %w(base-app-ww base-org-ww).include?(browser_rp_client_id) &&
-      current_resource && !current_resource.login_allowed?
-  end
-
-  def base_rp_local_session?
-    case browser_rp_access_state.rp_session
-    when RpBaseAppSession, RpBaseOrgSession then true
-    else false
-    end
-  end
-
-  def require_local_rp_step_up!(scope)
-    return if current_step_up_evidence.present?
-
-    Rails.logger.info(
-      JitLogEvent.format(
-        "auth.step_up.required", controller: self.class.name, action: action_name,
-                                 method: request.request_method, scope: scope,
-      ),
-    )
-    require_verification!(scope)
-    return false unless enforce_step_up_prereqs!(scope_override: scope)
-
-    render_step_up_challenge!
-    false
-  end
-
-  def render_step_up_challenge!
-    response.set_header(
-      "WWW-Authenticate",
-      'Bearer error="insufficient_user_authentication", ' \
-      'error_description="step-up authentication is required", ' \
-      'acr_values="https://visa.umaxica.app/acr/reauthentication", max_age="300"',
-    )
-    response.set_header("Cache-Control", "private, no-store")
-
-    if document_navigation_request?
-      render "base/shared/step_up_challenge", layout: step_up_challenge_layout, status: :unauthorized,
-                                              locals: {
-                                                entry_path: actor_verification_path(
-                                                  return_target: request.path,
-                                                  ri: params[:ri],
-                                                ),
-                                              }
-    else
-      render plain: I18n.t("auth.step_up.challenge.description"), status: :unauthorized,
-             content_type: "text/plain"
-    end
-  end
-
-  def current_step_up_evidence
-    return unless browser_rp_controller?
-
-    StepUpEvidenceResolver.call(
-      access_state: browser_rp_access_state,
-      actor: current_resource,
-      cell: RpCellBinding.for_client(browser_rp_client_id),
-    )
-  end
 
   # An authentication context that is not eligible for Step-Up is rejected at
   # the ceremony entry, before any credential is requested. This is not "step-up
@@ -266,16 +176,6 @@ module VerificationBase
   end
 
   def standby_authentication_context?
-    if browser_rp_controller?
-      access_state = browser_rp_access_state
-      return false unless access_state.status == :valid
-
-      payload = access_state.payload
-      raise ArgumentError, "authenticated RP state must carry a token payload" unless payload.is_a?(Hash)
-
-      return AuthenticationContextValue.for(payload.fetch(AuthenticationContextValue::CLAIM)).standby?
-    end
-
     token = current_session_token
     return false unless token
 
@@ -286,10 +186,6 @@ module VerificationBase
   # expired, or compromised.  If so, force-logout the session so that a
   # stale (but still JWT-valid) access token cannot pass step-up.
   def step_up_session_revoked?
-    if browser_rp_controller? && browser_rp_access_state.status == :valid && base_rp_local_session?
-      return false
-    end
-
     token = current_session_token
     return true if token.nil? # no record at all - dead
     return false if token.active_status? # alive
@@ -462,25 +358,16 @@ module VerificationBase
     "step_up.bootstrap"
   end
 
-  # Uses the stable session identifier (device_session.public_id when available) rather than
-  # current_session_token.public_id, which changes on every access-token rotation and would
-  # invalidate an in-flight step-up pt between the settings redirect and the verification page.
-  # An RP-cell request has no OP root chain, so its verified local RP Session is the binding.
+  # Use the stable device-session identifier rather than the token ID, which changes on rotation
+  # and would invalidate an in-flight step-up return target.
   def bootstrap_pt_session_nonce
     session_public_id = current_session_public_id
-    return session_public_id.to_s if session_public_id.present?
-    return unless browser_rp_controller? && rp_cell_process? && browser_rp_authenticated?
-
-    rp_session = browser_rp_access_state.rp_session
-    return unless rp_session.instance_of?(RpBaseAppSession) || rp_session.instance_of?(RpBaseOrgSession)
-
-    rp_session.public_id.to_s
+    session_public_id.presence&.to_s
   end
 
   def bootstrap_pt_surface
     case self.class.name
     when /::App::/ then "app"
-    when /::Com::/ then "com"
     when /::Org::/ then "org"
     end
   end
@@ -515,13 +402,6 @@ module VerificationBase
   def current_session_token
     return @current_session_token if defined?(@current_session_token)
 
-    if browser_rp_controller?
-      token = current_browser_session_security_context&.root_token
-      return @current_session_token = token if token&.active_status?
-
-      return @current_session_token = nil
-    end
-
     if respond_to?(:current_session, true) && current_session&.active_status?
       return @current_session_token = current_session
     end
@@ -533,13 +413,6 @@ module VerificationBase
 
   def current_actor_token
     return @current_actor_token if defined?(@current_actor_token)
-
-    if browser_rp_controller?
-      token = current_browser_session_security_context&.root_token
-      return @current_actor_token = token if token&.active_status?
-
-      return @current_actor_token = nil
-    end
 
     if respond_to?(:current_session, true) && current_session&.active_status?
       return @current_actor_token = current_session
@@ -657,9 +530,7 @@ module VerificationBase
   end
 
   def verification_redirect_fallback
-    destination = actor_dashboard_path(ri: params[:ri])
-    log_step_up_return_target(destination, reason: "authenticated_dashboard_fallback", protected_flow: false)
-    destination
+    raise ActionController::BadRequest, "No OpenID Connect verification return is available"
   end
 
   def verification_setup_redirect_path(pt: nil, scope: nil)
@@ -667,9 +538,7 @@ module VerificationBase
   end
 
   def verification_setup_redirect_fallback
-    destination = actor_dashboard_path(ri: params[:ri])
-    log_step_up_return_target(destination, reason: "authenticated_dashboard_fallback", protected_flow: false)
-    destination
+    raise ActionController::BadRequest, "No OpenID Connect verification setup return is available"
   end
 
   def redirect_to_verification_destination(destination, fallback:, **redirect_options)
@@ -690,20 +559,6 @@ module VerificationBase
 
   def actor_verification_setup_path(**args)
     actor_operator? ? new_auth_org_verification_setup_path(**args) : new_auth_app_verification_setup_path(**args)
-  end
-
-  def actor_root_path(**args)
-    actor_operator? ? auth_org_root_path(**args) : auth_app_root_path(**args)
-  end
-
-  def actor_dashboard_path(**args)
-    surface = bootstrap_pt_surface
-    raise ArgumentError, "unsupported verification surface" unless %w(app org).include?(surface)
-
-    case surface
-    when "app" then base_app_dashboard_path(**args)
-    when "org" then base_org_dashboard_path(**args)
-    end
   end
 
   private :verification_requirement, :recorded_step_up_satisfied?

@@ -12,7 +12,6 @@ class PreferenceWritePolicyTest < ActiveSupport::TestCase
     # these writes before an actor-local preference exists.
     assert_predicate AppPreferencePolicy.new(AppPreference.new, user: nil), :update?
     assert_predicate OrgPreferencePolicy.new(OrgPreference.new, user: nil), :update?
-    assert_predicate ComPreferencePolicy.new(ComPreference.new, user: nil), :update?
   end
 
   test "AppPreferencePolicy allows update when record is the class" do
@@ -41,18 +40,6 @@ class PreferenceWritePolicyTest < ActiveSupport::TestCase
 
   test "AppPreferencePolicy denies destroy by default" do
     assert_not AppPreferencePolicy.new(AppPreference.new, user: nil).destroy?
-  end
-
-  test "ComPreferencePolicy allows update when record is the class" do
-    assert_predicate ComPreferencePolicy.new(ComPreference, user: nil), :update?
-  end
-
-  test "ComPreferencePolicy allows update when record is an instance" do
-    assert_predicate ComPreferencePolicy.new(ComPreference.new, user: nil), :update?
-  end
-
-  test "ComPreferencePolicy denies non-ComPreference record" do
-    assert_not ComPreferencePolicy.new(String.new, user: nil).update?
   end
 
   test "OrgPreferencePolicy allows update when record is the class" do

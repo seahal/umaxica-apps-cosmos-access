@@ -45,7 +45,6 @@ if Rails.env.development?
         sec_fetch_site: env["HTTP_SEC_FETCH_SITE"],
         sec_fetch_mode: env["HTTP_SEC_FETCH_MODE"],
         sec_fetch_dest: env["HTTP_SEC_FETCH_DEST"],
-        service_worker: env["HTTP_SERVICE_WORKER"],
         content_type: request.content_type,
         route_count: Rails.application.routes.routes.size,
         auth_host_recognizes_same_request: auth_recognizes,

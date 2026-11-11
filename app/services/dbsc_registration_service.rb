@@ -20,6 +20,9 @@ class DbscRegistrationService < ApplicationService
     return failure(validation.error_code, message: validation.message) unless validation.ok
 
     header = validation.header
+    # NOTE: DBSC registration intentionally imports the client's public key from the `jwk` header
+    # (proof of possession), then stores it; refresh uses only the stored key. `jku`, `x5u` and
+    # `x5c` are never used to locate a key.
     jwk = DbscRecordAdapter.normalize_public_key(header["jwk"])
     return failure("missing_public_key") if jwk.blank?
 

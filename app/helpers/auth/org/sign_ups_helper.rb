@@ -2,23 +2,8 @@
 # frozen_string_literal: true
 
 module Auth::Org::SignUpsHelper
-  def sign_org_recruit_contact_link
-    link_to(
-      t("sign.org.ups.new.recruit_link_text"),
-      sign_org_recruit_contact_url,
-      class: "font-semibold text-slate-900 underline",
-    )
-  end
-
-  def sign_org_recruit_contact_url
-    configured = safe_recruit_contact_url(ENV.fetch("ORG_SIGN_UP_DIRECT_MESSAGE_URL", nil))
-    return configured if configured.present?
-
-    base_com_root_url(
-      host: Rails.configuration.x.boot_config.fetch(:hosts).base_corporate.host,
-      ri: params[:ri],
-      lx: params[:lx],
-    )
+  def auth_org_recruit_contact_url
+    safe_recruit_contact_url(ENV["ORG_SIGN_UP_DIRECT_MESSAGE_URL"])
   end
 
   private

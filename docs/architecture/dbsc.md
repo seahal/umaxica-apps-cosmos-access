@@ -1,14 +1,13 @@
 # Device Bound Session Credentials (DBSC)
 
-> **Partially superseded by Identity Authority inversion:** The DBSC vocabulary in this document
-> remains useful only where it does not assign session or token authority to `sign/id`. `acme/www`
-> is the Session, Token, Account, Preference, Authorization, and downstream-token Authority.
-> `sign/id` is ceremony-only. Existing sign-side physical tables/models do not imply sign-side
-> authority.
+> Auth owns current APP/ORG credential ceremonies, and Visa owns local session and token authority.
+> External relying parties own their browser sessions and callback endpoints in their own
+> repositories. Former Base RP and COM session routes are not current Access surfaces; retained DBSC
+> models remain subject to the deferred model/database report.
 
 This document covers authentication-token DBSC only. Preference DBSC and Preference refresh
-credentials are retired; see [Preference architecture](preference.md). Their removal does not
-change authentication-token DBSC or refresh behavior.
+credentials are retired; see [Preference architecture](preference.md). Their removal does not change
+authentication-token DBSC or refresh behavior.
 
 ## Specification
 
@@ -42,29 +41,29 @@ Token tables (`user_tokens`, `staff_tokens`) store DBSC-related columns:
 ## HTTP Header Boundary
 
 The header syntax follows sections 9.1–9.4 of the
-[W3C DBSC Editor's Draft](https://w3c.github.io/webappsec-dbsc/) inspected on 2026-10-22
-(draft dated 2026-09-08), and [RFC 9651](https://www.rfc-editor.org/rfc/rfc9651.html).
-This is a draft protocol; the checks below establish server behavior, not browser interoperability.
+[W3C DBSC Editor's Draft](https://w3c.github.io/webappsec-dbsc/) inspected on 2026-10-22 (draft
+dated 2026-09-08), and [RFC 9651](https://www.rfc-editor.org/rfc/rfc9651.html). This is a draft
+protocol; the checks below establish server behavior, not browser interoperability.
 
-`DbscHeaderParser` accepts a quoted Structured Field String, decodes escaped quotes and
-backslashes, and ignores syntactically valid item parameters. It rejects unquoted values,
-malformed escapes, control characters, non-ASCII strings, lists and trailing input.
-Controllers parse HTTP fields exactly once. The registration/verification services and
-`DbscProofVerifier` receive decoded strings, not HTTP field syntax.
+`DbscHeaderParser` accepts a quoted Structured Field String, decodes escaped quotes and backslashes,
+and ignores syntactically valid item parameters. It rejects unquoted values, malformed escapes,
+control characters, non-ASCII strings, lists and trailing input. Controllers parse HTTP fields
+exactly once. The registration/verification services and `DbscProofVerifier` receive decoded
+strings, not HTTP field syntax.
 
-The token refresh endpoint compares the decoded identifier with the existing record before issuing
-a challenge. A missing record returns 401, malformed identifier syntax
-returns 400, and an unknown or unregistered identifier returns 403 without changing the challenge
-or setting a cookie. `Sec-Secure-Session-Id` is preferred over existing alternate field names.
-`DbscHeaderSerializer` quotes and escapes every registration/challenge string separately; the
-challenge response uses the stored identifier. Valid challenge responses remain 403.
+The token refresh endpoint compares the decoded identifier with the existing record before issuing a
+challenge. A missing record returns 401, malformed identifier syntax returns 400, and an unknown or
+unregistered identifier returns 403 without changing the challenge or setting a cookie.
+`Sec-Secure-Session-Id` is preferred over existing alternate field names. `DbscHeaderSerializer`
+quotes and escapes every registration/challenge string separately; the challenge response uses the
+stored identifier. Valid challenge responses remain 403.
 
 DBSC operational logs contain fixed event names and request paths, never session identifiers,
 proofs, challenges or their prefixes. Proof `iat` values are type-checked and compared as numeric
 epoch seconds before they can cause an out-of-range time conversion.
 
-This header hardening does not change DBSC lifecycle states, persistence, controller ownership,
-JWT algorithms or proof freshness policy. It does not establish conformance of the entire DBSC
+This header hardening does not change DBSC lifecycle states, persistence, controller ownership, JWT
+algorithms or proof freshness policy. It does not establish conformance of the entire DBSC
 implementation to every provision of the current draft.
 
 ## Relationship to DPoP

@@ -6,8 +6,9 @@ This document translates the current global Rails app boundary model into implem
 
 ## System Context
 
-The Rails app serves the `app`, `org`, and `com` surfaces from one root application. The previous
-Rails Engine and wrapper-app strategies are retired by
+The Rails app serves the `app` and `org` surfaces from one root application. The local public and
+corporate `com` surface is retired. Retained legacy data models do not create local `com` routes.
+The previous Rails Engine and wrapper-app strategies are retired by
 `adr/split-into-regional-and-global-repos.md`.
 
 Regional content delivery is handled by a separate repository.
@@ -17,7 +18,7 @@ Regional content delivery is handled by a separate repository.
 ### Routing
 
 - Keep route fragments under `config/routes/*.rb`.
-- Use host constraints and surface-local modules for `app`, `org`, and `com`.
+- Use host constraints and surface-local modules for `app` and `org`.
 - Use ordinary Rails path helpers.
 - Do not add `engines/`, `apps/<name>`, `isolate_namespace`, or engine routing proxies.
 
@@ -50,8 +51,13 @@ Surface-owned database names follow the `surface_role` model documented in
 `docs/architecture/database-boundaries.md`.
 
 Cross-cutting and infrastructure databases remain separate, including `occurrence`, `chronicle`,
-`avatar`, `search`, `queue`, and `storage`. There is deliberately no `cache` database: application
-cache is Valkey-backed (`CACHE_REDIS_URL`) and non-authoritative.
+`avatar`, `search`, and `queue`. The Access `storage` connection and migration path are no longer
+configured. Its physical database, schema, and migration artifacts remain untouched pending the
+separate database step. There is deliberately no `cache` database: application cache is
+Valkey-backed (`CACHE_REDIS_URL`) and non-authoritative.
+
+Application and library reads use primary connections. Automatic role switching and explicit
+application `:reading` blocks are absent; retained replica connection definitions remain unchanged.
 
 ## Verification
 

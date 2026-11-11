@@ -1,5 +1,9 @@
 # Umaxica v1 Architecture Lock
 
+> Historical v1 resource and storage design. The surface reset retired the former Base, COM, Core,
+> Warp, Palm, Edit, Tech and content routes; this document does not establish current local
+> endpoints or writers. Persisted model and database questions belong to the deferred usage report.
+
 ## Purpose
 
 This document locks the v1 resource, database, and guard-rail decisions before migrations, model

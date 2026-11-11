@@ -15,21 +15,11 @@ module JitSecurityJwtRegistry
   CURVE = JitSecurityJwtJwk::CURVE
   REQUIRED_JWK_FIELDS = JitSecurityJwtJwk::REQUIRED_PUBLIC_FIELDS
   PRIVATE_JWK_FIELDS = JitSecurityJwtJwk::PRIVATE_FIELDS
-  SURFACE_NAMESPACES = %w(
-    AUTH_APP AUTH_ORG
-    ACME_APP ACME_ORG
-    CORE_APP CORE_ORG
-    WARP_APP WARP_ORG
-    PALM_APP
-    BASE_APP BASE_ORG
-    VISA_APP VISA_ORG
-  ).freeze
+  SURFACE_NAMESPACES = %w(AUTH_APP AUTH_ORG VISA_APP VISA_ORG).freeze
   MAX_JUMP_PUBLISHED_JWKS_KEYS = 4
   MAX_JUMP_PUBLISHED_JWKS_BYTES = 65_536
   MAX_JUMP_KID_LENGTH = 128
-  # Palm signs Jump RTs; its bearer API does not use a surface access-token issuer. Jump issuer
-  # capability is narrower than this list and is owned by JumpRtSurface::ISSUER_NAMESPACES.
-  ACCESS_TOKEN_SURFACE_NAMESPACES = (SURFACE_NAMESPACES - %w(PALM_APP)).freeze
+  ACCESS_TOKEN_SURFACE_NAMESPACES = SURFACE_NAMESPACES
   OIDC_CLIENT_NAMESPACES = %w(
     AUTH_APP AUTH_ORG
     ACME_APP ACME_ORG
@@ -51,15 +41,6 @@ module JitSecurityJwtRegistry
   SURFACE_ISSUER_ORIGINS = {
     "AUTH_APP" => "https://auth.umaxica.app",
     "AUTH_ORG" => "https://auth.umaxica.org",
-    "ACME_APP" => "https://www.umaxica.app",
-    "ACME_ORG" => "https://www.umaxica.org",
-    "CORE_APP" => "https://jp.umaxica.app",
-    "CORE_ORG" => "https://jp.umaxica.org",
-    "WARP_APP" => "https://www-jp.umaxica.app",
-    "WARP_ORG" => "https://www-jp.umaxica.org",
-    "PALM_APP" => "https://palm-jp.umaxica.app",
-    "BASE_APP" => "https://www.umaxica.app",
-    "BASE_ORG" => "https://www.umaxica.org",
     "VISA_APP" => "https://visa.umaxica.app",
     "VISA_ORG" => "https://visa.umaxica.org",
   }.freeze
@@ -164,19 +145,6 @@ module JitSecurityJwtRegistry
       issuer: source.fetch("AUTH_JWT_ISSUER", nil),
       audiences: auth_audiences.freeze,
       revoked_kids: source.csv("AUTH_JWT_REVOKED_KIDS"),
-    )
-    com_active_kid = source.value("PREFERENCE_COM_JWT_ACTIVE_KID")
-    raise ConfigurationError, "com preference active kid is missing" if com_active_kid.blank?
-
-    records["preference_com"] = build_keyset_issuer(
-      source: source,
-      id: "preference_com",
-      private_keyset_name: :PREFERENCE_COM_JWT_PRIVATE_KEYSET,
-      public_keyset_name: :PREFERENCE_COM_JWT_PUBLIC_KEYSET,
-      active_kid: com_active_kid,
-      issuer: source.value("PREFERENCE_COM_JWT_ISSUER"),
-      audiences: [source.value("PREFERENCE_COM_JWT_AUDIENCE")].compact.freeze,
-      revoked_kids: source.csv("PREFERENCE_COM_JWT_REVOKED_KIDS"),
     )
     records.merge!(build_preference_realm_issuers(source))
 
@@ -285,11 +253,9 @@ module JitSecurityJwtRegistry
     raise ConfigurationError, "missing required OIDC client configuration: #{missing.join(", ")}"
   end
 
-  # Com preference verification can run with public keys only. Its writer requires the private
-  # key at issuance; this capability does not depend on a runtime role selector.
   # In an RP cell process only the records it signs with must carry a private key.
   def private_key_required?(record)
-    return false if PREFERENCE_REALM_ISSUERS.key?(record.id) || record.id == "preference_com"
+    return false if PREFERENCE_REALM_ISSUERS.key?(record.id)
     return true unless RuntimeRole::RP_ROLES.include?(RuntimeRole.current)
 
     RuntimeRole.rp_private_env_names.include?(private_env_name_for(record.id))
@@ -299,7 +265,6 @@ module JitSecurityJwtRegistry
     kind, namespace = record_id.to_s.split(":", 2)
     case kind
     when "auth" then "AUTH_JWT_PRIVATE_KEYSET"
-    when "preference_com" then "PREFERENCE_COM_JWT_PRIVATE_KEYSET"
     when "preference_app" then "PREFERENCE_APP_JWT_PRIVATE_KEYSET"
     when "preference_org" then "PREFERENCE_ORG_JWT_PRIVATE_KEYSET"
     when "surface" then "JWT_#{namespace}_PRIVATE_KEY"
@@ -329,7 +294,7 @@ module JitSecurityJwtRegistry
   end
 
   def validate_preference_realm_key_separation!(records)
-    preference_ids = %w(preference_app preference_com preference_org)
+    preference_ids = %w(preference_app preference_org)
     preference_ids.each do |id|
       current = records.fetch(id)
       current_keys = current.keys.values.map { |key| key.public_key.public_to_der }

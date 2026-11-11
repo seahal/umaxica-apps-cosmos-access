@@ -12,16 +12,8 @@ class LayoutTitleContractTest < ActiveSupport::TestCase
   CANONICAL_LAYOUTS = {
     "app/views/layouts/auth/app/application.html.erb" => "APP",
     "app/views/layouts/auth/org/application.html.erb" => "ORG",
-    "app/views/layouts/base/app/application.html.erb" => "APP",
-    "app/views/layouts/base/app/inertia.html.erb" => "APP",
-    "app/views/layouts/base/com/application.html.erb" => "COM",
-    "app/views/layouts/base/org/application.html.erb" => "ORG",
-    "app/views/layouts/core/app/application.html.erb" => "APP",
-    "app/views/layouts/core/org/application.html.erb" => "ORG",
-    "app/views/layouts/warp/app/application.html.erb" => "APP",
-    "app/views/layouts/warp/com/application.html.erb" => "COM",
-    "app/views/layouts/warp/org/application.html.erb" => "ORG",
-    "app/views/layouts/palm/app/application.html.erb" => "APP",
+    "app/views/layouts/visa/app/application.html.erb" => "VISA APP",
+    "app/views/layouts/visa/org/application.html.erb" => "VISA ORG",
   }.freeze
 
   # Routing and deployment vocabulary. None of it is brand vocabulary, so none of
@@ -67,11 +59,8 @@ class LayoutTitleContractTest < ActiveSupport::TestCase
   test "no layout or view builds a title outside meta-tags except the standalone documents" do
     allowed =
       %w(
-        app/views/layouts/mailer/app/mailer.html.erb
-        app/views/layouts/mailer/com/mailer.html.erb
-        app/views/layouts/mailer/org/mailer.html.erb
-        app/views/guid/net/roots/index.html.erb
-        app/views/edit/org/roots/index.html.erb
+        app/views/auth/shared/verified_subject_guidance.html.erb
+        app/views/visa/shared/authorization_continuation.html.erb
       ).map { |path| Rails.root.join(path).to_s }
 
     offenders =
@@ -83,13 +72,13 @@ class LayoutTitleContractTest < ActiveSupport::TestCase
                  "these HTML views hand-roll a <title>; render it through meta-tags instead"
   end
 
-  test "canonical layout roots remain constrained to the current surfaces" do
-    assert_predicate Rails.root.join("app/views/layouts/palm/app/application.html.erb"), :exist?
-    assert_not_predicate Rails.root.join("app/views/layouts/palm/com"), :exist?
-    assert_not_predicate Rails.root.join("app/views/layouts/palm/org"), :exist?
+  test "layout roots remain constrained to Auth and Visa" do
+    %w(auth visa).each do |surface|
+      assert_predicate Rails.root.join("app/views/layouts/#{surface}"), :directory?
+    end
 
-    %w(acme sign apex).each do |legacy_root|
-      assert_empty Rails.root.glob("app/views/layouts/#{legacy_root}/**/*")
+    %w(base core docs edit guid help info news palm tech warp jump).each do |retired_root|
+      assert_empty Rails.root.glob("app/views/layouts/#{retired_root}/**/*.erb")
     end
   end
 end

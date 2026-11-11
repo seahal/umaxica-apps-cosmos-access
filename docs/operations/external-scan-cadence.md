@@ -12,7 +12,6 @@ on one surface says nothing about the others.
 
 - `app` — end-user application
 - `org` — staff and organization surface
-- `com` — public and corporate surface
 
 ## Scanners and Cadence
 
@@ -30,9 +29,9 @@ Header scanners report only that a header is present. CSP Evaluator is what dete
 policy is meaningful, so treat `unsafe-inline`, an over-broad host allowlist, or a missing
 `object-src` as a finding even when Security Headers reports a top grade.
 
-HSTS preload applies to the registrable domain and all subdomains at once. Because the `app`, `org`,
-and `com` surfaces are separated by subdomain, confirm preload state before adding, renaming, or
-retiring any hostname. See `docs/reference/subdomains.md`.
+HSTS preload applies to the registrable domain and all subdomains at once. Because the retained
+`app` and `org` surfaces are separated by subdomain, confirm preload state before adding, renaming,
+or retiring any hostname. See `docs/reference/subdomains.md`.
 
 Scan both a representative unauthenticated page and, where the scanner permits, a page that is
 representative of the authenticated layout, because header and asset behavior can differ between

@@ -218,26 +218,18 @@ module OidcClientRegistry
   end
 
   def client_config_signature
-    hosts = Rails.configuration.x.boot_config.fetch(:hosts)
-    boot_signature =
-      %i(
-        sign_service sign_staff
-        base_service base_staff
-        warp_service warp_staff
-        core_service core_staff
-      ).map { |name| [name, hosts.public_send(name).to_s] }
+    # Redirect URI hosts belong to repositories that run the registered RPs. Keep them in the
+    # client registry's cache key without adding them to this app's host authorization config.
     env_signature =
       %w(
-        PUBLIC_AUTH_SERVICE_URL PUBLIC_AUTH_STAFF_URL
-        PRIVATE_AUTH_SERVICE_URL PRIVATE_AUTH_STAFF_URL
-        BASE_SERVICE_URL BASE_STAFF_URL
+        PUBLIC_BASE_SERVICE_URL PUBLIC_BASE_STAFF_URL
         PUBLIC_WARP_SERVICE_URL PUBLIC_WARP_STAFF_URL
         PUBLIC_EDIT_STAFF_URL
         PUBLIC_CORE_SERVICE_URL PUBLIC_CORE_STAFF_URL
-        CORE_SERVICE_URL CORE_STAFF_URL
-      ).map { |name| [name, ENV.fetch(name, nil)] }
+        PUBLIC_PALM_SERVICE_URL PUBLIC_TECH_STAFF_URL
+      ).map { |name| [name, ENV.fetch(name)] }
 
-    (boot_signature + env_signature).freeze
+    env_signature.freeze
   end
 
   def build_clients

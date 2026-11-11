@@ -251,7 +251,7 @@ module Auth::App::Up
       assert_response :created
 
       auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-      get auth_app_root_url(ri: "jp", host: auth_host)
+      get auth_app_health_url(host: auth_host)
 
       assert_response :success
       assert_no_match(

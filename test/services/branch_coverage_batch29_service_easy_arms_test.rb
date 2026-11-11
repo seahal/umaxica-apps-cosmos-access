@@ -77,8 +77,7 @@ class BranchCoverageBatch29ServiceEasyArmsTest < ActiveSupport::TestCase
     assert_equal({}, JitSecurityJwtKeyMaterial.parse_private_keyset(""))
   end
 
-  test "lib ObjectStorage and LocalEnvironment arms" do
-    assert_raises(KeyError) { ObjectStorage::Environment.fetch("UMX_MISSING_OBJECT_STORAGE_KEY") }
+  test "lib LocalEnvironment parse arms" do
     assert_nil LocalEnvironment.parse("# comment")[0]
     assert_nil LocalEnvironment.parse("")[0]
     assert_equal %w(FOO bar), LocalEnvironment.parse("FOO=bar")
@@ -89,35 +88,5 @@ class BranchCoverageBatch29ServiceEasyArmsTest < ActiveSupport::TestCase
     token.define_singleton_method(:expired?) { |*_args| true }
 
     assert_not token.currently_usable?
-  end
-
-  test "AcmeSelectableContext inactive membership next [] arm" do
-    helper = Class.new do
-      include AcmeSelectableContext
-
-      def config
-        @config ||=
-          begin
-            c = Object.new
-            c.define_singleton_method(:avatar_mode) { :none }
-            c.define_singleton_method(:account_class) { Client }
-            c
-          end
-      end
-
-      def principal = nil
-
-      def session = nil
-
-      def accounts
-        account = Object.new
-        membership = Object.new
-        membership.define_singleton_method(:active?) { false }
-        account.define_singleton_method(:current_memberships) { [membership] }
-        [account]
-      end
-    end.new
-
-    assert_equal [], helper.selectable_candidates
   end
 end

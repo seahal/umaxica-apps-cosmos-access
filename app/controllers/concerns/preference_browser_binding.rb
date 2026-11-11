@@ -1,8 +1,7 @@
 # typed: false
 # frozen_string_literal: true
 
-# D-57 (two.md section 4.7): the host-only browser binding cookie that makes a stored anonymous
-# consent and Web Push state readable.
+# Host-only browser binding cookie that makes stored anonymous consent readable.
 #
 # - The cookie value is a 32-byte CSPRNG value, URL-safe-base64, 43 characters. The DB stores only
 #   its SHA-256 digest; the raw value never reaches a record or a log line.
@@ -46,32 +45,10 @@ module PreferenceBrowserBinding
 
   private
 
-  def require_matching_existing_browser_binding!(cookie_record, raw_value)
-    binding = ComPreferenceBrowserBinding.find_by(preference_id: cookie_record.preference_id)
-    raise MismatchError if binding && !PreferenceBrowserBinding.matches?(raw_value, binding.digest)
-    return if binding
-    return unless ComPreferenceConsentReceipt.exists?(preference_id: cookie_record.preference_id)
-    return unless %i(consented functional performant targetable).any? { |field| cookie_record.public_send(field) }
-
-    raise MismatchError
-  end
-
   def readable_cookie_state(cookie_record)
-    state =
-      %i(consented functional performant targetable).index_with do |field|
-        !!cookie_record.public_send(field)
-      end
-
-    # Consent is readable only after both the receipt and this browser's host-only binding exist.
-    return state unless cookie_record.is_a?(ComPreferenceCookie)
-    if ComPreferenceConsentReceipt.exists?(preference_id: cookie_record.preference_id) &&
-        browser_binding_matches?(cookie_record)
-      return state
+    %i(consented functional performant targetable).index_with do |field|
+      !!cookie_record.public_send(field)
     end
-
-    # Mismatched or missing binding means "no consent readable" for this browser; every
-    # consent-derived category renders declined, and nothing on the row or the cookie changes.
-    state.keys.index_with { false }
   end
 
   def write_browser_binding_cookie(raw_value, expires_at:)
@@ -85,15 +62,5 @@ module PreferenceBrowserBinding
       request: request, httponly: true, secure: true, same_site: :lax, path: "/",
     )
     cookies.delete(COOKIE_NAME, **options)
-  end
-
-  def browser_binding_matches?(cookie_record)
-    binding = ComPreferenceBrowserBinding.find_by(preference_id: cookie_record.preference_id)
-    binding.present? && PreferenceBrowserBinding.matches?(cookies[COOKIE_NAME], binding.digest)
-  end
-
-  def store_com_browser_binding!(preference_id, raw_value)
-    binding = ComPreferenceBrowserBinding.find_or_initialize_by(preference_id: preference_id)
-    binding.update!(digest: PreferenceBrowserBinding.digest_for(raw_value))
   end
 end

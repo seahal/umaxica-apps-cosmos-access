@@ -29,7 +29,7 @@ module Auth
 
         def oidc_result_handoff_surface = "org"
 
-        def oidc_result_base_completion_url(**) = visa_org_oidc_result_url(**)
+        def visa_oidc_result_url(**) = visa_org_oidc_result_url(**)
       end
     end
   end

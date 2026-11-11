@@ -20,12 +20,6 @@ module CommonRedirect
     host.to_s.downcase.sub(%r{^https?://}i, "").split("/").first
   end
 
-  def allowed_hosts
-    # NOTE: External redirect is disabled. This list remains only for diagnostics/auditing.
-    keys = %w(CORPORATE_URL SERVICE_URL STAFF_URL NETWORK_URL DEV_URL)
-    keys.filter_map { |key| CommonRedirect.normalize_host(ENV[key]) }
-  end
-
   private
 
   def redirect_to_surface_url(url, preserve_query_keys: [], **)
@@ -129,20 +123,13 @@ module CommonRedirect
   end
 
   def oidc_authorize_host_allowed?(host)
-    allowed_hosts =
-      %w(
-        PUBLIC_AUTH_SERVICE_URL PRIVATE_AUTH_STAFF_URL
-        PUBLIC_BASE_SERVICE_URL PUBLIC_BASE_STAFF_URL
-      ).filter_map do |key|
-        Oidc::AcmeServiceOrigin.host_from(ENV.fetch(key)) || CommonRedirect.normalize_host(ENV.fetch(key))
-      end
-    allowed_hosts += %w(
-      auth.app.localhost auth.org.localhost
-      base.app.localhost base.org.localhost
-      visa.app.localhost visa.org.localhost
-    )
     boot_hosts = Rails.configuration.x.boot_config.fetch(:hosts)
-    allowed_hosts.concat([boot_hosts.visa_service.host, boot_hosts.visa_staff.host])
+    allowed_hosts = [
+      boot_hosts.visa_service.host,
+      boot_hosts.visa_staff.host,
+      "visa.app.localhost",
+      "visa.org.localhost",
+    ]
     allowed_hosts.include?(CommonRedirect.normalize_host(host))
   end
 

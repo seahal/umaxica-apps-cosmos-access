@@ -110,7 +110,7 @@ class JumpRtReceiverContractTest < ActiveSupport::TestCase
     assert_raises(JumpRtConfigurationError) do
       JumpRtSurface.namespace_for_controller("Tech::Org::Sign::EntriesController")
     end
-    assert_raises(JumpRtConfigurationError) { JumpRtSurface.normalize_namespace("TECH_ORG") }
+    assert_raises(JumpRtConfigurationError) { JumpRtSurface.normalize_issuer_namespace("TECH_ORG") }
     assert_empty graph.fetch("nodes").keys.grep(/tech/i)
     assert_empty graph.fetch("edges").flatten.grep(/tech/i)
   end

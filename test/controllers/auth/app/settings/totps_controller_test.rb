@@ -387,12 +387,8 @@ class Auth::App::Settings::TotpsControllerTest < ActionDispatch::IntegrationTest
     first_secret_digest = Digest::SHA256.hexdigest(candidate.private_key)
     delete auth_app_settings_totps_enrollment_path(ri: "jp")
 
-    assert_response :see_other
-    gateway = URI.parse(response.location)
-    redirect_payload, = JWT.decode(Rack::Utils.parse_nested_query(gateway.query).fetch("rt"), nil, false)
-
-    assert_equal base_app_dashboard_url(host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"), protocol: "https", ri: "jp"),
-                 redirect_payload.fetch("url")
+    assert_response :no_content
+    assert_nil response.headers["Location"]
     assert_equal "canceled", issuance.transaction.reload.status
     assert_nil session[:totp_enrollment]
     assert_nil session[:private_key]
@@ -529,12 +525,8 @@ class Auth::App::Settings::TotpsControllerTest < ActionDispatch::IntegrationTest
     stale_code = ROTP::TOTP.new(candidate.private_key).now
     delete auth_app_settings_totps_enrollment_path(ri: "jp")
 
-    assert_response :see_other
-    gateway = URI.parse(response.location)
-    redirect_payload, = JWT.decode(Rack::Utils.parse_nested_query(gateway.query).fetch("rt"), nil, false)
-
-    assert_equal base_app_dashboard_url(host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"), protocol: "https", ri: "jp"),
-                 redirect_payload.fetch("url")
+    assert_response :no_content
+    assert_nil response.headers["Location"]
     assert_equal "canceled", issuance.transaction.reload.status
     assert_nil session[:totp_enrollment]
     assert_nil session[:private_key]
@@ -670,12 +662,8 @@ class Auth::App::Settings::TotpsControllerTest < ActionDispatch::IntegrationTest
     candidate_ref = candidate.ref
     delete auth_app_settings_totps_enrollment_path(ri: "jp")
 
-    assert_response :see_other
-    gateway = URI.parse(response.location)
-    redirect_payload, = JWT.decode(Rack::Utils.parse_nested_query(gateway.query).fetch("rt"), nil, false)
-
-    assert_equal base_app_dashboard_url(host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"), protocol: "https", ri: "jp"),
-                 redirect_payload.fetch("url")
+    assert_response :no_content
+    assert_nil response.headers["Location"]
     assert_equal "canceled", issuance.transaction.reload.status
     assert_nil session[:totp_enrollment]
     assert_nil session[:private_key]
@@ -1041,7 +1029,7 @@ class Auth::App::Settings::TotpsControllerTest < ActionDispatch::IntegrationTest
     assert_nil token.reload.last_step_up_at
   end
 
-  test "admitted TOTP registration creates no Secret credentials" do
+  test "admitted TOTP registration refuses completion without a relying party" do
     reset!
     host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     actor = Client.create!(security_mode_id: SecurityModeConfigurable::NORMAL, id: 9_104_000_000_009, status_id: ClientStatus::ACTIVE)
@@ -1130,23 +1118,16 @@ class Auth::App::Settings::TotpsControllerTest < ActionDispatch::IntegrationTest
     assert_nil cookies[AuthenticationBase::ACCESS_COOKIE_KEY]
     follow_redirect!
     post auth_app_settings_totps_handoff_path(ri: "jp")
-    raw_result = Rack::Utils.parse_nested_query(URI.parse(response.location).query).fetch("result_ref")
-    credential = nil
-    assert_difference("ClientTotpCredential.count", 1) do
-      credential = IdentityTotpEnrollmentFinalCommitter.call!(
-        actor: actor, token: token, transaction: issuance.transaction.reload, result_reference: raw_result,
-      )
-    end
 
-    assert_equal actor.id, credential.user_id
-    assert_equal "New TOTP", credential.title
-    assert_equal candidate.reload.last_otp_at, credential.last_otp_at
-    assert_equal "consumed", issuance.transaction.reload.status
+    assert_response :bad_request
+    assert_nil response.headers["Location"]
+    assert_empty actor.client_totp_credentials
+    assert_equal "verified", issuance.transaction.reload.status
     assert_nil token.reload.last_step_up_at
     assert_equal before_secrets, ClientSecretCredential.where(client_id: actor.id).count
   end
 
-  test "admitted valid first code creates a credential only at Base finalization" do
+  test "Auth TOTP handoff refuses an admitted bootstrap without a relying party" do
     reset!
     host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     actor = Client.create!(security_mode_id: SecurityModeConfigurable::NORMAL, id: 9_104_000_000_010, status_id: ClientStatus::ACTIVE)
@@ -1234,22 +1215,15 @@ class Auth::App::Settings::TotpsControllerTest < ActionDispatch::IntegrationTest
     assert_nil cookies[AuthenticationBase::ACCESS_COOKIE_KEY]
     follow_redirect!
     post auth_app_settings_totps_handoff_path(ri: "jp")
-    raw_result = Rack::Utils.parse_nested_query(URI.parse(response.location).query).fetch("result_ref")
-    credential = nil
-    assert_difference("ClientTotpCredential.count", 1) do
-      credential = IdentityTotpEnrollmentFinalCommitter.call!(
-        actor: actor, token: token, transaction: issuance.transaction.reload, result_reference: raw_result,
-      )
-    end
 
-    assert_equal actor.id, credential.user_id
-    assert_equal "New TOTP", credential.title
-    assert_equal candidate.reload.last_otp_at, credential.last_otp_at
-    assert_equal "consumed", issuance.transaction.reload.status
+    assert_response :bad_request
+    assert_nil response.headers["Location"]
+    assert_empty actor.client_totp_credentials
+    assert_equal "verified", issuance.transaction.reload.status
     assert_nil token.reload.last_step_up_at
   end
 
-  test "Base finalization preserves the admitted TOTP title and first accepted window" do
+  test "Auth TOTP handoff refuses completion without a relying party" do
     reset!
     host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     actor = Client.create!(security_mode_id: SecurityModeConfigurable::NORMAL, id: 9_104_000_000_011, status_id: ClientStatus::ACTIVE)
@@ -1337,26 +1311,16 @@ class Auth::App::Settings::TotpsControllerTest < ActionDispatch::IntegrationTest
     assert_nil cookies[AuthenticationBase::ACCESS_COOKIE_KEY]
     follow_redirect!
     post auth_app_settings_totps_handoff_path(ri: "jp")
-    raw_result = Rack::Utils.parse_nested_query(URI.parse(response.location).query).fetch("result_ref")
-    credential = nil
-    assert_difference("ClientTotpCredential.count", 1) do
-      credential = IdentityTotpEnrollmentFinalCommitter.call!(
-        actor: actor, token: token, transaction: issuance.transaction.reload, result_reference: raw_result,
-      )
-    end
 
-    assert_equal actor.id, credential.user_id
-    assert_equal "New TOTP", credential.title
-    assert_equal candidate.reload.last_otp_at, credential.last_otp_at
-    assert_equal "consumed", issuance.transaction.reload.status
+    assert_response :bad_request
+    assert_nil response.headers["Location"]
+    assert_empty actor.client_totp_credentials
+    assert_equal "verified", issuance.transaction.reload.status
     assert_nil token.reload.last_step_up_at
     assert_no_difference("ClientTotpCredential.count") do
-      repeated = IdentityTotpEnrollmentFinalCommitter.call!(
-        actor: actor, token: token, transaction: issuance.transaction.reload, result_reference: raw_result,
-      )
+      post auth_app_settings_totps_handoff_path(ri: "jp")
 
-      assert_equal credential.id, repeated.id
-      assert_equal credential.last_otp_at, repeated.last_otp_at
+      assert_response :bad_request
     end
   end
 
@@ -1449,18 +1413,11 @@ class Auth::App::Settings::TotpsControllerTest < ActionDispatch::IntegrationTest
     assert_nil cookies[AuthenticationBase::ACCESS_COOKIE_KEY]
     follow_redirect!
     post auth_app_settings_totps_handoff_path(ri: "jp")
-    raw_result = Rack::Utils.parse_nested_query(URI.parse(response.location).query).fetch("result_ref")
-    credential = nil
-    assert_difference("ClientTotpCredential.count", 1) do
-      credential = IdentityTotpEnrollmentFinalCommitter.call!(
-        actor: actor, token: token, transaction: issuance.transaction.reload, result_reference: raw_result,
-      )
-    end
 
-    assert_equal actor.id, credential.user_id
-    assert_equal "New TOTP", credential.title
-    assert_equal candidate.reload.last_otp_at, credential.last_otp_at
-    assert_equal "consumed", issuance.transaction.reload.status
+    assert_response :bad_request
+    assert_nil response.headers["Location"]
+    assert_empty actor.client_totp_credentials
+    assert_equal "verified", issuance.transaction.reload.status
     assert_nil token.reload.last_step_up_at
   end
 
@@ -1825,23 +1782,16 @@ class Auth::App::Settings::TotpsControllerTest < ActionDispatch::IntegrationTest
     assert_nil cookies[AuthenticationBase::ACCESS_COOKIE_KEY]
     follow_redirect!
     post auth_app_settings_totps_handoff_path(ri: "jp")
-    raw_result = Rack::Utils.parse_nested_query(URI.parse(response.location).query).fetch("result_ref")
-    credential = nil
-    assert_difference("ClientTotpCredential.count", 1) do
-      credential = IdentityTotpEnrollmentFinalCommitter.call!(
-        actor: actor, token: token, transaction: issuance.transaction.reload, result_reference: raw_result,
-      )
-    end
 
-    assert_equal actor.id, credential.user_id
-    assert_equal "New TOTP", credential.title
-    assert_equal candidate.reload.last_otp_at, credential.last_otp_at
-    assert_equal "consumed", issuance.transaction.reload.status
+    assert_response :bad_request
+    assert_nil response.headers["Location"]
+    assert_empty actor.client_totp_credentials
+    assert_equal "verified", issuance.transaction.reload.status
     assert_nil token.reload.last_step_up_at
     assert_equal "bootstrap", issuance.transaction.purpose
     assert_equal "none", issuance.transaction.aal
     assert_not issuance.transaction.phishing_resistant
-    assert_equal credential.public_id, issuance.transaction.verified_credential_ref
+    assert_nil issuance.transaction.verified_credential_ref
   end
 
   private

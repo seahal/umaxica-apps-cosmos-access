@@ -1,52 +1,29 @@
 # Health Endpoints
 
-Health endpoints return the shared runtime health contract from the `Health` service layer.
+The Health service layer is exposed on the retained Auth APP/ORG and Visa APP/ORG hosts. Route
+constraints keep each response in its own host and namespace. Operator tools are outside this
+product health contract.
 
-As of the 2026-09-05 text+JSON contract there are two families:
+## Text probes
 
-- **Text probes** (`text/plain; charset=utf-8`, `Cache-Control: no-store`, no redirect, no auth, no
-  `.txt` suffix, never JSON or HTML). Each surface mounts:
-  - `GET /health` — aggregate. Body is exactly seven lines in a fixed order:
-    ```
-    title: Health status
-    namespace: auth/app
-    status: ok
-    startup: ok
-    liveness: ok
-    readiness: ok
-    timestamp: 2026-09-05T12:00:00Z
-    ```
-  - `GET /health/startup`, `GET /health/liveness`, `GET /health/readiness` — body `"ok\n"` and HTTP
-    200 when healthy, HTTP 503 when not.
-- **Machine JSON** (`application/json`, `Cache-Control: no-store`, never `text/plain` or
-  `text/html`, and a non-JSON `Accept` gets `406` rather than a silent fallback). Each surface that
-  exposes `/revision` also mounts:
-  - `GET /api/v0/health.json` —
-    `{"status":"pass|warn|fail","checks":{"startup":{"status":…},"liveness":{"status":…},"readiness":{"status":…}},"namespace":"<frame>/<brand>","timestamp":"<RFC3339 UTC>"}`.
-    HTTP: `pass`/`warn` → 200, `fail` → 503. A readiness failure never changes the liveness entry;
-    liveness stays dependency-free.
-  - `GET /api/v0/revision.json` — revision (nullable) and an RFC 3339 UTC render timestamp.
+Responses use `text/plain; charset=utf-8`, `Cache-Control: no-store`, and no redirect,
+authentication challenge, `.txt` suffix, JSON, or HTML fallback.
 
-The literal `.json` is part of the route path (`format: false`), mirroring the
-`.well-known/jwks.json` precedent; the controllers negotiate `Accept` explicitly and never
-`respond_to`. Route paths for the text probes stay singular (`resource`, not `resources`).
+- `GET /health` — aggregate with seven fixed lines: title, namespace, status, startup, liveness,
+  readiness, and UTC timestamp.
+- `GET /health/startup`, `/health/liveness`, `/health/readiness` — `ok\n` with HTTP 200 when
+  healthy; `unavailable\n` with HTTP 503 otherwise.
 
-Every check (`Health::LivenessCheck`, `Health::ReadinessCheck`, `Health::StartupCheck`,
-`Health::SnapshotCheck`) returns a `Health::CheckResult` (`app/services/health.rb`). The result
-object owns serialization (`as_public_json`) and the 200/503 decision (`http_status` / `ok?`); the
-controllers (`HealthCheckRendering`, `app/controllers/concerns/health_check_rendering.rb`) only
-render it.
+## Machine JSON
 
-The bootstrap GUID profile deliberately declares no database dependency because no authoritative
-GUID store exists yet. Its readiness check remains process-local until the persistence boundary is
-specified; adding that store also requires adding its bounded readiness dependency here.
+When the request accepts JSON, `GET /api/v0/health.json` returns the aggregate status, three check
+results, host-local namespace, and an RFC 3339 UTC timestamp. `pass` and `warn` return HTTP 200;
+`fail` returns HTTP 503. Liveness remains dependency-free and independent of readiness.
 
-These endpoints are internal-only checkpoints for orchestrators and monitoring, not a user-facing
-contract; public traffic to them is blocked at the edge. User-facing availability is served by a
-separate integrated status page (external service). See
-`adr/internal-health-endpoint-edge-isolation.md` and `docs/operations/health-check.md`.
+`GET /api/v0/revision.json` returns the nullable deployment revision and render timestamp. A
+non-JSON `Accept` receives HTTP 406; the response remains `no-store`.
 
-## Machine JSON contract (`/api/v0/health.json`)
+Example namespace value:
 
 ```json
 {
@@ -56,55 +33,21 @@ separate integrated status page (external service). See
     "liveness": { "status": "pass" },
     "readiness": { "status": "pass" }
   },
-  "namespace": "docs/app",
-  "timestamp": "2026-09-05T12:00:00Z"
+  "namespace": "auth/app",
+  "timestamp": "2026-11-10T12:00:00Z"
 }
 ```
 
-`HealthStatusSerializer` (`app/serializers/health_status_serializer.rb`) maps the internal
-vocabulary onto the wire vocabulary with an exhaustive `case` (`else → raise`, per
-`generic/no-silent-fallback.mdc`):
+The `Health::CheckResult` owns serialization and the 200/503 decision. No dependency name,
+exception, request path, or environment value crosses the public JSON boundary.
 
-| `Health::CheckResult#status`                      | wire   | notes                            |
-| ------------------------------------------------- | ------ | -------------------------------- |
-| `:ok`                                             | `pass` |                                  |
-| `:degraded_acceptable`                            | `warn` | serving degraded; HTTP stays 200 |
-| `:starting` + probe tolerates it (liveness)       | `warn` | HTTP 200                         |
-| `:starting` + probe does not (startup, readiness) | `fail` | HTTP 503                         |
-| `:unready`                                        | `fail` |                                  |
+## Revision and caching
 
-Aggregate `status` is the worst of the three: any `fail` → `fail`; else any `warn` → `warn`; else
-`pass`. Startup, liveness, and readiness are mapped from three independent `Health::*Check.call`
-results, so a readiness outage yields `checks.readiness.status == "fail"` and overall `fail`/503
-while `checks.liveness.status` stays `"pass"`. The controller namespace selected by routing crosses
-this boundary; no dependency name, exception, path, or environment value does.
+`GET /revision` renders title, revision, and timestamp lines. Both revision formats derive the
+nullable revision from `Rails.application.revision`; neither endpoint fabricates a value. Health and
+revision responses use `Cache-Control: no-store` because each is a verdict about one instance at one
+instant.
 
-## Text probe status codes
-
-Individual probes: `"ok\n"` / 200 when `result.ok?`, `"unavailable\n"` / 503 otherwise, following
-`Health::StatusPolicy.http_status` — `starting` is 200 on liveness and 503 elsewhere. The `/health`
-aggregate line values (`ok` / `unavailable`) come from `CheckResult#as_public_json`, not the
-pass/warn/fail vocabulary. Both aggregate representations use the RFC 3339 UTC time at which Rails
-renders the response, including the `Z` UTC designator.
-
-## Revision endpoints
-
-`GET /revision` renders `title`, `revision`, and `timestamp` lines in that order.
-`GET /api/v0/revision.json` returns the `revision` and `timestamp` members without a title. Both
-representations derive the revision from `Rails.application.revision&.to_s` in
-`ApplicationRevisionRendering#application_revision`; the framework resolves it from
-`ENV["REVISION"]`, a `REVISION` file, or Git. Neither endpoint reads those sources directly or
-fabricates a value. When the revision is unset, text renders an empty `revision:` value and JSON
-renders `"revision": null`. Both timestamps use RFC 3339 UTC with the `Z` designator.
-
-## Caching
-
-Every health and revision response carries `Cache-Control: no-store`, set as a `before_action`
-(`HealthCheckRendering#disable_health_response_cache`, and `MachineJsonNegotiation` for the JSON
-endpoints) so it also covers the `406` returned for a non-JSON `Accept` on the machine endpoints. A
-health response is a verdict about one instance at one instant: a stored `200` keeps an orchestrator
-sending traffic to an instance that has since failed readiness, and a stored `503` keeps traffic
-away from one that has recovered. Rails would otherwise default these to
-`max-age=0, private, must-revalidate`, which permits storage. On Global and Publishing surfaces the
-policy-root default (`docs/reference/http-cache-policy.md`) also applies `no-store`; the health
-contract does not depend on it, because Core, Palm, and Warp are outside that default.
+Public traffic blocking for health endpoints belongs to the separately configured edge boundary. See
+[Health Check Endpoints](../operations/health-check.md) and the accepted
+[`internal health isolation` decision](../../adr/internal-health-endpoint-edge-isolation.md).

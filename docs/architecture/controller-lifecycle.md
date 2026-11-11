@@ -40,13 +40,15 @@ surface authentication-aware controller lifecycle.
 Surface-local `ApplicationController` inherits directly from `ActionController::Base` and owns the
 authentication-aware request lifecycle.
 
-Base additionally separates its app and org protocol Authority from each self-RP application
-lifecycle. `Base::{App,Org}::AuthorityController` explicitly inherits `::ApplicationController`,
-not the same-namespace self-RP controller. It declares its own root-session lifecycle and standard
-CSRF protection. The leading `::` is security-relevant: an unqualified parent resolves to the local
-RP base and inherits RP authentication and refresh callbacks alongside root authentication. Base
-com has no authority or browser-RP authentication workflow; its application controller serves the
-anonymous public and Preference surface. See `adr/base-auth-ceremony-and-seven-rp-boundary.md`.
+Auth and Visa APP/ORG each have a surface-local controller lifecycle. Visa's
+`Visa::{App,Org}::AuthorityController` explicitly inherits `::ApplicationController`; it does not
+inherit a same-namespace browser-RP controller. The leading `::` is security-relevant: an
+unqualified parent could resolve to a local controller base with unrelated authentication and
+refresh callbacks. Visa Org does not install the APP second-passkey gate, and Visa verification
+destinations go to Auth. Auth owns credential ceremonies and does not become the general session or
+OpenID Provider authority. See `adr/visa-op-host.md` and
+`docs/architecture/base-auth-seven-rp-boundary.md` for the current Auth/Visa and external-client
+ownership boundary.
 
 Authentication modes that are more specific than this base split, including bare endpoints,
 guest-only flows, optional access, and step-up requirements, must be declared and audited explicitly
@@ -93,14 +95,12 @@ order:
 3. `set_current_actor`
 4. `touch_session_activity!` inside current-resource resolution
 
-`set_preferences_cookie` verifies the current Preference JWT on `GET`/`HEAD`. Base app/org may make
-read-only queries to rebuild a missing or mismatched `language` or `__Secure-experience` display
-cookie from the verified snapshot, active anonymous row and explicit actor values. Base com may read
-its active row for region and browser-bound consent or Web Push. Base may delete unusable shared
-Preference cookies; these response-cookie changes do not alter persisted state. Other read-only
-surfaces verify the JWT without querying the Preference database or changing Preference cookies. No
-GET/HEAD path creates, updates, or retires Preference rows, reissues the JWT, or extends its expiry.
-Preference row lifecycle changes happen at their explicit non-GET writer boundaries.
+Preference reads and writes belong only to callers in the retained Auth and Visa APP/ORG surfaces.
+Their specific read and write behavior is defined in [`preference.md`](preference.md) and
+[`preference-behavior-contract.md`](preference-behavior-contract.md). Removed Base, COM, and other
+surface callers are not part of the current controller lifecycle. No GET/HEAD path may create,
+update, or retire Preference rows, reissue the JWT, or extend its expiry. Preference row lifecycle
+changes happen at explicit non-GET writer boundaries.
 
 `transparent_refresh_access_token` remains in the authenticated controller lifecycle, but browser
 navigation does not use it: `transparent_refresh_allowed?` is false for `GET`/`HEAD`. Authentication
@@ -151,7 +151,7 @@ DB -> Preference JWT payload -> Actor.preferences
 ```
 
 The database is the source of truth and storage boundary. The Preference JWT is the runtime read
-cache. `Actor.preferences` is the immutable request runtime value built from that payload, with
+projection. `Actor.preferences` is the immutable request runtime value built from that payload, with
 valid request-local `lx`, `ct`, and `tz` values overlaid when explicitly present. Auth access tokens
 do not carry preference snapshots. JS-readable preference cookies are Rails write-only compatibility
 mirrors and must not be trusted as Rails request input.
@@ -161,19 +161,18 @@ says `lx=en`, the current request renders with `Actor.preferences.language == "e
 database and Preference JWT remain `ja`.
 
 Controllers should not directly read and interpret preference model internals when a concern method
-or `Actor.preferences` exposes the needed value. Writes remain in the preference concerns and
-surface-specific models because shared preference and actor-local preference are stored separately.
+or `Actor.preferences` exposes the needed value. Auth and Visa write only through the closed
+surface/operation map in the current Preference contract; shared display state and actor-local
+preference remain separate persisted records.
 
-Here, "shared preference" means `AppPreference`, `OrgPreference`, or `ComPreference`: the
-login-independent surface preference state. "Actor-local preference" means `ClientPreference` or
-`OperatorPreference`: the account-local state for the current runtime actor. COM has no actor-local
-preference. This is not Rails `session`, and it is not the `Actor` CurrentAttributes object.
+For current Auth/Visa requests, "shared preference" means `AppPreference` or `OrgPreference`, the
+login-independent state for that audience. "Actor-local preference" means `ClientPreference` or
+`OperatorPreference` for the current actor. Retained COM records do not add a current route or
+writer. This is not Rails `session`, and it is not the `Actor` CurrentAttributes object.
 
-`/preference`, `/setting`, and `/configurator` have distinct responsibilities. Current surface-local
-`/settings` routes are documented in [`preference.md`](preference.md#url-role-boundary): Auth APP is
-still completing the O-11 identity migration; Auth ORG has no `/settings` route, and Base ORG owns
-its separate management entry on the Base ORG host. Shared path text does not share a controller or
-lifecycle. `/configurator` remains the generic path for new operator-managed configuration.
+Preference and actor settings have separate responsibilities. Use the current Auth/Visa route
+inventory and [`preference.md`](preference.md) for availability. Shared path text does not share a
+controller or lifecycle. No former Base route is a current settings entry point in Access.
 
 ## Cookie Key Compatibility
 
@@ -195,9 +194,9 @@ registers no callbacks from `included do`; controllers that need locale/timezone
 reflection can rely on `Actor.preferences` being complete. These two gaps are resolved as of the
 2026-07-17 controller-layer audit.
 
-Preference persistence effects now run only through the explicit writer boundary: Base owns save and
-reset, while Visa APP/ORG invokes sign-in reflection or sign-out rebuilding after the matching
+Preference persistence effects run only through the explicit writer boundary: Auth APP/ORG own
+`save`, while Visa APP/ORG invokes sign-in reflection or sign-out rebuilding after the matching
 authentication transition commits. Preference token and cookie issuance happens only after the
 setting transaction commits. Authentication-token refresh remains an independent authenticated
-protocol; it does not rotate Preference state. Do not move any of these explicit write effects into
+protocol; it does not rotate Preference state. Do not move these write effects into
 `set_current_context` or ordinary GET/HEAD callbacks.

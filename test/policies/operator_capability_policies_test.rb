@@ -20,7 +20,7 @@ class OperatorCapabilityPoliciesTest < ActiveSupport::TestCase
   end
 
   test "Bureau ownership and administration, delegation, and view grants confer no platform capability" do
-    bootstrap = BaseSelectorBootstrapAuthority.call(surface: :org, principal: @operator)
+    bootstrap = IdentityGraphBootstrapAuthority.call(surface: :org, principal: @operator)
     bureau = bootstrap.collective
     BureauOwnership.create!(bureau: bureau, operator: @operator) unless BureauOwnership.exists?(bureau: bureau)
     BureauAdministrationGrant.create!(bureau: bureau, operator: @operator)

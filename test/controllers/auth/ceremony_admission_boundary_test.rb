@@ -797,19 +797,19 @@ class AuthCeremonyAdmissionBoundaryTest < ActionDispatch::IntegrationTest
   end
 
   [
-    ["app", "PUBLIC_BASE_SERVICE_URL", "PUBLIC_AUTH_SERVICE_URL", "core-app-jp", "client",
+    ["app", "PUBLIC_VISA_SERVICE_URL", "PUBLIC_AUTH_SERVICE_URL", "core-app-jp", "client",
      ClientAuthAdmissionBinding,],
-    ["org", "PUBLIC_BASE_STAFF_URL", "PUBLIC_AUTH_STAFF_URL", "core-org-jp", "operator",
+    ["org", "PUBLIC_VISA_STAFF_URL", "PUBLIC_AUTH_STAFF_URL", "core-org-jp", "operator",
      OperatorAuthAdmissionBinding,],
-  ].each do |surface, base_key, auth_key, client_id, realm, binding_model|
+  ].each do |surface, visa_key, auth_key, client_id, realm, binding_model|
     test "#{surface} Visa cookie loss and new nonce cannot confirm an old attached operation" do
       protection = ActionController::Base.allow_forgery_protection
       ActionController::Base.allow_forgery_protection = true
-      base_host = ENV.fetch(base_key.sub("BASE", "VISA"))
+      visa_host = ENV.fetch(visa_key)
       auth_host = ENV.fetch(auth_key)
       browser = open_session
       browser.https!
-      browser.host!(base_host)
+      browser.host!(visa_host)
       authorization = {
         response_type: "code",
         client_id: client_id,
@@ -837,7 +837,7 @@ class AuthCeremonyAdmissionBoundaryTest < ActionDispatch::IntegrationTest
       retained_sid = browser.cookies[sid_key]
       original_facts = binding.reload.attributes
       browser.cookies.delete(Rails.application.config.session_options.fetch(:key))
-      browser.host!(base_host)
+      browser.host!(visa_host)
       browser.get(confirmation_url)
 
       assert_equal [400, nil], [browser.response.status, browser.response.location]
@@ -1256,8 +1256,8 @@ class AuthCeremonyAdmissionBoundaryTest < ActionDispatch::IntegrationTest
               begin
                 fv5043 = fv5039
                 {
-                  ENV.fetch("PUBLIC_BASE_SERVICE_URL") => "app",
-                  ENV.fetch("PUBLIC_BASE_STAFF_URL") => "org",
+                  ENV.fetch("PUBLIC_AUTH_SERVICE_URL") => "app",
+                  ENV.fetch("PUBLIC_AUTH_STAFF_URL") => "org",
                   ENV.fetch("PUBLIC_VISA_SERVICE_URL") => "app",
                   ENV.fetch("PUBLIC_VISA_STAFF_URL") => "org",
                 }.fetch(fv5043)

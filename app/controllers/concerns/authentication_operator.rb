@@ -63,12 +63,12 @@ module AuthenticationOperator
   def sign_in_url_with_pt(return_to)
     _ = return_to
     auth_org_sign_in_url(
-      host: sign_org_redirect_host,
+      host: auth_org_redirect_host,
       protocol: "https",
     )
   end
 
-  def sign_org_redirect_host
+  def auth_org_redirect_host
     configured_hosts =
       %w(PRIVATE_AUTH_STAFF_URL).filter_map do |key|
         CommonRedirect.normalize_host(ENV.fetch(key))

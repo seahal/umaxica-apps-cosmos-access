@@ -2,7 +2,6 @@
 # frozen_string_literal: true
 
 require "test_helper"
-# require "helpers/global_test_support"
 
 class ControllerBaseInheritanceTest < ActiveSupport::TestCase
   self.fixture_table_names = []
@@ -10,53 +9,18 @@ class ControllerBaseInheritanceTest < ActiveSupport::TestCase
   BARE_CONTROLLERS = [
     Auth::App::BareController,
     Auth::Org::BareController,
-    Base::App::BareController,
-    Base::Com::BareController,
-    Base::Dev::BareController,
-    Base::Net::BareController,
-    Base::Org::BareController,
-    Core::App::BareController,
-    Core::Dev::BareController,
-    Core::Net::BareController,
-    Core::Org::BareController,
-    Docs::App::BareController,
-    Docs::Com::BareController,
-    Docs::Org::BareController,
-    Edit::Org::BareController,
-    Guid::Net::BareController,
-    Help::App::BareController,
-    Help::Com::BareController,
-    Help::Org::BareController,
-    Info::App::BareController,
-    Info::Com::BareController,
-    Info::Org::BareController,
-    News::App::BareController,
-    News::Com::BareController,
-    News::Org::BareController,
-    Palm::App::BareController,
-    Tech::Org::BareController,
     Visa::App::BareController,
     Visa::Org::BareController,
-    Warp::App::BareController,
-    Warp::Com::BareController,
-    Warp::Org::BareController,
   ].freeze
 
-  APPLICATION_CONTROLLERS = [
+  AUTH_APPLICATION_CONTROLLERS = [
     Auth::App::ApplicationController,
     Auth::Org::ApplicationController,
-    Base::App::ApplicationController,
-    Base::Com::ApplicationController,
-    Base::Dev::ApplicationController,
-    Base::Net::ApplicationController,
-    Base::Org::ApplicationController,
-    Edit::Org::ApplicationController,
-    Tech::Org::ApplicationController,
-    Core::App::ApplicationController,
-    Core::Org::ApplicationController,
-    Warp::App::ApplicationController,
-    Warp::Com::ApplicationController,
-    Warp::Org::ApplicationController,
+  ].freeze
+
+  VISA_AUTHORITY_CONTROLLERS = [
+    Visa::App::AuthorityController,
+    Visa::Org::AuthorityController,
   ].freeze
 
   test "bare controllers inherit directly from ActionController base" do
@@ -82,18 +46,21 @@ class ControllerBaseInheritanceTest < ActiveSupport::TestCase
                  "BareController must inherit ActionController::Base directly:\n#{violations.join("\n")}"
   end
 
-  test "surface application controllers inherit directly from ActionController base" do
-    APPLICATION_CONTROLLERS.each do |controller|
+  test "Auth application controllers inherit directly from ActionController base" do
+    AUTH_APPLICATION_CONTROLLERS.each do |controller|
       assert_equal ActionController::Base, controller.superclass
       assert_includes controller.ancestors, RateLimit
     end
   end
 
-  # Guards against the silent-degradation case where a new surface adds its own
-  # bare_controller.rb but the author forgets to register it in BARE_CONTROLLERS,
-  # letting that controller escape the inheritance assertions above. The runtime
-  # list and the on-disk files must stay in lockstep.
-  test "BARE_CONTROLLERS stays in sync with bare_controller.rb files on disk" do
+  test "Visa authority controllers inherit from the shared application controller" do
+    VISA_AUTHORITY_CONTROLLERS.each do |controller|
+      assert_equal ::ApplicationController, controller.superclass
+      assert_includes controller.ancestors, RateLimit
+    end
+  end
+
+  test "BARE_CONTROLLERS stays in sync with retained bare controller files" do
     discovered =
       Rails.root.glob("app/controllers/**/bare_controller.rb").map do |path|
         relative = path.relative_path_from(Rails.root.join("app/controllers"))
@@ -101,22 +68,11 @@ class ControllerBaseInheritanceTest < ActiveSupport::TestCase
       end.sort_by(&:name)
 
     assert_equal BARE_CONTROLLERS.sort_by(&:name), discovered,
-                 "BARE_CONTROLLERS must list every bare_controller.rb so each is inheritance-checked"
+                 "BARE_CONTROLLERS must list every retained bare_controller.rb"
   end
 
-  test "legacy open controller compatibility bases are retired" do
-    [
-      Base::App,
-      Base::Com,
-      Base::Org,
-      Core::App,
-      Core::Org,
-      Auth::App,
-      Auth::Org,
-      Warp::App,
-      Warp::Com,
-      Warp::Org,
-    ].each do |namespace|
+  test "retained Auth and Visa namespaces have no open controller compatibility bases" do
+    [Auth::App, Auth::Org, Visa::App, Visa::Org].each do |namespace|
       assert_not namespace.const_defined?(:OpenController, false), namespace.name
     end
   end
@@ -148,7 +104,7 @@ class ControllerBaseInheritanceTest < ActiveSupport::TestCase
         class_name
       end.uniq.sort
 
-    framework_prefixes = /\A(?:ActionMailbox|ActiveStorage|MissionControl|RailsDb|Turbo)::/
+    framework_prefixes = /\A(?:ActionMailbox|MissionControl|Turbo)::/
     missing.reject! { |class_name| class_name.match?(framework_prefixes) }
 
     assert_empty missing, "Routes reference missing controller classes:\n#{missing.join("\n")}"

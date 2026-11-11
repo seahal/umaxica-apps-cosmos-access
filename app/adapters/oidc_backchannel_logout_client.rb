@@ -5,6 +5,7 @@
 # The endpoint comes from the frozen client registration recorded on the outbox row. The connection
 # pins a public DNS result for the request, and redirects are never followed. HTTP 200 and 204 are
 # acknowledgements; OpOutboxDispatchJob classifies every other response.
+# TODO: AUDIT external access: posts back-channel logout tokens to RP endpoints.
 class OidcBackchannelLogoutClient
   OPEN_TIMEOUT = 2
   READ_TIMEOUT = 3

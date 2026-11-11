@@ -33,12 +33,4 @@ class SignInPathBrowserAllowlistTest < ActionDispatch::IntegrationTest
     assert_not_includes [404, 406], response.status
   end
 
-  test "the Back-Channel Logout receiver is not gated on the browser version" do
-    host! BOOT_HOSTS.core_service.host
-    https!
-
-    post "/oidc/closures", params: { logout_token: "x" }, headers: { "User-Agent" => OUTDATED_BROWSER }
-
-    assert_not_includes [404, 406], response.status
-  end
 end

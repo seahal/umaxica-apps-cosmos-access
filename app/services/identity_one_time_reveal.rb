@@ -138,6 +138,8 @@ class IdentityOneTimeReveal
     payload.is_a?(Hash) &&
       payload["actor_type"] == actor.class.name &&
       payload["actor_id"].to_s == actor.id.to_s &&
+      # NOTICE: Session nonce compared with `==` after the reveal token's signature is verified, so
+      # a forged token cannot reach it. Move to secure_compare (docs/backlog/2026-11-10-core-security-review-followups.md, item 3).
       payload["session_nonce"].to_s == session_nonce.to_s &&
       payload["purpose"].to_s == purpose.to_s &&
       payload["jti"].present?

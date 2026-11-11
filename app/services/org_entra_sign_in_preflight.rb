@@ -10,6 +10,7 @@
 #
 # Credential values are never returned or printed. Only presence, shape, and
 # length are reported, so the result can be pasted into an incident note.
+# TODO: AUDIT external access: fetches Microsoft Entra ID metadata.
 class OrgEntraSignInPreflight < ApplicationService
   class MetadataError < StandardError; end
 

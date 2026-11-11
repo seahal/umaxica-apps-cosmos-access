@@ -1,4 +1,10 @@
-# app Secret implementation boundary
+# App Secret implementation record (Pre-Reset)
+
+> This document preserves the implementation history of Secret issuance and management. Its former
+> Base and COM HTTP route descriptions are not current Access endpoints: current local product
+> routes are Auth APP/ORG and Visa APP/ORG, with operator tools. Persisted Secret models and audit
+> history are retained for the deferred model/database report; this document does not claim a
+> current route writer for those records.
 
 Physical collection of an unconfirmed candidate requires both its own discarded audit and its
 allocation's terminal audit to be committed in Chronicle. Partial delivery leaves the candidate

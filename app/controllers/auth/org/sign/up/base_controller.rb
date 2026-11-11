@@ -38,8 +38,9 @@ module Auth
           private
 
           def after_login_path
+            return_path = super
             complete_auth_ceremony_session!
-            base_org_identity_url(ri: current_region_identifier, host: base_rp_host)
+            return_path
           end
         end
       end

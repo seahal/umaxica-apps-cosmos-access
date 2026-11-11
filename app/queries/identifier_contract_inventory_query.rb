@@ -29,7 +29,6 @@ class IdentifierContractInventoryQuery
     { name: "chronicle", record_class: ChronicleRecord, ownership: "application" },
     { name: "occurrence", record_class: OccurrenceRecord, ownership: "application" },
     { name: "queue", ownership: "framework" },
-    { name: "storage", ownership: "framework" },
   ].map(&:freeze).freeze
 
   # These are candidate hints only. They are intentionally not semantic classifications. In
@@ -62,7 +61,6 @@ class IdentifierContractInventoryQuery
   }.freeze
   FRAMEWORK_PREFIXES = {
     "solid_queue_" => "solid_queue",
-    "active_storage_" => "active_storage",
     "action_mailbox_" => "action_mailbox",
   }.freeze
 

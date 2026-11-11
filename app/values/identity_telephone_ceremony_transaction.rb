@@ -73,7 +73,7 @@ class IdentityTelephoneCeremonyTransaction
   private
 
   def validate!
-    IdentityTelephoneCeremonyContract.fetch_surface_value(IdentityTelephoneCeremonyContract::ACME_ISSUERS, surface)
+    IdentityTelephoneCeremonyContract.validate_surface!(surface)
     raise IdentityTelephoneCeremony::Error, "operation is invalid" unless IdentityTelephoneCeremonyContract::OPERATIONS.include?(operation)
     raise IdentityTelephoneCeremony::Error, "actor_ref is required" if actor_ref.blank?
     raise IdentityTelephoneCeremony::Error, "session_ref is required" if session_ref.blank?

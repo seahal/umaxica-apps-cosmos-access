@@ -68,7 +68,8 @@ module Visa
 
       def validate_authorization_request!(params_hash = authorize_params)
         @validated_client = OidcAuthorizeRequestResolver.call(
-          params: params_hash, resource: current_client, resource_type: resource_type,
+          params: params_hash, duplicate_parameters: authorization_duplicate_parameters,
+          resource: current_client, resource_type: resource_type,
         )
       end
 
@@ -287,10 +288,7 @@ module Visa
         # `slice` first: this reads a fixed set of keys and ignores everything else the
         # request carries (`ri`, the Turnstile token). Permitting without narrowing would
         # report those as unpermitted, which they are not - they are simply not ours.
-        keys = %i(
-          response_type client_id redirect_uri state
-          code_challenge code_challenge_method scope nonce prompt max_age claims acr_values
-        )
+        keys = OidcAuthorizeRequestResolver::PARAMETER_NAMES
         params.slice(*keys).permit(*keys)
       end
     end

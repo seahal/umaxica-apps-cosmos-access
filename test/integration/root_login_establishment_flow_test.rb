@@ -100,8 +100,6 @@ class RootLoginEstablishmentFlowTest < ActionDispatch::IntegrationTest
     assert_equal state, callback_query.fetch("state")
     assert_nil cookies[AuthenticationBase::ACCESS_COOKIE_KEY]
     assert_nil cookies[AuthenticationBase::REFRESH_COOKIE_KEY]
-    assert_nil cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE]
-    assert_nil cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE]
     assert_withheld("Rejected SSO must not rewrite Source") { @email.reload.attributes == source_before }
     assert_withheld("Rejected SSO must not change the restricted Root") { legacy.reload.attributes == token_before }
   end

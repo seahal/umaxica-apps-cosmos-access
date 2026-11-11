@@ -47,13 +47,7 @@ module PreferenceAccessTokenTransport
       end
     @preferences = defined?(Prosopite) ? Prosopite.pause(&operation) : operation.call
     @preferences
-  rescue ActiveRecord::StatementInvalid, ActiveRecord::ConnectionNotEstablished => e
-    raise unless anonymous_com_claim_shape?(preference_class) && (request.get? || request.head?)
 
-    Rails.logger.error(
-      JitLogEvent.format("preference.access_token.read_failed", realm: "com", error_class: e.class.name),
-    )
-    detach_preference_credential!
   end
 
   def preference_access_token_current?(preference, payload)

@@ -1,11 +1,9 @@
 # High-Level Design Document (HLD)
 
-> Current implementation (2026-10-04): parts of this document describe an earlier shape of the
-> application. The controller namespaces it names (`Top`, `Sign`, `Bff`, `Api`) and the help contact
-> form flow are not in the current code. Current controllers live under `Auth`, `Base`, `Core`,
-> `Warp`, `Palm`, `Edit`, `Guid`, and the content surfaces `Docs`, `Help`, `Info`, and `News`, one
-> route file each in `config/routes/`. Use `README.md` ("Routing") and `docs/architecture/` for the
-> current topology.
+> **Historical design snapshot (2026-10-04).** This document predates the 2026-11-10 Access surface
+> reset and describes removed local routes and controllers. Current product routes are Auth APP/ORG
+> and Visa APP/ORG; operator tools are Mission, Flipper, Blazer, PgHero, Coverband, and Swagger. Do
+> not use this HLD as a current route or ownership contract.
 
 ## Project: Umaxica Apps Cosmos Access
 

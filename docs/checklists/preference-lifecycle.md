@@ -1,53 +1,28 @@
-# Preference lifecycle
+# Preference Lifecycle
 
-Use this checklist when changing anonymous or account-local Preference state on APP, ORG or COM. It
-records required behavior; passing items require current-session test evidence.
+Use this checklist for Preference behavior reached from the retained Auth APP/ORG and Visa APP/ORG
+surfaces. Persisted model history outside those surfaces remains subject to the separate
+model/database usage report.
 
-- PREF-1: Base is the only owner of Preference `save` and `reset`; Visa APP/ORG are the only owners
-  of `sign_in` and `sign_out` writes. The closed writer map rejects other surface/operation pairs.
-- PREF-2: A successful Base GET or HEAD does not create, update, retire, or issue Preference state.
-- PREF-3: Anonymous state is a realm-scoped signed Preference JWT and the shared `language` and
-  `__Secure-experience` cookies. No per-item, Preference refresh, or Preference DBSC cookie is
-  issued or consumed.
-- PREF-4: Base save changes only submitted fields. Web Push is stored through its option foreign
-  key. Consent receipts and browser bindings remain browser-local.
-- PREF-5: Visa sign-in runs after authentication finalization and applies only actor display fields
-  listed in explicit metadata. It does not apply `region` itself or copy consent, Web Push, or
-  binding from account state. An actor row with unknown legacy provenance supplies no inferred
-  values.
-- PREF-6: Visa sign-out runs after logout commits. It copies display state, consent receipt, Web
-  Push option and binding from the old database row into a new anonymous row and retires the old row
-  in one setting transaction. Cookie contents never populate the database.
-- PREF-7: A Preference persistence failure does not undo or misreport a committed authentication
-  result. Preference cookies are emitted only after the Preference setting transaction succeeds.
-- PREF-7a: Visa result, cancellation, and switch GETs render a validated continuation without
-  committing the action. The same-origin POST revalidates the transaction and binding, and retains
-  Rails CSRF and Origin/Fetch Metadata checks. Signed continuations expire within 60 seconds or at
-  the parent deadline, whichever comes first.
-- PREF-7b: A Visa sign-in Preference failure leaves the root login committed, emits no Preference
-  cookies, and withholds the authorization code so the valid continuation can be retried.
-- PREF-8: Reset retires the old anonymous row and any active account-local row, creates the
-  anonymous replacement, issues the three shared cookies, and deletes the old binding cookie.
-- PREF-9: APP, ORG and COM reject each other's Preference row/token authority. Cross-realm state is
-  never copied.
-- PREF-10: `PreferenceAdoption`, Preference refresh/DBSC/assurance, item cookies and actor consent
-  mirrors have no runtime callers. Authentication-token refresh and DBSC are separate contracts.
-- PREF-11: `adult_content_gate` has no non-model runtime reference. Its models, option records and
-  child tables remain dormant and are not removed as part of Preference cutover.
-- PREF-12: Any destructive local schema cutover has an approved execution ticket, refreshed row
-  counts and recovery snapshot before application. Production and Neon remain outside local
-  acceptance work.
-- PREF-13: Base app/org/com alone render interactive Preference controls. Auth, Core, and Warp read
-  verified display state without reading consent state or writing Preference rows or cookies.
-- PREF-14: The public retention job purges expired anonymous APP, ORG, and COM rows only after the
-  owner-database expiry plus 30-day grace period, rechecks the deadline under lock, and retains any
-  row referenced by a matching typed Preference chronicle as subject or actor; a different subject
-  type with the same numeric ID remains independent and survives Preference deletion.
-- PREF-15: Base app/org/com HTML GET and HEAD requests project the active row's region and only the
-  receipt- and browser-bound consent/Web Push state into `Actor.preferences`. JSON APIs leave that
-  Actor unchanged, mismatched bindings produce declined/disabled state, and non-Base hosts read none
-  of the browser-bound setting state.
+- PREF-1: Only the closed `PreferenceWriteBoundary` map grants writes: Auth APP/ORG own `save`; Visa
+  APP/ORG own sign-in reflection and sign-out rebuilding. Unknown surface/operation pairs refuse.
+- PREF-2: GET and HEAD do not create, update, retire, or refresh Preference rows, reissue a JWT, or
+  extend expiry.
+- PREF-3: An Auth save authorizes the current actor and persists only submitted fields. Cookie or
+  request values never select a different account or row.
+- PREF-4: Visa sign-in reflection reads only explicit display values from the matching realm's actor
+  Preference after authorization finalizes; missing values are not inferred from child records.
+- PREF-5: Visa sign-out rebuilds anonymous state only after logout commits and copies allowed values
+  from the database. Cookie contents do not populate database state.
+- PREF-6: A Preference persistence or token-issuance failure does not undo a committed
+  authentication transition or issue an authorization code from a failed continuation.
+- PREF-7: APP and ORG reject each other's Preference row and token authority.
+- PREF-8: Malformed JWTs, unknown fields, invalid options, missing required child records, and
+  unsupported writer combinations fail explicitly.
+- PREF-9: Request-local `ri`, `lx`, `ct`, and `tz` overlays affect only the current Actor snapshot;
+  they do not update persisted Preference values or a token.
+- PREF-10: A model or database row left from a retired route does not authorize an implicit writer.
 
-This checklist records contract requirements, not test results. See
-[Preference architecture](../architecture/preference.md) and the
-[Visa writer ADR](../../adr/preference-visa-writer-boundary.md).
+See the current [Preference behavior contract](../architecture/preference-behavior-contract.md) and
+[Preference architecture](../architecture/preference.md). Checklist criteria state required
+behavior; their presence is not evidence that the behavior has passed.

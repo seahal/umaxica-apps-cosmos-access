@@ -152,7 +152,7 @@ class TelephoneCredentialRegistrationOtpFinalizerTest < ActiveSupport::TestCase
       oidc_jti: SecureRandom.uuid,
       oidc_nonce: SecureRandom.hex(16),
       oidc_auth_time: Time.at(auth_time).utc,
-      oidc_acr: StepUpEvidenceResolver::STEP_UP_ACR,
+      oidc_acr: StepUpEvidenceVerifier::STEP_UP_ACR,
       oidc_amr: JSON.generate(["passkey"]),
       refresh_token_expires_at: now + 1.hour,
     )

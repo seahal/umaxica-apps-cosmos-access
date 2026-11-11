@@ -2,9 +2,10 @@
 
 This page lists Rails methods that must not be used anywhere in the application codebase.
 
-These rules apply across the `app`, `org`, and `com` surfaces. Do not introduce local exceptions
-inside controllers, models, services, concerns, jobs, mailers, views, or tests unless a current ADR
-explicitly changes this policy.
+These rules apply to all application-owned code, including the retained `app` and `org` surfaces and
+models for retained legacy data. Do not introduce local exceptions inside controllers, models,
+services, concerns, jobs, mailers, views, or tests unless a current ADR explicitly changes this
+policy.
 
 ## Controllers
 
@@ -93,10 +94,10 @@ Use the correct API, JSON, or browser controller boundary instead of disabling p
 
 The Visa APP and ORG OAuth revocation leaves are protocol endpoints authenticated by registered
 client credentials. They inherit directly from `ActionController::API`, which does not install the
-browser forgery-protection callback. This is limited to
-`Visa::App::Oauth::RevocationsController` and `Visa::Org::Oauth::RevocationsController`; it does not
-authorize cookie-based mutation and does not extend to their realm's other OAuth endpoints. Browser
-logout confirmation remains forgery-protected.
+browser forgery-protection callback. This is limited to `Visa::App::Oauth::RevocationsController`
+and `Visa::Org::Oauth::RevocationsController`; it does not authorize cookie-based mutation and does
+not extend to their realm's other OAuth endpoints. Browser logout confirmation remains
+forgery-protected.
 
 ## Models
 

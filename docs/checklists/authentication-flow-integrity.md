@@ -13,15 +13,15 @@ claimed. Follow [independent investigation](integrated-stack.md#independent-inve
 
 ## FLOW-1 — Scope and authority
 
-- Basis: F01/F06, AUTH-1/4, SESSION-1–4. Scope: actual app/org sign-in/up families, Email,
-  discoverable passkey, social Google/Apple, org Entra normal/emergency and applicable MFA,
-  capacity, checkpoint, selector and Auth/Base/OIDC handoff. Unsupported combinations remain
+- Basis: F01/F06, AUTH-1/4, SESSION-1–4. Scope: retained Auth/Visa app/org sign-in/up families,
+  Email, discoverable passkey, social Google/Apple, org Entra normal/emergency and applicable MFA,
+  capacity, checkpoint, selector and Auth/Visa/OIDC handoff. Unsupported combinations remain
   unsupported.
 - Given a valid family entry, trace when principal and authoritative ceremony/flow exist, then
-  proceed through normal steps. Auth provides ceremony evidence; Base retains final session/OIDC
-  authority, actor/flow locking, expiry/phase/token checks, cooldown/capacity and committed-success
-  semantics. Capacity children stay bound to SESSION_ISSUANCE_PENDING; they are not authentication
-  evidence.
+  proceed through normal steps. Auth provides credential-ceremony evidence; Visa retains local
+  session/OIDC authority, actor/flow locking, expiry/phase/token checks, cooldown/capacity, and
+  committed-success semantics. Capacity children stay bound to SESSION_ISSUANCE_PENDING; they are
+  not authentication evidence.
 - No universal `/sign`-GET-created flow, alternate session issuer, RESTRICTED placeholder or weaker
   callback authority is introduced. Check current controllers/locators and public session issuance
   tests, including
@@ -72,13 +72,13 @@ claimed. Follow [independent investigation](integrated-stack.md#independent-inve
 - APP entry Cancel has seven explicit HTTP cases: Sign In method selection, Email, Passkey and
   Secret, plus Sign Up method selection, Email and Telephone. Each reads the page's supplied Cancel
   action, submits with CSRF enabled, verifies the Auth ceremony and parent are cancelled, checks the
-  RP callback receives `access_denied` without a code, and follows it to Base `/sign/interruption`
-  with HTTP 200. See the seven-path table in
+  registered external RP receives `access_denied` without a code and handles its own completion
+  page. Access has no local RP interruption route. See the seven-path table in
   `test/integration/email_signup_http_delivery_commit_test.rb`.
 - The Sign In Email address form exposes a separate parent Cancel POST. It requires no address or
-  Turnstile response, keeps CSRF protection and follows Visa cancellation to `/sign/interruption`.
-  Coverage: `gait/features/auth/signin/signin_interaction.test.tsx` and the Email address-entry case
-  in `test/integration/email_signup_http_delivery_commit_test.rb`.
+  Turnstile response, keeps CSRF protection and returns a cancellation result to the registered
+  external RP. Coverage: `gait/features/auth/signin/signin_interaction.test.tsx` and the Email
+  address-entry case in `test/integration/email_signup_http_delivery_commit_test.rb`.
 - Email registration rechecks authorization before Source commit. A stopped actor is refused with
   HTTP 422 and an overdue Flow with HTTP 410 through the existing expiry writer, with no effective
   contact binding, completion receipt or finalization audit. A committed receipt remains eligible
@@ -90,10 +90,11 @@ claimed. Follow [independent investigation](integrated-stack.md#independent-inve
   Visa; the local DELETE fallback ends only the OTP challenge. Delivery failure does not change the
   progressed state or remove the established resend action.
 - APP Email, Telephone, Google and Apple signup checkpoint Cancel ends the owned registration Flow
-  and its pending artifacts, then cancels the admitted parent ceremony through Visa and returns the
-  RP to `/sign/interruption`. It does not redirect to the progressed `/sign/up` entry. Verify the
-  signed checkpoint binding and CSRF before cancellation; preserve the terminal Flow and parent
-  facts. HTTP coverage: `test/integration/email_signup_http_delivery_commit_test.rb` and
+  and its pending artifacts, then cancels the admitted parent ceremony through Visa and returns a
+  cancellation result to the registered external RP. It does not redirect to the progressed
+  `/sign/up` entry. Verify the signed checkpoint binding and CSRF before cancellation; preserve the
+  terminal Flow and parent facts. HTTP coverage:
+  `test/integration/email_signup_http_delivery_commit_test.rb` and
   `test/integration/social_signup_missing_flow_test.rb`. Completed registration cancellation is
   refused without changing the actor or Flow; see
   `test/services/sign_up/completed_cancellation_boundary_test.rb`.
@@ -102,12 +103,11 @@ claimed. Follow [independent investigation](integrated-stack.md#independent-inve
   remains an explicit action. See
   [phase history browser coverage](../../e2e/rails/auth-phase-history.spec.ts).
 
-The `com` surface no longer owns a credential ceremony, so it has no Email sign-up phase case and no
-MFA admission case after the corporate anonymous-surface change; its former tests were removed with
-the controllers they exercised rather than skipped. APP MFA admission tests also exercise
-contradictory GET/HEAD, missing/malformed/wrong-surface mutation bindings, and terminal replay
-without token issuance. ORG's normal Entra/passkey and emergency paths retain their own contracts;
-APP MFA coverage is not evidence for ORG.
+Only APP and ORG are retained Auth/Visa audiences. Removed COM surfaces have no current credential
+ceremony or acceptance cases. APP MFA admission tests also exercise contradictory GET/HEAD,
+missing/malformed/wrong-surface mutation bindings, and terminal replay without token issuance. ORG's
+normal Entra/passkey and emergency paths retain their own contracts; APP MFA coverage is not
+evidence for ORG.
 
 ## FLOW-3 — Unsafe phase violation and terminal absorption
 

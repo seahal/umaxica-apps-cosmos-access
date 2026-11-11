@@ -7,6 +7,8 @@ require "test_helper"
 # checks live in each model's own test (test/models/<model>_test.rb) through
 # assert_public_id_fixed_length; this guard keeps a newly added PublicId model from skipping it.
 class PublicIdFixedLengthContractTest < ActiveSupport::TestCase
+  include PublicIdFixedLengthAssertions
+
   APP_ROOT = Rails.root.join("app").to_s
 
   Rails.application.eager_load!
@@ -25,13 +27,9 @@ class PublicIdFixedLengthContractTest < ActiveSupport::TestCase
     assert_equal PublicIdFixedLengthAssertions::PUBLIC_ID_LENGTH, PublicId.generate.length
   end
 
-  test "every PublicId model's own test asserts the fixed public_id length" do
-    missing =
-      self.class.public_id_models.reject do |model|
-        path = Rails.root.join("test/models/#{model.name.underscore}_test.rb")
-        path.exist? && path.read.include?("assert_public_id_fixed_length(::#{model.name})")
-      end
-
-    assert_empty missing.map(&:name), "Add assert_public_id_fixed_length to these models' tests"
+  test "every remaining PublicId model enforces the fixed public_id length" do
+    self.class.public_id_models.each do |model|
+      assert_public_id_fixed_length(model)
+    end
   end
 end

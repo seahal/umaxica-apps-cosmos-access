@@ -20,6 +20,8 @@ module OidcAuthorizationResultPost
     when "continue" then continue_authorization_from_post!
     else raise ArgumentError, "unsupported authorization POST purpose"
     end
+  rescue OidcAuthorizeRequestResolver::DuplicateParameters => e
+    redirect_authorization_request_error!(e)
   rescue BaseAuthAdmissionCoordinator::Denied, ActiveRecord::RecordNotFound,
          OidcClientRegistry::ClientNotFound, OidcClientRegistry::InvalidRedirectUri,
          FlowInvalidTransition, ActiveSupport::MessageVerifier::InvalidSignature, ArgumentError

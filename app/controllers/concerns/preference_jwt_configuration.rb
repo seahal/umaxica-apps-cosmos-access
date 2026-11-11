@@ -15,19 +15,7 @@ module PreferenceJwtConfiguration
     SecurityJwtRfc9068AccessTokenProfile::CLOCK_SKEW_LEEWAY_SECONDS
   end
 
-  def self.com_issuer
-    ENV.fetch("PREFERENCE_COM_JWT_REVOKED_KIDS")
-    record = JitSecurityJwtRegistry.issuer("preference_com")
-    unless record.issuer.present? && record.audiences == ["com"] && record.current_kid.present?
-      raise JitSecurityJwtRegistry::ConfigurationError, "com preference JWT issuer, audience or active key is missing"
-    end
-
-    record.issuer
-  end
-
   def self.issuer_for(issuer_id)
-    return com_issuer if issuer_id == "preference_com"
-
     expected_audience =
       case issuer_id
       when "preference_app" then "app"
@@ -46,7 +34,6 @@ module PreferenceJwtConfiguration
   def self.validate!
     issuer_for("preference_app")
     issuer_for("preference_org")
-    com_issuer
     true
   end
 
@@ -66,6 +53,6 @@ module PreferenceJwtConfiguration
     JitSecurityJwtRegistry.parse_header(token)
   end
 
-  public_class_method :active_kid, :leeway_seconds, :com_issuer, :issuer_for, :validate!,
+  public_class_method :active_kid, :leeway_seconds, :issuer_for, :validate!,
                       :private_key_for_active, :private_key_for, :public_key_for, :parse_header
 end

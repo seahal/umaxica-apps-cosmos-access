@@ -20,19 +20,5 @@ class StepUpAuditOutboxSourcesRegistry
       OperatorStepUpAuditOutboxDeliveryState::PENDING,
       OperatorStepUpAuditOutboxDeliveryState::DELIVERED,
     ].freeze,
-    "rp_base_app" => [
-      RpStepUpAuditOutbox,
-      "APP",
-      RpStepUpAuditOutboxAttempt,
-      RpStepUpAuditOutboxDeliveryState::PENDING,
-      RpStepUpAuditOutboxDeliveryState::DELIVERED,
-    ].freeze,
-    "rp_base_org" => [
-      RpBaseOrgStepUpAuditOutbox,
-      "ORG",
-      RpBaseOrgStepUpAuditOutboxAttempt,
-      RpBaseOrgStepUpAuditOutboxDeliveryState::PENDING,
-      RpBaseOrgStepUpAuditOutboxDeliveryState::DELIVERED,
-    ].freeze,
   }.freeze
 end

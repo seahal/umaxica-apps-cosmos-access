@@ -216,7 +216,7 @@ module Health
     end
 
     App = Base.new(
-      cache_key: "acme-app",
+      cache_key: "visa-app",
       surface_label: "app",
       record_classes: [
         AppRpRecord,
@@ -227,16 +227,8 @@ module Health
       ],
     )
 
-    Com = Base.new(
-      cache_key: "acme-com",
-      surface_label: "com",
-      record_classes: [
-        ComSettingRecord,
-      ],
-    )
-
     Org = Base.new(
-      cache_key: "acme-org",
+      cache_key: "visa-org",
       surface_label: "org",
       record_classes: [
         OrgRpRecord,
@@ -265,9 +257,6 @@ module Health
       ],
     )
 
-    # The bootstrap resolver has no authoritative store yet. Readiness therefore checks only the
-    # process boundary; a storage check belongs here when a persistence decision is accepted.
-    Guid = Base.new(cache_key: "guid-net", surface_label: "guid", record_classes: [])
   end
 
   # Liveness probe: only confirms the Rails process can respond.

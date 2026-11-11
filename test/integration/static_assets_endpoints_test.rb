@@ -7,57 +7,33 @@ require "test_helper"
 class StaticAssetsEndpointsTest < ActionDispatch::IntegrationTest
   ROBOTS_SURFACES = [
     {
-      host: ENV.fetch("PUBLIC_BASE_CORPORATE_URL", "base.com.localhost"),
-      controller: "base/com/robots",
+      host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
+      controller: "auth/app/robots",
     },
     {
-      host: ENV.fetch("PUBLIC_BASE_STAFF_URL", "base.org.localhost"),
-      controller: "base/org/robots",
+      host: ENV.fetch("PUBLIC_AUTH_STAFF_URL"),
+      controller: "auth/org/robots",
     },
     {
-      host: ENV.fetch("PUBLIC_PALM_SERVICE_URL"),
-      controller: "palm/app/robots",
+      host: ENV.fetch("PUBLIC_VISA_SERVICE_URL"),
+      controller: "visa/app/robots",
+    },
+    {
+      host: ENV.fetch("PUBLIC_VISA_STAFF_URL"),
+      controller: "visa/org/robots",
     },
   ].freeze
 
-  # Every surface that still declares a sitemaps controller belongs here. Core no longer routes
-  # `/robots.txt` or `/sitemap.xml`; those files are an Edge/Next concern on Core hosts.
+  # Auth declares a sitemap controller on both retained realms. Visa and the development tools do
+  # not declare a sitemap controller.
   SITEMAP_SURFACES = [
     {
-      host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL", "auth.app.localhost"),
+      host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
       controller: "auth/app/sitemaps",
     },
     {
-      host: ENV.fetch("PUBLIC_AUTH_STAFF_URL", "auth.org.localhost"),
+      host: ENV.fetch("PUBLIC_AUTH_STAFF_URL"),
       controller: "auth/org/sitemaps",
-    },
-    {
-      host: ENV.fetch("PUBLIC_BASE_SERVICE_URL", "base.app.localhost"),
-      controller: "base/app/sitemaps",
-    },
-    {
-      host: ENV.fetch("PUBLIC_BASE_CORPORATE_URL", "base.com.localhost"),
-      controller: "base/com/sitemaps",
-    },
-    {
-      host: ENV.fetch("PUBLIC_BASE_STAFF_URL", "base.org.localhost"),
-      controller: "base/org/sitemaps",
-    },
-    {
-      host: ENV.fetch("PUBLIC_PALM_SERVICE_URL"),
-      controller: "palm/app/sitemaps",
-    },
-    {
-      host: ENV.fetch("PUBLIC_WARP_SERVICE_URL", "warp.app.localhost"),
-      controller: "warp/app/sitemaps",
-    },
-    {
-      host: ENV.fetch("PUBLIC_WARP_CORPORATE_URL", "warp.com.localhost"),
-      controller: "warp/com/sitemaps",
-    },
-    {
-      host: ENV.fetch("PUBLIC_WARP_STAFF_URL", "warp.org.localhost"),
-      controller: "warp/org/sitemaps",
     },
   ].freeze
 
@@ -92,7 +68,7 @@ class StaticAssetsEndpointsTest < ActionDispatch::IntegrationTest
   end
 
   test "robots and sitemap responses set long cache headers" do
-    host! ENV.fetch("PUBLIC_PALM_SERVICE_URL")
+    host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
 
     get "/sitemap.xml"
 

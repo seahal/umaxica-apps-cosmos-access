@@ -1,20 +1,16 @@
 # Step-Up MFA Status
 
-> **Partially superseded by Identity Authority inversion:** The credential availability vocabulary
-> in this document remains useful only where it does not assign step-up freshness, session, token,
-> or settings authority to `sign/id`. `acme/www` is the Session, Token, Account, Preference,
-> Authorization, and downstream-token Authority. `sign/id` is ceremony-only. Existing sign-side
-> physical tables/models do not imply sign-side authority. Do not use this document to reintroduce
-> sign-side sessions, refresh, preference, dashboard, account lifecycle, token issuance, logout, or
-> step-up freshness.
+> **Pre-reset implementation record:** This document's former Acme/Sign management-page and COM
+> route descriptions are not current endpoints. Auth owns current APP/ORG credential ceremonies;
+> Visa owns local session and OIDC authority. Retained MFA-status models and values are subject to
+> the deferred model/database report, not proof of an active route writer.
 
-This document describes the current step-up gate used by the `app`, `com`, and `org` sign
-configuration surfaces.
+The step-up vocabulary below preserves the former configuration-surface implementation. Current Auth
+APP/ORG ceremonies remain host-scoped, and Visa owns any local session freshness decision.
 
-`/verification` is intentionally shared by Acme and Sign. On Acme, `/verification` is the
-authority-side request, completion, and cancellation gate. On Sign, `/verification` is the
-credential-side ceremony and cancellation surface. Passkey/WebAuthn ceremony belongs to `sign/id`,
-and cancellation closes a pending verification request without granting step-up freshness.
+The previous `/verification` implementation shared authority-side and credential-side routes across
+Acme and Sign. That local RP/management route split is retired. Auth owns retained credential
+ceremonies; a ceremony result does not itself create an external RP session or step-up freshness.
 
 Step-up is the product's current `AAL2` boundary. The broader AAL terminology is defined in
 `docs/security/authentication-assurance-levels.md`.
@@ -46,24 +42,23 @@ The status is recalculated from surface-specific step-up methods:
 | surface | `ACTIVE` when any of these exist                              |
 | ------- | ------------------------------------------------------------- |
 | `app`   | verified user email, active user passkey, or active user TOTP |
-| `com`   | verified visitor email or active visitor passkey              |
 | `org`   | active operator passkey                                       |
 
 When multiple app step-up methods are available, prefer passkey, then TOTP, then email OTP.
 
 ### App TOTP credential lifecycle
 
-TOTP is supported only on the `app` surface. `com` and `org` do not gain TOTP enrollment,
-sign-in, Step-Up, or settings routes through this status policy. The credential lifecycle and
-attempt-binding rules are recorded in `adr/app-totp-credential-lifecycle.md`.
+TOTP is supported only on the APP surface. ORG does not gain TOTP enrollment, sign-in, Step-Up, or
+settings routes through this status policy. The credential lifecycle and attempt-binding rules are
+recorded in `adr/app-totp-credential-lifecycle.md`.
 
 An app TOTP failure belongs to one actor-owned credential. With one active credential the server
-selects it; with two active credentials the actor selects by `public_id`. The browser never sends
-a database-local credential ID, and a failed guess is never applied to every active credential.
-The PostgreSQL counter is consecutive and bounded from 0 through 100. The 100th failure changes
-that credential to terminal `REVOKED`; a later correct code cannot reactivate it. Only `ACTIVE` and
-`INACTIVE` credentials consume one of the two enrollment slots. Revoked rows remain visible in
-app settings so the actor can distinguish `REVOKED` from `ACTIVE`, but no reactivation action is
+selects it; with two active credentials the actor selects by `public_id`. The browser never sends a
+database-local credential ID, and a failed guess is never applied to every active credential. The
+PostgreSQL counter is consecutive and bounded from 0 through 100. The 100th failure changes that
+credential to terminal `REVOKED`; a later correct code cannot reactivate it. Only `ACTIVE` and
+`INACTIVE` credentials consume one of the two enrollment slots. Revoked rows remain visible in app
+settings so the actor can distinguish `REVOKED` from `ACTIVE`, but no reactivation action is
 provided.
 
 Telephone numbers, social identities, and passcodes do not count as step-up methods. Telephone is
@@ -91,7 +86,6 @@ Bootstrap-exempt registration actions are:
 | surface | bootstrap-exempt actions                                    |
 | ------- | ----------------------------------------------------------- |
 | `app`   | email registration, passkey registration, TOTP registration |
-| `com`   | email registration, passkey registration                    |
 | `org`   | passkey registration                                        |
 
 For `org`, email registration is credential management, not bootstrap. The first step-up method is

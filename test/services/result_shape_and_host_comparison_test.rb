@@ -31,7 +31,7 @@ class ResultShapeAndHostComparisonTest < ActiveSupport::TestCase
   # form: a key that resolved to nothing is a caller error rather than a nil that
   # travels on into a token payload.
   test "a refresh result answers by key and refuses a key that resolved to nothing" do
-    result = AcmeRefreshTokenIssuer::Result.new(
+    result = AuthRefreshTokenIssuer::Result.new(
       success: true, token: :token, refresh_token: "raw", previous_token: nil, reason: nil,
     )
 

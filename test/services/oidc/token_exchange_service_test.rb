@@ -916,7 +916,7 @@ class OidcTokenExchangeCoordinatorTest < ActiveSupport::TestCase
     assert_operator access_payload.fetch("iat"), :>, authentication_event_at.to_i
   end
 
-  test "an exchanged Access JWT carries the OP protocol epoch and verifies under the RP public JWKS verifier" do
+  test "an exchanged Access JWT is signed by the OP published key and carries standard claims" do
     code_record = issue_code!
     result =
       with_authenticated_client do
@@ -931,29 +931,24 @@ class OidcTokenExchangeCoordinatorTest < ActiveSupport::TestCase
     assert_predicate result, :success?
     access_token = result.token_response.fetch(:access_token)
     issuer_id = OidcIssuer.jwt_issuer_id_for_client(@client)
-    # The RP sees exactly the public JWKS document the OP publishes for this issuer.
-    published = JitSecurityJwtRegistry.jwks_for(issuer_id).to_json
-    jwks = OidcOpJwksClient.new(
-      jwks_uri: "https://base.example/.well-known/jwks.json",
-      fetcher: -> { published }, clock: -> { Time.current },
+    published_jwks = JitSecurityJwtRegistry.jwks_for(issuer_id)
+    access_header = JitSecurityJwtKeyring.parse_header(access_token)
+    signing_jwk = published_jwks.fetch(:keys).find { |jwk| jwk.fetch("kid") == access_header.fetch("kid") }
+    access_claims, verified_header = JWT.decode(
+      access_token, JitSecurityJwtJwk.import_public_key(signing_jwk), true, { algorithms: ["ES384"] },
     )
-    verify =
-      lambda do
-        OidcOpAccessTokenVerifier.new(
-          access_token:, client_id: "core-app-jp", realm: "app", issuer: OidcIssuer.for_client(@client),
-          audience: @client.aud, jwks_client: jwks,
-        ).call
-      end
 
-    assert_predicate verify.call, :success?
-    assert_not_includes JWT.decode(access_token, nil, false).first.keys, "umx_contract_epoch"
+    assert_equal "at+jwt", verified_header.fetch("typ")
+    assert_equal OidcIssuer.for_client(@client), access_claims.fetch("iss")
+    assert_equal [@client.aud], Array(access_claims.fetch("aud"))
+    assert_not access_claims.key?("umx_contract_epoch")
 
-    id_result = OidcOpIdTokenVerifier.new(
-      id_token: result.token_response.fetch(:id_token), client_id: "core-app-jp", realm: "app",
-      issuer: OidcIssuer.for_client(@client), expected_nonce: code_record.nonce, jwks_client: jwks,
-    ).call
+    id_claims, id_header = decode_op_id_token_for_test(
+      result.token_response.fetch(:id_token), resource_type: "client",
+    )
 
-    assert_predicate id_result, :success?
+    assert_equal "id-token+jwt", id_header.fetch("typ")
+    assert_equal code_record.nonce, id_claims.fetch("nonce")
   end
 
   test "an identity stop that advances the actor epoch cuts off Refresh for authority issued before it" do
@@ -3213,13 +3208,8 @@ class OidcTokenExchangeCoordinatorTest < ActiveSupport::TestCase
 
     assert_predicate result, :success?
 
-    id_token = OidcIdTokenVerifier.call(
-      id_token: result.token_response.fetch(:id_token),
-      client_id: "core-app-jp",
-      resource_type: "client",
-      expected_nonce: "test_nonce",
-      issuer: OidcIssuer.for_client(@client),
-      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(@client),
+    id_token_claims, id_token_header = decode_op_id_token_for_test(
+      result.token_response.fetch(:id_token), resource_type: "client",
     )
     access_token = AuthenticationTokenService.decode(
       result.token_response.fetch(:access_token),
@@ -3230,10 +3220,11 @@ class OidcTokenExchangeCoordinatorTest < ActiveSupport::TestCase
       jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(@client),
     )
 
-    assert_predicate id_token, :success?
-    assert_equal OidcIssuer.for_client(@client), id_token.payload.fetch("iss")
-    assert_equal OidcSubject.for(@user, resource_type: "client"), id_token.payload.fetch("sub")
-    assert_equal ["core-app-jp"], id_token.payload.fetch("aud")
+    assert_equal "id-token+jwt", id_token_header.fetch("typ")
+    assert_equal OidcIssuer.for_client(@client), id_token_claims.fetch("iss")
+    assert_equal OidcSubject.for(@user, resource_type: "client"), id_token_claims.fetch("sub")
+    assert_equal ["core-app-jp"], id_token_claims.fetch("aud")
+    assert_equal "test_nonce", id_token_claims.fetch("nonce")
     assert_equal OidcIssuer.for_client(@client), access_token.fetch("iss")
     assert_equal OidcSubject.for(@user, resource_type: "client"), access_token.fetch("sub")
     assert_equal [@client.aud], Array(access_token.fetch("aud"))

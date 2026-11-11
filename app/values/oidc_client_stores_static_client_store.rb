@@ -38,19 +38,16 @@ module OidcClientStoresStaticClientStore
     },
     "warp-app" => {
       env_key: "PUBLIC_WARP_SERVICE_URL",
-      default_host: "warp.app.localhost",
       resource_type: "client",
       name: "Warp App RP",
     },
     "warp-org" => {
       env_key: "PUBLIC_WARP_STAFF_URL",
-      default_host: "warp.org.localhost",
       resource_type: "operator",
       name: "Warp Org RP",
     },
     "edit-org" => {
       env_key: "PUBLIC_EDIT_STAFF_URL",
-      default_host: "edit.org.localhost",
       resource_type: "operator",
       name: "Edit Org RP",
     },
@@ -60,20 +57,20 @@ module OidcClientStoresStaticClientStore
       name: "Palm App RP",
     },
     "tech-org" => {
-      env_key: %w(PUBLIC_TECH_STAFF_URL PRIVATE_TECH_STAFF_URL),
+      env_key: "PUBLIC_TECH_STAFF_URL",
       resource_type: "operator",
       name: "Tech Org RP",
       required_operator_capability: OperatorCapabilityGrant::TECH_ACCESS,
     },
     "base-app" => {
-      env_key: "BASE_SERVICE_URL",
+      env_key: "PUBLIC_BASE_SERVICE_URL",
       resource_type: "client",
       name: "Base App Self RP",
       jwt_namespace: "BASE_RP_APP_WW",
       step_up_callback_path: AuthBoundaryAuthorityMap.step_up_callback_path_for("base-app-ww"),
     },
     "base-org" => {
-      env_key: "BASE_STAFF_URL",
+      env_key: "PUBLIC_BASE_STAFF_URL",
       resource_type: "operator",
       name: "Base Org Self RP",
       jwt_namespace: "BASE_RP_ORG_WW",
@@ -93,10 +90,10 @@ module OidcClientStoresStaticClientStore
     }
     raise KeyError, "no registered back-channel logout endpoint for #{client_id.inspect}" unless family_realm
 
-    build_redirect_uris(spec.fetch(:env_key), spec[:default_host], path: RP_BACKCHANNEL_LOGOUT_PATH).first
+    build_redirect_uris(spec.fetch(:env_key), path: RP_BACKCHANNEL_LOGOUT_PATH).first
   end
 
-  def face_rp_client(env_key:, resource_type:, aud:, name:, jwt_namespace:, default_host: nil,
+  def face_rp_client(env_key:, resource_type:, aud:, name:, jwt_namespace:,
                      callback_path: AuthBoundaryAuthorityMap::CANONICAL_RP_CALLBACK_PATH,
                      step_up_callback_path: nil,
                      sign_out_path: AuthBoundaryAuthorityMap::CANONICAL_RP_SIGN_OUT_PATH,
@@ -106,11 +103,11 @@ module OidcClientStoresStaticClientStore
     {
       redirect_uris_by_realm: {
         resource_type => callback_paths.flat_map do |path|
-          build_redirect_uris(env_key, default_host, path: path)
+          build_redirect_uris(env_key, path: path)
         end,
       },
       post_logout_redirect_uris: build_post_logout_redirect_uris(
-        env_key, default_host, path: sign_out_path,
+        env_key, path: sign_out_path,
       ),
       aud: aud,
       resource_type: resource_type,
@@ -122,10 +119,10 @@ module OidcClientStoresStaticClientStore
     }
   end
 
-  # default_host is only consulted for env keys boot_host_for does not map; keys it maps resolve
-  # from boot config and must not carry a literal default that can drift from the real host.
-  def build_redirect_uris(env_key, default_host = nil, path: "/oidc/callback")
-    configured_hosts_for(env_key, default_host).map do |host|
+  # These URLs identify external RP callback destinations. They are deliberately not part of
+  # Access's host allowlist or route constraints.
+  def build_redirect_uris(env_key, path: "/oidc/callback")
+    configured_hosts_for(env_key).map do |host|
       protocol = (Rails.env.production? || public_host?(host)) ? "https" : "http"
       port_suffix = (Rails.env.production? || public_host?(host)) ? "" : ":3000"
       validate_registered_redirect_uri!("#{protocol}://#{host}#{port_suffix}#{path}")
@@ -148,9 +145,9 @@ module OidcClientStoresStaticClientStore
     raise ArgumentError, "invalid registered redirect_uri: #{value}"
   end
 
-  def build_post_logout_redirect_uris(env_key, default_host = nil,
+  def build_post_logout_redirect_uris(env_key,
                                       path: AuthBoundaryAuthorityMap::CANONICAL_RP_SIGN_OUT_PATH)
-    configured_hosts_for(env_key, default_host).flat_map do |host|
+    configured_hosts_for(env_key).flat_map do |host|
       protocol = (Rails.env.production? || public_host?(host)) ? "https" : "http"
       port_suffix = (Rails.env.production? || public_host?(host)) ? "" : ":3000"
       RequestContextContract.allowed_regions.map do |region|
@@ -168,39 +165,17 @@ module OidcClientStoresStaticClientStore
     false
   end
 
-  def configured_hosts_for(env_keys, default_host = nil)
-    hosts = []
-    Array(env_keys).each do |env_key|
-      env_host = ENV[env_key]
-      hosts << env_host if env_host.present?
-      hosts << boot_host_for(env_key, default_host)
-    end
+  def configured_hosts_for(env_keys)
+    hosts =
+      Array(env_keys).map do |env_key|
+        env_host = ENV.fetch(env_key)
+        raise ArgumentError, "#{env_key} must be a configured public RP origin" if env_host.blank?
+
+        env_host
+      end
     hosts.map! { |host| normalize_host(host) }
     hosts.uniq!
     hosts
-  end
-
-  def boot_host_for(env_key, default_host = nil)
-    hosts = Rails.configuration.x.boot_config.fetch(:hosts)
-    host =
-      case env_key
-      when "PUBLIC_AUTH_SERVICE_URL", "PRIVATE_AUTH_SERVICE_URL" then hosts.sign_service.to_s
-      when "PUBLIC_AUTH_STAFF_URL", "PRIVATE_AUTH_STAFF_URL" then hosts.sign_staff.to_s
-      when "BASE_SERVICE_URL" then hosts.base_service.to_s
-      when "BASE_STAFF_URL" then hosts.base_staff.to_s
-      when "PUBLIC_WARP_SERVICE_URL" then hosts.warp_service.to_s
-      when "PUBLIC_WARP_STAFF_URL" then hosts.warp_staff.to_s
-      when "PUBLIC_CORE_SERVICE_URL", "CORE_SERVICE_URL" then hosts.core_service.to_s
-      when "PUBLIC_CORE_STAFF_URL", "CORE_STAFF_URL" then hosts.core_staff.to_s
-      when "PUBLIC_PALM_SERVICE_URL" then hosts.palm_service.to_s
-      when "PUBLIC_TECH_STAFF_URL", "PRIVATE_TECH_STAFF_URL" then hosts.tech_staff.to_s
-      else
-        raise KeyError, "No boot host mapping for #{env_key} and no default host given" if default_host.blank?
-
-        default_host
-      end
-
-    normalize_host(host)
   end
 
   def normalize_host(host)
@@ -212,6 +187,6 @@ module OidcClientStoresStaticClientStore
 
   private_class_method :first_party_browser_rp_clients, :face_rp_client, :build_redirect_uris,
                        :build_post_logout_redirect_uris,
-                       :public_host?, :configured_hosts_for, :boot_host_for,
+                       :public_host?, :configured_hosts_for,
                        :normalize_host, :validate_registered_redirect_uri!
 end

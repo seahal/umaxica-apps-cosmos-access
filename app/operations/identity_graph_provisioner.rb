@@ -12,7 +12,7 @@ class IdentityGraphProvisioner
   end
 
   def call!
-    BaseSelectorBootstrapAuthority.call(surface: surface, principal: principal)
+    IdentityGraphBootstrapAuthority.call(surface: surface, principal: principal)
   rescue StandardError => e
     Rails.logger.error(
       JitLogEvent.format(

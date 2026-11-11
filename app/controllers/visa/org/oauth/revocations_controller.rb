@@ -9,7 +9,7 @@ module Visa
         include ::RateLimit
         include ::FqdnAvailabilityGate
         include ::DefaultNoStore
-        include BaseOauthEndpoint
+        include OidcOpEndpoint
         include BaseOauthRevocationEndpoint
 
         private :respond_to

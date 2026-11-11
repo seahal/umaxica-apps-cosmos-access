@@ -37,7 +37,7 @@ class OpOutboxDispatchJobTest < ActiveSupport::TestCase
     assert_predicate @event, :final?
   end
 
-  test "the delivered Logout Token verifies under the OP published JWKS for exactly that client and sid" do
+  test "the delivered Logout Token is signed by the OP published key for exactly that client and sid" do
     token = nil
     OidcBackchannelLogoutClient.stub(
       :call, ->(endpoint:, logout_token:) {
@@ -47,25 +47,32 @@ class OpOutboxDispatchJobTest < ActiveSupport::TestCase
     ) do
       OpOutboxDispatchJob.perform_now
     end
-    published = JitSecurityJwtRegistry.jwks_for(OidcIssuer.jwt_issuer_id_for_resource_type("client")).to_json
-    result = OidcOpLogoutTokenVerifier.new(
-      logout_token: token, client_id: "core-app-jp", issuer: OidcIssuer.for_resource_type("client"),
-      jwks_client: OidcOpJwksClient.new(
-        jwks_uri: "https://base.example/jwks", fetcher: -> { published },
-        clock: -> { Time.current },
-      ),
-    ).call
+    issuer_id = OidcIssuer.jwt_issuer_id_for_resource_type("client")
+    published_jwks = JitSecurityJwtRegistry.jwks_for(issuer_id)
+    header = JitSecurityJwtKeyring.parse_header(token)
+    signing_jwk = published_jwks.fetch(:keys).find { |jwk| jwk.fetch("kid") == header.fetch("kid") }
+    claims, verified_header = JWT.decode(
+      token, JitSecurityJwtJwk.import_public_key(signing_jwk), true, { algorithms: ["ES384"] },
+    )
 
-    assert_predicate result, :success?
+    assert_equal "logout+jwt", verified_header.fetch("typ")
+    assert_equal OidcIssuer.for_resource_type("client"), claims.fetch("iss")
+    assert_equal ["core-app-jp"], claims.fetch("aud")
+    assert_equal @grant.public_id, claims.fetch("sid")
+    assert_equal({ OpLogoutTokenIssuer::EVENT => {} }, claims.fetch("events"))
+    assert_not claims.key?("nonce")
     id_token = OidcIdTokenIssuer.call(
       resource: clients(:one), client: OidcClientRegistry.find!("core-app-jp"), nonce: "nonce",
       sid: @grant.public_id,
     )
-    id_claims, = JWT.decode(id_token, nil, false)
+    id_claims, id_header = decode_op_id_token_for_test(id_token, resource_type: "client")
+
+    assert_equal "id-token+jwt", id_header.fetch("typ")
+    assert_equal "nonce", id_claims.fetch("nonce")
 
     assert_equal @grant.public_id, id_claims.fetch("sid")
-    assert_equal id_claims.fetch("sid"), result.payload.fetch("sid")
-    assert_equal @event.sid, result.payload.fetch("sid")
+    assert_equal id_claims.fetch("sid"), claims.fetch("sid")
+    assert_equal @event.sid, claims.fetch("sid")
   end
 
   test "BX-4: redirect range, 400 and endpoint misconfiguration are refused; transient answers retry" do

@@ -1,7 +1,5 @@
 // The invisible Turnstile token the fetch-driven passkey ceremonies solve before they call the
-// server. It is the React port of `ensureTurnstileToken`/`requestTurnstileToken` from the Stimulus
-// passkey controllers: same `size: "invisible"` widget, same site key, same rejection on error or
-// expiry. The server still verifies the token, so nothing about the guard moved to the client.
+// server. The server verifies the token, so the client never decides whether the challenge passed.
 //
 // `src/features/turnstile/TurnstileWidget.tsx` covers the two widget shapes that sit next to a
 // form; this covers the third shape, the one that solves a token on demand inside a JSON ceremony.

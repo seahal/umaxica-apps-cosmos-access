@@ -25,10 +25,15 @@ class RealmIdentifierHmacRotationTest < ActiveSupport::TestCase
         record = model.create!(owner_attributes.merge(identifier_attributes).merge(confirm_policy: true))
         record.finalize_binding!
         facts = record.attributes
-        original_key = ENV.fetch(key_name)
-        ENV[key_name] = SecureRandom.hex(32)
+        credentials = Rails.application.credentials
+        configured_keys =
+          %i(
+            APP_EMAIL_ADDRESS_HMAC_KEY ORG_EMAIL_ADDRESS_HMAC_KEY
+            APP_TELEPHONE_NUMBER_HMAC_KEY ORG_TELEPHONE_NUMBER_HMAC_KEY
+          ).index_with { |name| credentials.option(name) }
+        configured_keys[key_name.to_sym] = SecureRandom.hex(32)
         result =
-          Rails.app.creds.stub(:option, nil) do
+          credentials.stub(:option, ->(name) { configured_keys.fetch(name) }) do
             IdentifierHmacEmergencyRotation.new(
               realm: realm, channel: channel, maintenance_connection: model.lease_connection.raw_connection,
             ).call
@@ -54,8 +59,6 @@ class RealmIdentifierHmacRotationTest < ActiveSupport::TestCase
         assert_withheld {
           audit.attributes.keys.sort == %w(id operation_ref channel record_id actor_role occurred_at).sort
         }
-      ensure
-        ENV[key_name] = original_key if original_key
       end
     end
   end

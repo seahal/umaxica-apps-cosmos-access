@@ -25,19 +25,6 @@ class CommonRedirectTest < ActiveSupport::TestCase
     assert_not controller.public_methods.include?(:safe_redirect_back_or_to)
   end
 
-  test "allowed_hosts is public on including controller" do
-    test_controller =
-      Class.new(ApplicationController) do
-        include CommonRedirect
-      end
-
-    controller = test_controller.new
-
-    # allowed_hosts should remain public (for diagnostics/auditing)
-    assert_respond_to controller, :allowed_hosts
-    assert_not controller.private_methods.include?(:allowed_hosts)
-  end
-
   test "normalize_host returns nil for blank input" do
     assert_nil CommonRedirect.normalize_host(nil)
     assert_nil CommonRedirect.normalize_host("")

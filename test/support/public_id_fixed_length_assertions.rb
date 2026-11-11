@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 # Contract for NanoID public_id columns (adr/identifier-contract.md): storage and validation are
-# fixed at the 21-character generation length. Each PublicId model's own test calls
-# assert_public_id_fixed_length, so the contract is visible next to the model it describes.
+# fixed at the 21-character generation length. Model-specific tests and the repository-wide
+# inventory guard call assert_public_id_fixed_length so the contract remains checked during cleanup.
 module PublicIdFixedLengthAssertions
   PUBLIC_ID_LENGTH = 21
   # One below, at and one above the fixed length; only the exact length is accepted.

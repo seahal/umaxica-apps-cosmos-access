@@ -27,7 +27,6 @@ module Auth
       include ::SignInPathRefusal
       include ::SignEntryClassification
       include ::SignEntrySentryEnforcement
-      include SurfaceRouteAliasHelper
       include ::ActorSupport
       include ::Finisher
 
@@ -55,7 +54,6 @@ module Auth
       helper_method :current_actor, :current_account, :current_session_public_id,
                     :signed_pt_param, :current_operator, :logged_in?, :active_operator?, :logged_in_operator?,
                     :current_region_identifier
-      helper_method :acme_authority_host, :base_rp_host
 
       # from accessing routes other than /in/session
       # NOTE: Order matters (dependencies rely on this sequence)
@@ -95,10 +93,6 @@ module Auth
       before_action :set_current_observability
       prepend_around_action :with_actor_lifecycle
 
-      def acme_authority_host
-        oidc_acme_host
-      end
-
       private
 
       def require_authenticity_token_for_unsafe_request!
@@ -113,10 +107,9 @@ module Auth
       def sign_in_phase_binding_surface = "org"
 
       def verification_setup_redirect_path(pt: nil, scope: nil)
-        base_org_verification_setup_url(
-          ri: params[:ri], pt: pt || encoded_step_up_pt, scope: scope,
-          host: ENV.fetch("PUBLIC_BASE_STAFF_URL"), protocol: "https",
-        )
+        _ = pt
+        _ = scope
+        raise ActionController::BadRequest, "No relying-party verification setup return is available"
       end
 
       def auth_credential_ceremony? = true
@@ -132,12 +125,7 @@ module Auth
       def after_login_path
         return oidc_authorization_after_login_path if oidc_authorization_login_challenge.present?
 
-        # The Local completion is removed (D-60); without an OIDC login challenge the browser returns
-        # to its surface's Base RP entry.
-        base_org_sign_show_url(
-          ri: current_region_identifier, host: Rails.configuration.x.boot_config.fetch(:hosts).base_staff.host,
-          protocol: "https",
-        )
+        raise ActionController::BadRequest, "No OIDC authorization return is available"
       end
 
       def after_login_allows_other_host?
@@ -152,20 +140,8 @@ module Auth
         ENV.fetch("PRIVATE_AUTH_STAFF_URL")
       end
 
-      # A protected Auth page hands sign-in off to the Base neutral /sign entry, whose POST issues the
-      # admission back into Auth. The Auth origin's own /sign/in is never the target: the Jump
-      # gateway refuses an internal rt whose destination origin equals its issuer
-      # (adr/secure-jump-link-redirector.md). The Base origin comes from the boot host registry.
       def sign_in_url_with_pt(_return_to)
-        base_org_sign_show_url(
-          ri: params[:ri],
-          host: Rails.configuration.x.boot_config.fetch(:hosts).base_staff.host,
-          protocol: "https",
-        )
-      end
-
-      def base_rp_host
-        ENV.fetch("PUBLIC_BASE_STAFF_URL")
+        raise ActionController::BadRequest, "No relying-party sign-in return is available"
       end
 
       def visa_authority_host

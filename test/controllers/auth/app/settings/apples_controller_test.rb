@@ -9,9 +9,9 @@ module Auth::App::Settings
     fixtures :clients, :client_statuses
 
     setup do
-      host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL", "auth.app.localhost")
+      host! "auth.app.localhost"
       @user = clients(:one)
-      @headers = as_user_headers(@user, host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL", "auth.app.localhost"))
+      @headers = as_user_headers(@user, host: "auth.app.localhost")
     end
 
     test "show is read only" do
@@ -19,7 +19,7 @@ module Auth::App::Settings
 
       assert_response :success
       assert_equal "auth/app/settings/apples/show", inertia_component
-      assert_equal auth_app_settings_path(ri: "jp"), inertia_props.fetch("back_link").fetch("href")
+      assert_equal auth_app_sign_in_path(ri: "jp"), inertia_props.fetch("back_link").fetch("href")
       assert_equal(
         edit_auth_app_settings_apple_path(ri: "jp"),
         inertia_props.fetch("edit_link").fetch("href"),
@@ -28,10 +28,11 @@ module Auth::App::Settings
       assert_not inertia_props.key?("connect")
     end
 
-    test "show redirects when not logged in" do
+    test "show rejects unauthenticated access without an OIDC return" do
       get auth_app_settings_apple_url(ri: "jp")
 
-      assert_response :redirect
+      assert_response :bad_request
+      assert_nil response.headers["Location"]
     end
 
     test "edit redirects to verification when step-up is missing" do
@@ -41,11 +42,9 @@ module Auth::App::Settings
       assert_match %r{/verification}, response.location
     end
 
-    # Pins the current state of social credential management, which is outside the Step-Up
-    # migration: the edit page still sends the browser to the Auth verification entry, and that
-    # entry starts a ceremony only from a Base admission. Moving social management behind Base
-    # admission is a separate workstream; this test changes with it.
-    test "apple edit redirects to the Auth verification entry, which refuses to start without Base admission" do
+    # An Auth verification entry without an OIDC authorization return cannot establish a local
+    # sign-in continuation.
+    test "apple edit redirects to the Auth verification entry, which refuses an unbound request" do
       get edit_auth_app_settings_apple_url(ri: "jp"), headers: @headers
 
       assert_response :redirect
@@ -115,7 +114,7 @@ module Auth::App::Settings
 
     test "settings route uses create and destroy" do
       route = Rails.application.routes.recognize_path(
-        "http://#{ENV.fetch("PUBLIC_AUTH_SERVICE_URL", "auth.app.localhost")}/settings/apple",
+        "http://#{"auth.app.localhost"}/settings/apple",
         method: :post,
       )
 
@@ -123,7 +122,7 @@ module Auth::App::Settings
       assert_equal "create", route[:action]
 
       route = Rails.application.routes.recognize_path(
-        "http://#{ENV.fetch("PUBLIC_AUTH_SERVICE_URL", "auth.app.localhost")}/settings/apple",
+        "http://#{"auth.app.localhost"}/settings/apple",
         method: :delete,
       )
 
@@ -132,7 +131,7 @@ module Auth::App::Settings
 
       assert_raises(ActionController::RoutingError) do
         Rails.application.routes.recognize_path(
-          "http://#{ENV.fetch("PUBLIC_AUTH_SERVICE_URL", "auth.app.localhost")}/settings/apple",
+          "http://#{"auth.app.localhost"}/settings/apple",
           method: :patch,
         )
       end
@@ -331,7 +330,7 @@ class Auth::App::Settings::ApplesControllerTest
   end
 
   def seed_social_auth_session(provider:, intent: "login", user: nil, entry: nil, ri: "jp", rt: nil, referer: nil)
-    host = configured_host(:sign_service)
+    host = configured_host(:auth_service)
     host!(host) if respond_to?(:host!)
     normalized_provider = SocialIdentifiable.normalize_provider(provider)
     continue_path =

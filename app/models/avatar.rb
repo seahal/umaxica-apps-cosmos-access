@@ -43,7 +43,6 @@
 class Avatar < AvatarRecord
   include Retainable
   include PublicId
-  include AvatarImageUploader::Attachment[:image]
 
   belongs_to :capability, class_name: "AvatarCapability"
   belongs_to :active_handle, class_name: "Handle"

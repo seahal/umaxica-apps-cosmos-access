@@ -20,7 +20,7 @@
 # state behind a single session entry so the contract is explicit
 # and consumers cannot accidentally read a stale half.
 class SignAppInEmailAuthenticationState
-  SESSION_KEY = :sign_app_in_email_authentication
+  SESSION_KEY = :auth_app_in_email_authentication
 
   def self.load(session)
     raw = session[SESSION_KEY]

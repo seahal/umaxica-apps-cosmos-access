@@ -122,13 +122,9 @@ module Auth
       def ceremony_binding_confirmation_url(binding)
         query = { binding_ref: binding.confirmation_ref, ri: params[:ri], lx: normalized_locale(params[:lx]) }.compact
         case binding.purpose
-        when *AuthAdmissionBinding::PARENT_PURPOSES.fetch(:authorization_transaction)
+        when *AuthAdmissionBinding::PARENT_PURPOSES.values.flatten
           visa_org_ceremony_binding_confirmation_url(
             **query, host: visa_authority_host, protocol: "https",
-          )
-        when *AuthAdmissionBinding::PARENT_PURPOSES.fetch(:step_up_ceremony_transaction)
-          base_org_ceremony_binding_confirmation_url(
-            **query, host: base_rp_host, protocol: "https",
           )
         else
           raise ArgumentError, "unsupported ceremony binding purpose"

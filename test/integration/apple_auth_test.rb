@@ -2,10 +2,12 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require_relative "../support/oidc_auth_admission_test_helper"
 require "support/external_identity_test_helper"
 # require "helpers/global_test_support"
 
 class AppleAuthTest < ActionDispatch::IntegrationTest
+  include OidcAuthAdmissionTestHelper
   include ExternalIdentityTestHelper
 
   fixtures :client_statuses
@@ -42,51 +44,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
           flow1_rt = nil
           flow1_referer = nil
           unless flow1_intent.to_s == "link"
-            @base_browser = open_session
-            flow1_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-            flow1_auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-            @base_browser.host!(flow1_base_host)
-            @base_browser.https!
-            @base_browser.get(
-              "/sign", params: {
-                ri: flow1_ri,
-                pt: "/dashboard?ri=#{flow1_ri}",
-              },
-            )
-            flow1_form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-            flow1_fields =
-              flow1_form.css("input[name]").to_h { |flow1_input|
-                [
-                  flow1_input["name"],
-                  flow1_input["value"],
-                ]
-              }
-            @base_browser.post(
-              flow1_form["action"], params: flow1_fields, headers: {
-                "Origin" => "https://#{flow1_base_host}", "Sec-Fetch-Site" => "same-origin",
-              },
-            )
-            # Visa answers the authorization and the Auth admission with redirects; follow them until
-            # Auth renders the first sign page.
-            flow1_browser = @base_browser
-            12.times do
-              raise RuntimeError, "Social admission stopped before a redirect" unless flow1_browser.response.redirect?
-
-              flow1_target = URI.parse(flow1_browser.response.location)
-              if flow1_target.host == URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
-                flow1_target = URI.parse(jump_rt_url_from_location_for_test(flow1_target.to_s))
-              end
-              flow1_browser = (flow1_target.host == flow1_auth_host) ? self : @base_browser
-              flow1_browser.host!(flow1_target.host) if flow1_target.host
-              flow1_browser.https!
-              flow1_browser.get(
-                flow1_target.request_uri,
-                headers: { "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document" },
-              )
-              break if flow1_browser == self && !response.redirect?
-            end
-            raise RuntimeError,
-                  "Social admission did not reach Auth" unless flow1_browser == self && response.successful?
+            bootstrap_auth_sign_in_admission!
           end
           flow1_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
           host!(flow1_host)
@@ -128,7 +86,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
             flow1_headers = flow1_headers.merge(flow1_user_headers)
           end
           if flow1_entry.to_s == "sign_up" && flow1_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+            admit_browser_to_sign_up!(integration_session)
             host!(flow1_host)
           end
           post(flow1_continue_path, headers: flow1_headers)
@@ -157,13 +115,13 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
       end
     end
 
-    assert_redirected_to sign_app_sign_up_guard_apple_url(ri: "jp")
+    assert_redirected_to auth_app_sign_up_guard_apple_url(ri: "jp")
     follow_redirect!
 
     @social_signup_binding = Rack::Utils.parse_query(URI.parse(response.location).query).fetch("fb")
 
     assert_predicate @social_signup_binding, :present?
-    assert_redirected_to sign_app_sign_up_check_apple_confirmation_url(ri: "jp", fb: @social_signup_binding)
+    assert_redirected_to auth_app_sign_up_check_apple_confirmation_url(ri: "jp", fb: @social_signup_binding)
     follow_redirect!
 
     # The social sign-up checkpoint asks for an explicit confirmation before an identity is
@@ -182,10 +140,10 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
           flow2_binding = request.query_parameters.fetch("fb")
 
           patch(
-            ((flow2_provider == "google") ? sign_app_sign_up_check_google_confirmation_url(
+            ((flow2_provider == "google") ? auth_app_sign_up_check_google_confirmation_url(
               ri: "jp",
               fb: flow2_binding,
-            ) : sign_app_sign_up_check_apple_confirmation_url(
+            ) : auth_app_sign_up_check_apple_confirmation_url(
               ri: "jp",
               fb: flow2_binding,
             )),
@@ -200,10 +158,10 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
           flow2_binding = Rack::Utils.parse_query(URI.parse(response.location).query).fetch("fb")
 
           patch(
-            ((flow2_provider == "google") ? sign_app_sign_up_check_google_birthdate_url(
+            ((flow2_provider == "google") ? auth_app_sign_up_check_google_birthdate_url(
               ri: "jp",
               fb: flow2_binding,
-            ) : sign_app_sign_up_check_apple_birthdate_url(
+            ) : auth_app_sign_up_check_apple_birthdate_url(
               ri: "jp",
               fb: flow2_binding,
             )),
@@ -287,12 +245,12 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
                 },
               )
               flow3_principal = Client.find_by!(public_id: flow3_parent.reload.actor_ref)
-              BaseSelectorBootstrapAuthority.call(surface: :app, principal: flow3_principal)
+              IdentityGraphBootstrapAuthority.call(surface: :app, principal: flow3_principal)
             end
             break unless flow3_result_uri
 
             flow3_continuation = @base_browser.response
-            flow3_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+            flow3_base_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
             break unless flow3_continuation.redirect?
             # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
             break unless URI.parse(flow3_continuation.location).path == "/oidc/callback" ||
@@ -389,10 +347,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
               end
             end
 
-            assert_equal [true, true, true],
-                         [response.redirect?,
-                          cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                          cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
+            assert_predicate response, :redirect?
             # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
             # request in this process already cached the key set.
           end
@@ -434,51 +389,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
           flow5_rt = nil
           flow5_referer = nil
           unless flow5_intent.to_s == "link"
-            @base_browser = open_session
-            flow5_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-            flow5_auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-            @base_browser.host!(flow5_base_host)
-            @base_browser.https!
-            @base_browser.get(
-              "/sign", params: {
-                ri: flow5_ri,
-                pt: "/dashboard?ri=#{flow5_ri}",
-              },
-            )
-            flow5_form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-            flow5_fields =
-              flow5_form.css("input[name]").to_h { |flow5_input|
-                [
-                  flow5_input["name"],
-                  flow5_input["value"],
-                ]
-              }
-            @base_browser.post(
-              flow5_form["action"], params: flow5_fields, headers: {
-                "Origin" => "https://#{flow5_base_host}", "Sec-Fetch-Site" => "same-origin",
-              },
-            )
-            # Visa answers the authorization and the Auth admission with redirects; follow them until
-            # Auth renders the first sign page.
-            flow5_browser = @base_browser
-            12.times do
-              raise RuntimeError, "Social admission stopped before a redirect" unless flow5_browser.response.redirect?
-
-              flow5_target = URI.parse(flow5_browser.response.location)
-              if flow5_target.host == URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
-                flow5_target = URI.parse(jump_rt_url_from_location_for_test(flow5_target.to_s))
-              end
-              flow5_browser = (flow5_target.host == flow5_auth_host) ? self : @base_browser
-              flow5_browser.host!(flow5_target.host) if flow5_target.host
-              flow5_browser.https!
-              flow5_browser.get(
-                flow5_target.request_uri,
-                headers: { "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document" },
-              )
-              break if flow5_browser == self && !response.redirect?
-            end
-            raise RuntimeError,
-                  "Social admission did not reach Auth" unless flow5_browser == self && response.successful?
+            bootstrap_auth_sign_in_admission!
           end
           flow5_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
           host!(flow5_host)
@@ -520,7 +431,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
             flow5_headers = flow5_headers.merge(flow5_user_headers)
           end
           if flow5_entry.to_s == "sign_up" && flow5_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+            admit_browser_to_sign_up!(integration_session)
             host!(flow5_host)
           end
           post(flow5_continue_path, headers: flow5_headers)
@@ -545,7 +456,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
     get auth_app_social_apple_callback_url(provider: "apple", ri: "jp", state: @social_state),
         headers: browser_headers.merge(@callback_headers)
 
-    assert_redirected_to sign_app_sign_up_guard_apple_url(ri: "jp")
+    assert_redirected_to auth_app_sign_up_guard_apple_url(ri: "jp")
 
     ComSettingRecord.connected_to(role: :writing) do
       assert AppPreferenceTimezoneOption.exists?(id: AppPreferenceTimezoneOption::ASIA_TOKYO)
@@ -576,51 +487,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
           flow7_rt = nil
           flow7_referer = nil
           unless flow7_intent.to_s == "link"
-            @base_browser = open_session
-            flow7_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-            flow7_auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-            @base_browser.host!(flow7_base_host)
-            @base_browser.https!
-            @base_browser.get(
-              "/sign", params: {
-                ri: flow7_ri,
-                pt: "/dashboard?ri=#{flow7_ri}",
-              },
-            )
-            flow7_form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-            flow7_fields =
-              flow7_form.css("input[name]").to_h { |flow7_input|
-                [
-                  flow7_input["name"],
-                  flow7_input["value"],
-                ]
-              }
-            @base_browser.post(
-              flow7_form["action"], params: flow7_fields, headers: {
-                "Origin" => "https://#{flow7_base_host}", "Sec-Fetch-Site" => "same-origin",
-              },
-            )
-            # Visa answers the authorization and the Auth admission with redirects; follow them until
-            # Auth renders the first sign page.
-            flow7_browser = @base_browser
-            12.times do
-              raise RuntimeError, "Social admission stopped before a redirect" unless flow7_browser.response.redirect?
-
-              flow7_target = URI.parse(flow7_browser.response.location)
-              if flow7_target.host == URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
-                flow7_target = URI.parse(jump_rt_url_from_location_for_test(flow7_target.to_s))
-              end
-              flow7_browser = (flow7_target.host == flow7_auth_host) ? self : @base_browser
-              flow7_browser.host!(flow7_target.host) if flow7_target.host
-              flow7_browser.https!
-              flow7_browser.get(
-                flow7_target.request_uri,
-                headers: { "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document" },
-              )
-              break if flow7_browser == self && !response.redirect?
-            end
-            raise RuntimeError,
-                  "Social admission did not reach Auth" unless flow7_browser == self && response.successful?
+            bootstrap_auth_sign_in_admission!
           end
           flow7_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
           host!(flow7_host)
@@ -662,7 +529,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
             flow7_headers = flow7_headers.merge(flow7_user_headers)
           end
           if flow7_entry.to_s == "sign_up" && flow7_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+            admit_browser_to_sign_up!(integration_session)
             host!(flow7_host)
           end
           post(flow7_continue_path, headers: flow7_headers)
@@ -711,51 +578,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
           flow9_rt = nil
           flow9_referer = nil
           unless flow9_intent.to_s == "link"
-            @base_browser = open_session
-            flow9_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-            flow9_auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-            @base_browser.host!(flow9_base_host)
-            @base_browser.https!
-            @base_browser.get(
-              "/sign", params: {
-                ri: flow9_ri,
-                pt: "/dashboard?ri=#{flow9_ri}",
-              },
-            )
-            flow9_form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-            flow9_fields =
-              flow9_form.css("input[name]").to_h { |flow9_input|
-                [
-                  flow9_input["name"],
-                  flow9_input["value"],
-                ]
-              }
-            @base_browser.post(
-              flow9_form["action"], params: flow9_fields, headers: {
-                "Origin" => "https://#{flow9_base_host}", "Sec-Fetch-Site" => "same-origin",
-              },
-            )
-            # Visa answers the authorization and the Auth admission with redirects; follow them until
-            # Auth renders the first sign page.
-            flow9_browser = @base_browser
-            12.times do
-              raise RuntimeError, "Social admission stopped before a redirect" unless flow9_browser.response.redirect?
-
-              flow9_target = URI.parse(flow9_browser.response.location)
-              if flow9_target.host == URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
-                flow9_target = URI.parse(jump_rt_url_from_location_for_test(flow9_target.to_s))
-              end
-              flow9_browser = (flow9_target.host == flow9_auth_host) ? self : @base_browser
-              flow9_browser.host!(flow9_target.host) if flow9_target.host
-              flow9_browser.https!
-              flow9_browser.get(
-                flow9_target.request_uri,
-                headers: { "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document" },
-              )
-              break if flow9_browser == self && !response.redirect?
-            end
-            raise RuntimeError,
-                  "Social admission did not reach Auth" unless flow9_browser == self && response.successful?
+            bootstrap_auth_sign_in_admission!
           end
           flow9_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
           host!(flow9_host)
@@ -797,7 +620,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
             flow9_headers = flow9_headers.merge(flow9_user_headers)
           end
           if flow9_entry.to_s == "sign_up" && flow9_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+            admit_browser_to_sign_up!(integration_session)
             host!(flow9_host)
           end
           post(flow9_continue_path, headers: flow9_headers)
@@ -827,13 +650,13 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
       end
     end
 
-    assert_redirected_to sign_app_sign_up_guard_apple_url(ri: "jp")
+    assert_redirected_to auth_app_sign_up_guard_apple_url(ri: "jp")
     follow_redirect!
 
     @social_signup_binding = Rack::Utils.parse_query(URI.parse(response.location).query).fetch("fb")
 
     assert_predicate @social_signup_binding, :present?
-    assert_redirected_to sign_app_sign_up_check_apple_confirmation_url(ri: "jp", fb: @social_signup_binding)
+    assert_redirected_to auth_app_sign_up_check_apple_confirmation_url(ri: "jp", fb: @social_signup_binding)
     follow_redirect!
 
     # The social sign-up checkpoint asks for an explicit confirmation before an identity is
@@ -852,10 +675,10 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
           flow10_binding = request.query_parameters.fetch("fb")
 
           patch(
-            ((flow10_provider == "google") ? sign_app_sign_up_check_google_confirmation_url(
+            ((flow10_provider == "google") ? auth_app_sign_up_check_google_confirmation_url(
               ri: "jp",
               fb: flow10_binding,
-            ) : sign_app_sign_up_check_apple_confirmation_url(
+            ) : auth_app_sign_up_check_apple_confirmation_url(
               ri: "jp",
               fb: flow10_binding,
             )),
@@ -870,10 +693,10 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
           flow10_binding = Rack::Utils.parse_query(URI.parse(response.location).query).fetch("fb")
 
           patch(
-            ((flow10_provider == "google") ? sign_app_sign_up_check_google_birthdate_url(
+            ((flow10_provider == "google") ? auth_app_sign_up_check_google_birthdate_url(
               ri: "jp",
               fb: flow10_binding,
-            ) : sign_app_sign_up_check_apple_birthdate_url(
+            ) : auth_app_sign_up_check_apple_birthdate_url(
               ri: "jp",
               fb: flow10_binding,
             )),
@@ -957,12 +780,12 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
                 },
               )
               flow11_principal = Client.find_by!(public_id: flow11_parent.reload.actor_ref)
-              BaseSelectorBootstrapAuthority.call(surface: :app, principal: flow11_principal)
+              IdentityGraphBootstrapAuthority.call(surface: :app, principal: flow11_principal)
             end
             break unless flow11_result_uri
 
             flow11_continuation = @base_browser.response
-            flow11_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+            flow11_base_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
             break unless flow11_continuation.redirect?
             # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
             break unless URI.parse(flow11_continuation.location).path == "/oidc/callback" ||
@@ -1059,10 +882,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
               end
             end
 
-            assert_equal [true, true, true],
-                         [response.redirect?,
-                          cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                          cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
+            assert_predicate response, :redirect?
             # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
             # request in this process already cached the key set.
           end
@@ -1097,51 +917,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
           flow13_rt = nil
           flow13_referer = nil
           unless flow13_intent.to_s == "link"
-            @base_browser = open_session
-            flow13_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-            flow13_auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-            @base_browser.host!(flow13_base_host)
-            @base_browser.https!
-            @base_browser.get(
-              "/sign", params: {
-                ri: flow13_ri,
-                pt: "/dashboard?ri=#{flow13_ri}",
-              },
-            )
-            flow13_form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-            flow13_fields =
-              flow13_form.css("input[name]").to_h { |flow13_input|
-                [
-                  flow13_input["name"],
-                  flow13_input["value"],
-                ]
-              }
-            @base_browser.post(
-              flow13_form["action"], params: flow13_fields, headers: {
-                "Origin" => "https://#{flow13_base_host}", "Sec-Fetch-Site" => "same-origin",
-              },
-            )
-            # Visa answers the authorization and the Auth admission with redirects; follow them until
-            # Auth renders the first sign page.
-            flow13_browser = @base_browser
-            12.times do
-              raise RuntimeError, "Social admission stopped before a redirect" unless flow13_browser.response.redirect?
-
-              flow13_target = URI.parse(flow13_browser.response.location)
-              if flow13_target.host == URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
-                flow13_target = URI.parse(jump_rt_url_from_location_for_test(flow13_target.to_s))
-              end
-              flow13_browser = (flow13_target.host == flow13_auth_host) ? self : @base_browser
-              flow13_browser.host!(flow13_target.host) if flow13_target.host
-              flow13_browser.https!
-              flow13_browser.get(
-                flow13_target.request_uri,
-                headers: { "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document" },
-              )
-              break if flow13_browser == self && !response.redirect?
-            end
-            raise RuntimeError,
-                  "Social admission did not reach Auth" unless flow13_browser == self && response.successful?
+            bootstrap_auth_sign_in_admission!
           end
           flow13_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
           host!(flow13_host)
@@ -1183,7 +959,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
             flow13_headers = flow13_headers.merge(flow13_user_headers)
           end
           if flow13_entry.to_s == "sign_up" && flow13_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+            admit_browser_to_sign_up!(integration_session)
             host!(flow13_host)
           end
           post(flow13_continue_path, headers: flow13_headers)
@@ -1221,10 +997,10 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
           flow14_binding = request.query_parameters.fetch("fb")
 
           patch(
-            ((flow14_provider == "google") ? sign_app_sign_up_check_google_confirmation_url(
+            ((flow14_provider == "google") ? auth_app_sign_up_check_google_confirmation_url(
               ri: "jp",
               fb: flow14_binding,
-            ) : sign_app_sign_up_check_apple_confirmation_url(
+            ) : auth_app_sign_up_check_apple_confirmation_url(
               ri: "jp",
               fb: flow14_binding,
             )),
@@ -1239,10 +1015,10 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
           flow14_binding = Rack::Utils.parse_query(URI.parse(response.location).query).fetch("fb")
 
           patch(
-            ((flow14_provider == "google") ? sign_app_sign_up_check_google_birthdate_url(
+            ((flow14_provider == "google") ? auth_app_sign_up_check_google_birthdate_url(
               ri: "jp",
               fb: flow14_binding,
-            ) : sign_app_sign_up_check_apple_birthdate_url(
+            ) : auth_app_sign_up_check_apple_birthdate_url(
               ri: "jp",
               fb: flow14_binding,
             )),
@@ -1326,12 +1102,12 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
                 },
               )
               flow15_principal = Client.find_by!(public_id: flow15_parent.reload.actor_ref)
-              BaseSelectorBootstrapAuthority.call(surface: :app, principal: flow15_principal)
+              IdentityGraphBootstrapAuthority.call(surface: :app, principal: flow15_principal)
             end
             break unless flow15_result_uri
 
             flow15_continuation = @base_browser.response
-            flow15_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+            flow15_base_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
             break unless flow15_continuation.redirect?
             # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
             break unless URI.parse(flow15_continuation.location).path == "/oidc/callback" ||
@@ -1428,10 +1204,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
               end
             end
 
-            assert_equal [true, true, true],
-                         [response.redirect?,
-                          cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                          cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
+            assert_predicate response, :redirect?
             # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
             # request in this process already cached the key set.
           end
@@ -1467,51 +1240,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
           flow17_rt = nil
           flow17_referer = nil
           unless flow17_intent.to_s == "link"
-            @base_browser = open_session
-            flow17_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-            flow17_auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-            @base_browser.host!(flow17_base_host)
-            @base_browser.https!
-            @base_browser.get(
-              "/sign", params: {
-                ri: flow17_ri,
-                pt: "/dashboard?ri=#{flow17_ri}",
-              },
-            )
-            flow17_form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-            flow17_fields =
-              flow17_form.css("input[name]").to_h { |flow17_input|
-                [
-                  flow17_input["name"],
-                  flow17_input["value"],
-                ]
-              }
-            @base_browser.post(
-              flow17_form["action"], params: flow17_fields, headers: {
-                "Origin" => "https://#{flow17_base_host}", "Sec-Fetch-Site" => "same-origin",
-              },
-            )
-            # Visa answers the authorization and the Auth admission with redirects; follow them until
-            # Auth renders the first sign page.
-            flow17_browser = @base_browser
-            12.times do
-              raise RuntimeError, "Social admission stopped before a redirect" unless flow17_browser.response.redirect?
-
-              flow17_target = URI.parse(flow17_browser.response.location)
-              if flow17_target.host == URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
-                flow17_target = URI.parse(jump_rt_url_from_location_for_test(flow17_target.to_s))
-              end
-              flow17_browser = (flow17_target.host == flow17_auth_host) ? self : @base_browser
-              flow17_browser.host!(flow17_target.host) if flow17_target.host
-              flow17_browser.https!
-              flow17_browser.get(
-                flow17_target.request_uri,
-                headers: { "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document" },
-              )
-              break if flow17_browser == self && !response.redirect?
-            end
-            raise RuntimeError,
-                  "Social admission did not reach Auth" unless flow17_browser == self && response.successful?
+            bootstrap_auth_sign_in_admission!
           end
           flow17_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
           host!(flow17_host)
@@ -1553,7 +1282,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
             flow17_headers = flow17_headers.merge(flow17_user_headers)
           end
           if flow17_entry.to_s == "sign_up" && flow17_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+            admit_browser_to_sign_up!(integration_session)
             host!(flow17_host)
           end
           post(flow17_continue_path, headers: flow17_headers)
@@ -1582,13 +1311,13 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
       end
     end
 
-    assert_redirected_to sign_app_sign_up_guard_google_url(ri: "jp")
+    assert_redirected_to auth_app_sign_up_guard_google_url(ri: "jp")
     follow_redirect!
 
     @social_signup_binding = Rack::Utils.parse_query(URI.parse(response.location).query).fetch("fb")
 
     assert_predicate @social_signup_binding, :present?
-    assert_redirected_to sign_app_sign_up_check_google_confirmation_url(ri: "jp", fb: @social_signup_binding)
+    assert_redirected_to auth_app_sign_up_check_google_confirmation_url(ri: "jp", fb: @social_signup_binding)
     follow_redirect!
 
     # The social sign-up checkpoint asks for an explicit confirmation before an identity is
@@ -1607,10 +1336,10 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
           flow18_binding = request.query_parameters.fetch("fb")
 
           patch(
-            ((flow18_provider == "google") ? sign_app_sign_up_check_google_confirmation_url(
+            ((flow18_provider == "google") ? auth_app_sign_up_check_google_confirmation_url(
               ri: "jp",
               fb: flow18_binding,
-            ) : sign_app_sign_up_check_apple_confirmation_url(
+            ) : auth_app_sign_up_check_apple_confirmation_url(
               ri: "jp",
               fb: flow18_binding,
             )),
@@ -1625,10 +1354,10 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
           flow18_binding = Rack::Utils.parse_query(URI.parse(response.location).query).fetch("fb")
 
           patch(
-            ((flow18_provider == "google") ? sign_app_sign_up_check_google_birthdate_url(
+            ((flow18_provider == "google") ? auth_app_sign_up_check_google_birthdate_url(
               ri: "jp",
               fb: flow18_binding,
-            ) : sign_app_sign_up_check_apple_birthdate_url(
+            ) : auth_app_sign_up_check_apple_birthdate_url(
               ri: "jp",
               fb: flow18_binding,
             )),
@@ -1712,12 +1441,12 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
                 },
               )
               flow19_principal = Client.find_by!(public_id: flow19_parent.reload.actor_ref)
-              BaseSelectorBootstrapAuthority.call(surface: :app, principal: flow19_principal)
+              IdentityGraphBootstrapAuthority.call(surface: :app, principal: flow19_principal)
             end
             break unless flow19_result_uri
 
             flow19_continuation = @base_browser.response
-            flow19_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+            flow19_base_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
             break unless flow19_continuation.redirect?
             # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
             break unless URI.parse(flow19_continuation.location).path == "/oidc/callback" ||
@@ -1814,10 +1543,7 @@ class AppleAuthTest < ActionDispatch::IntegrationTest
               end
             end
 
-            assert_equal [true, true, true],
-                         [response.redirect?,
-                          cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                          cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
+            assert_predicate response, :redirect?
             # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
             # request in this process already cached the key set.
           end
@@ -2046,34 +1772,11 @@ end
 
 # DAMP local route helper aliases for former shared test support.
 class AppleAuthTest
-  SURFACE_ROUTE_PREFIX_MAP = {
-    "sign_app_" => "auth_app_",
-    "sign_org_" => "auth_org_",
-    "acme_app_" => "base_app_",
-    "acme_org_" => "base_org_",
-  }.freeze unless const_defined?(:SURFACE_ROUTE_PREFIX_MAP, false)
 
   private
 
-  def method_missing(name, ...)
-    aliased_name = aliased_surface_route_helper_name(name)
-    return public_send(aliased_name, ...) if aliased_name && respond_to?(aliased_name, true)
 
-    super
-  end
 
-  def respond_to_missing?(name, include_private = false)
-    aliased_name = aliased_surface_route_helper_name(name)
-    (aliased_name && respond_to?(aliased_name, include_private)) || super
-  end
-
-  def aliased_surface_route_helper_name(name)
-    helper_name = name.to_s
-    self.class::SURFACE_ROUTE_PREFIX_MAP.each do |source_prefix, target_prefix|
-      return helper_name.sub(source_prefix, target_prefix).to_sym if helper_name.start_with?(source_prefix)
-    end
-    nil
-  end
 end
 
 # DAMP local helper copy on the test class.

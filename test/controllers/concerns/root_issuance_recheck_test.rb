@@ -14,9 +14,9 @@ class RootIssuanceRecheckTest < ActiveSupport::TestCase
     self.login_cooldown = 0.seconds
     @user = clients(:one)
     ClientToken.where(user_id: @user.id).delete_all
-    @controller = Base::App::AuthorityController.new
+    @controller = Visa::App::AuthorityController.new
     request = ActionDispatch::TestRequest.create
-    request.host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    request.host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
     request.set_header("HTTPS", "on")
     request.session = ActionController::TestSession.new
     @controller.request = request
@@ -102,15 +102,15 @@ class RootIssuanceRecheckTest < ActiveSupport::TestCase
     browser_result = AuthenticationCurrentResourceResolver.new(
       access_token: jwt_access_token_for(
         @user,
-        host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
+        host: ENV.fetch("PUBLIC_VISA_SERVICE_URL"),
         session_public_id: root.public_id,
         resource_type: "client",
       ),
-      request_host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
+      request_host: ENV.fetch("PUBLIC_VISA_SERVICE_URL"),
       resource_type: "client",
       resource_class: Client,
       token_class: ClientToken,
-      jwt_issuer_id: "surface:BASE_APP",
+      jwt_issuer_id: "surface:VISA_APP",
     ).call
 
     assert_equal :authentication_epoch_stale, browser_result.failure_reason

@@ -3,7 +3,8 @@
 ## Purpose
 
 This document records current authenticated actor names for controllers, current context, tokens,
-policies, and tests. The `com` surface is public and has no authenticated actor.
+policies, and tests. The former local `com` surface is retired; retained legacy `Com` identity data
+does not define a current UI or routing surface.
 
 ## Surface Actors
 
@@ -50,9 +51,10 @@ The org-principal workspace account linked to the authenticated `Operator` is
 
 ## Surface, Actor, and Message Vocabulary
 
-`app`, `org`, and `com` are UI and routing surfaces. They are not actor types. Authenticated actors
-are `Client` for `app` and `Operator` for `org`; the public `com` surface has no authenticated actor.
-Unauthenticated traffic should be described as `guest` or `unauthenticated`, not as a `Visitor`.
+`app` and `org` are current UI and routing surfaces. They are not actor types. Authenticated actors
+are `Client` for `app` and `Operator` for `org`. Retained `Com` model names identify legacy data,
+not a current public surface or authenticated actor. Unauthenticated traffic should be described as
+`guest` or `unauthenticated`, not as a `Visitor`.
 
 Use the message names consistently:
 

@@ -63,9 +63,9 @@ class OpAuthorityStopCommitter
     "administrative" => %w(root all_roots_of_principal).freeze,
     "risk" => %w(root all_roots_of_principal).freeze,
   }.freeze
-  # BX-10: a participant is retried until the grant's absolute expiry plus the longest Access JWT
-  # lifetime plus clock skew (D-111: ten minutes and thirty seconds).
-  DELIVERY_GRACE = CoreBrowserCredentialContract::ACCESS_TTL + 30.seconds
+  # BX-10: a participant is retried until the grant's absolute expiry plus the longest browser
+  # access JWT lifetime and clock skew.
+  DELIVERY_GRACE = SecurityTokenLifetimes::BROWSER_ACCESS_JWT_TTL + 30.seconds
 
   class << self
     public

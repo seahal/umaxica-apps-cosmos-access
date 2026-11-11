@@ -16,11 +16,10 @@
 @plugin "tailwindcss-react-aria-components";
 
 @source "../../pages/visa/app";
-@source "../../features/preferences";
-@source "../../controllers";
 @source "../../layouts";
 @source "../../components";
-@source "../../features";
+@source "../../features/auth/session/SessionLimitResolution.tsx";
+@source "../../features/sign_out";
 
 /*
  * The ERB this surface renders. Tailwind only emits a utility it has seen written down, so without

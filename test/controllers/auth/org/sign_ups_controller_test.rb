@@ -8,7 +8,7 @@ class Auth::Org::SignUpsControllerTest < ActionDispatch::IntegrationTest
   fixtures :operators, :operator_statuses
 
   setup do
-    @host = configured_host(:sign_staff)
+    @host = configured_host(:auth_staff)
     host! @host
   end
 
@@ -63,9 +63,12 @@ class Auth::Org::SignUpsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_nil inertia_props["sign_in_link"]
-    assert_equal I18n.t("actions.cancel"), inertia_props.fetch("cancel_link").fetch("label")
-    assert_equal auth_org_root_path(ri: "jp"), inertia_props.fetch("cancel_link").fetch("href")
+    assert_nil inertia_props["cancel_link"]
     assert_not inertia_props.key?("back_to_root")
+    footer_hrefs = Array(inertia_props.dig("chrome", "footer_navigation")).map { |link| link.fetch("href") }
+
+    assert_empty footer_hrefs.grep(%r{/identity\b})
+    assert_empty footer_hrefs.select { |href| URI.parse(href).path == "/" }
   end
 
   test "valid login challenge renders local ceremony" do
@@ -207,7 +210,7 @@ class Auth::Org::SignUpsControllerTest < ActionDispatch::IntegrationTest
     assert_no_match(%r{/social/auth/google|/auth/google}, response.body)
   end
 
-  test "local ceremony renders recruit contact and home links" do
+  test "local ceremony omits an unset recruit URL and has no home link" do
     client = OidcClientRegistry.find!("core-org-jp")
     issuance = OidcAuthorizationTransactionCoordinator.issue!(
       surface: "org", intent: "sign_up", params: {
@@ -248,10 +251,11 @@ class Auth::Org::SignUpsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
 
-    recruit = inertia_props.fetch("recruit")
+    assert_nil inertia_props["recruit"]
+    assert_nil inertia_props["sign_in_link"]
+    footer_hrefs = Array(inertia_props.dig("chrome", "footer_navigation")).map { |link| link.fetch("href") }
 
-    assert_equal I18n.t("sign.org.ups.new.recruit_link_text"), recruit.fetch("label")
-    assert_match(/ri=jp/, recruit.fetch("href"))
+    assert_empty footer_hrefs.select { |href| URI.parse(href).path == "/" }
   end
 
   test "direct app-style email sign up route is not available" do
@@ -499,7 +503,7 @@ class Auth::Org::SignUpsControllerTest
   end
 
   def seed_social_auth_session(provider:, intent: "login", user: nil, entry: nil, ri: "jp", rt: nil, referer: nil)
-    host = configured_host(:sign_service)
+    host = configured_host(:auth_service)
     host!(host) if respond_to?(:host!)
     normalized_provider = SocialIdentifiable.normalize_provider(provider)
     continue_path =

@@ -9,20 +9,23 @@ module Preference
     self.fixture_table_names = []
 
     test "resolves preference class from controller path" do
-      assert_equal AppPreference, PreferenceClassRegistry.for_controller_path("core/app/api/v0/preferences")
-      assert_equal ComPreference, PreferenceClassRegistry.for_controller_path("base/com/api/v0/preferences")
-      assert_equal OrgPreference, PreferenceClassRegistry.for_controller_path("core/org/api/v0/preferences")
+      assert_equal AppPreference, PreferenceClassRegistry.for_controller_path("auth/app/api/v0/preferences")
+      assert_equal OrgPreference, PreferenceClassRegistry.for_controller_path("auth/org/api/v0/preferences")
+
+      assert_raises(KeyError) do
+        PreferenceClassRegistry.for_controller_path("unknown/unmapped/api/v0/preferences")
+      end
     end
 
     test "resolves option classes by prefix and type" do
       assert_equal AppPreferenceLanguageOption, PreferenceClassRegistry.option_class("App", :language)
-      assert_equal ComPreferenceRegionOption, PreferenceClassRegistry.option_class("Com", "Region")
+      assert_equal AppPreferenceRegionOption, PreferenceClassRegistry.option_class("App", "Region")
       assert_equal OrgPreferenceTimezoneOption, PreferenceClassRegistry.option_class("Org", :timezone)
     end
 
     test "resolves status and audit classes from preference class" do
       assert_equal AppPreferenceStatus, PreferenceClassRegistry.status_class_for(AppPreference)
-      assert_equal ComPreferenceChronicle, PreferenceClassRegistry.audit_class_for(ComPreference)
+      assert_equal AppPreferenceChronicle, PreferenceClassRegistry.audit_class_for(AppPreference)
       assert_equal OrgPreferenceChronicleEvent, PreferenceClassRegistry.audit_event_class_for(OrgPreference)
     end
 

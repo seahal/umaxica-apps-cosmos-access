@@ -21,24 +21,15 @@ class IdentityAuthorityInversionGuardTest < ActiveSupport::TestCase
 
   test "route sources use noun lifecycle resources for edge and preference routes" do
     auth_routes = file_content("config/routes/auth.rb")
-    base_routes = file_content("config/routes/base.rb")
-    core_routes = file_content("config/routes/core.rb")
     visa_routes = Rails.root.join("config/routes/visa.rb").read.gsub(/\s+/, " ").strip
 
-    assert_source_includes auth_routes, 'resource :status, only: :show, path: "check", controller: :checks'
-    # Root-cookie transport belongs to Visa after the OP/Base host split.
+    assert_not_predicate Rails.root.join("config/routes/base.rb"), :exist?
+
+    assert_source_excludes auth_routes, 'path: "check", controller: :checks'
+    # Root-cookie transport and token lifecycle belong to Visa as the OP authority.
     assert_includes visa_routes, 'resource :status, only: :show, path: "check", controller: :checks'
-    assert_not_includes base_routes, 'path: "check", controller: :checks'
-    assert_source_includes core_routes, "resource :refresh, only: :create"
+    assert_includes visa_routes, "resource :dbsc, only: :create"
     assert_includes visa_routes, "resource :refresh, only: :create"
-    assert_not_includes base_routes, "resource :refresh, only: :create"
-    assert_source_excludes base_routes, "resource :renewal"
-    assert_source_includes base_routes, "resource :customization, only: %i(edit destroy)"
-    assert_source_excludes base_routes, 'path: "reset", as: :reset, controller: :resets'
-    assert_source_excludes base_routes, 'controller: "revocations/alls"'
-    assert_source_includes base_routes,
-                           'resource :revocation, only: :destroy, path: "other_sessions", ' \
-                           'controller: "revocations/others", as: :other_sessions'
     assert_source_includes auth_routes,
                            'resource :registration, only: :show, path: "up", ' \
                            "controller: :ups, as: :up"
@@ -47,40 +38,17 @@ class IdentityAuthorityInversionGuardTest < ActiveSupport::TestCase
                            "controller: :ins, as: :in"
     assert_equal 2, auth_routes.scan("resource :registration, only: :create, controller: :registrations").length
     assert_equal 2, auth_routes.scan("resource :session, only: :create, controller: :sessions").length
-    assert_source_includes auth_routes,
-                           "resource :termination, only: %i(show new edit create destroy), " \
-                           'path: "out", controller: :outs, as: :out'
-    assert_source_includes base_routes,
-                           'resource :termination, path: "out", controller: :sign_outs, ' \
-                           "as: :sign_out, only: %i(show new edit create)"
+    assert_source_excludes auth_routes, 'path: "out"'
+    assert_source_excludes auth_routes, "resource :termination"
+    assert_includes visa_routes, "resource(:logout, only: %i(show create), controller: :logouts)"
   end
 
-  test "refresh rotation target path uses acme authority" do
+  test "Auth session refresh calls the Auth-owned issuer" do
     auth_base = file_content("app/controllers/concerns/authentication_base.rb")
+    issuer = file_content("app/operations/auth_refresh_token_issuer.rb")
 
-    assert_source_includes auth_base, "AcmeRefreshTokenIssuer.call(refresh_token: refresh_plain)"
-
-    sign_service = file_content("app/operations/sign_refresh_token_issuer.rb")
-
-    # rubocop:disable I18n/RailsI18n/DecorateString
-    assert_source_includes sign_service, "Compatibility namespace. Target-path refresh authority is acme/www."
-    # rubocop:enable I18n/RailsI18n/DecorateString
-  end
-
-  test "refresh rotation implementation is physically owned by acme not sign" do
-    # Behavior, not file-string: the rotation body lives on Acme; Sign is only a
-    # compatibility subclass that inherits it and adds nothing of its own.
-    assert_operator SignRefreshTokenIssuer, :<, AcmeRefreshTokenIssuer,
-                    "SignRefreshTokenIssuer must be a compatibility subclass of the acme service"
-
-    # The sign wrapper must not redefine the rotation entry point; it inherits
-    # `call` straight from acme, so the owning method lives on the acme service.
-    assert_equal AcmeRefreshTokenIssuer.method(:call).owner, SignRefreshTokenIssuer.method(:call).owner,
-                 "Sign wrapper must inherit `call` from acme, not define its own refresh authority"
-    assert_equal AcmeRefreshTokenIssuer.singleton_class, AcmeRefreshTokenIssuer.method(:call).owner
-
-    # The shared Result contract is owned by acme and reused by the sign alias.
-    assert_same AcmeRefreshTokenIssuer::Result, SignRefreshTokenIssuer::Result
+    assert_source_includes auth_base, "AuthRefreshTokenIssuer.call(refresh_token: refresh_plain)"
+    assert_source_includes issuer, "class AuthRefreshTokenIssuer"
   end
 
   test "unknown social signup compatibility is explicit" do
@@ -103,7 +71,6 @@ class IdentityAuthorityInversionGuardTest < ActiveSupport::TestCase
 
     assert_source_includes controller, "sign_up_family = \"email\""
     assert_no_match(/email_signup_completion/, controller)
-    assert_no_match(/completion_acme_app_sign_up_email_url/, controller)
   end
 
   test "social confirmation step includes turnstile before durable signup completion" do

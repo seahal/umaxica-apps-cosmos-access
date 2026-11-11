@@ -3,9 +3,8 @@
 
 # Renders RFC 9457 Problem Details as `application/problem+json`.
 #
-# This is the single error renderer for non-protocol JSON API endpoints. It replaces the duplicated
-# `render_error` implementations that previously lived in CoreBrowserApiBoundary and in the Palm API
-# base controller, and the several bare `{ error: "..." }` shapes elsewhere.
+# This is the single error renderer for retained non-protocol JSON API endpoints. The document
+# carries the repository's agreed RFC 9457 members and replaces inconsistent bare error shapes.
 #
 # The document carries only the members RFC 9457 defines plus the two extension members this
 # repository has agreed to (`request_id`, and `errors` on 422). Anything else requires amending

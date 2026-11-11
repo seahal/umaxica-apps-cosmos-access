@@ -16,7 +16,7 @@ test.beforeAll(() => {
       "test",
       `abort 'test required' unless Rails.env.test?
 I18n.locale = :en
-STDOUT.write(Base::App::SecretPresentationsController.renderer.render(template: 'base/app/secret_presentations/create', layout: false, assigns: {issuance: Struct.new(:origin, :planned_count).new('synthetic', 1), values: ['SYNTHETIC-DISPLAY-VALUE-ONLY-123456']}, locals: {confirmation_url: '/synthetic/confirm', cancel_url: '/synthetic/cancel', checkpoint_version: 7}))`,
+STDOUT.write(Auth::App::Sign::Up::Check::Telephone::SecretsController.renderer.render(template: 'auth/app/sign/up/check/telephone/secrets/create', layout: false, assigns: {issuance: Struct.new(:origin, :planned_count).new('synthetic', 1), values: ['SYNTHETIC-DISPLAY-VALUE-ONLY-123456']}, locals: {confirmation_url: '/synthetic/confirm', cancel_url: '/synthetic/cancel', checkpoint_version: 7}))`,
     ],
     { encoding: "utf8" },
   );

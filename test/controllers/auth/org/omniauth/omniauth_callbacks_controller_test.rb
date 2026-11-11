@@ -216,7 +216,7 @@ class Auth::Org::Omniauth::OmniauthCallbacksControllerTest < ActionDispatch::Int
   test "app-surface OmniAuth providers are rejected on the org host" do
     post "/social/google", params: {}
 
-    assert_response :not_found
+    assert_response :forbidden
   end
 
   # Phase 14: OmniAuth.config.allowed_request_methods = [:post] is set
@@ -239,14 +239,6 @@ class Auth::Org::Omniauth::OmniauthCallbacksControllerTest < ActionDispatch::Int
     assert_response :not_found
   end
 
-  test "session/new is unreachable from the com surface host" do
-    host! ENV.fetch("PUBLIC_AUTH_CORPORATE_URL", "auth.com.localhost")
-
-    get new_auth_org_social_entra_session_path(ri: "jp")
-
-    assert_response :not_found
-  end
-
   test "POST /social/entra is unreachable from the app surface host" do
     host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL", "auth.app.localhost")
 
@@ -255,24 +247,8 @@ class Auth::Org::Omniauth::OmniauthCallbacksControllerTest < ActionDispatch::Int
     assert_response :not_found
   end
 
-  test "POST /social/entra is unreachable from the com surface host" do
-    host! ENV.fetch("PUBLIC_AUTH_CORPORATE_URL", "auth.com.localhost")
-
-    post "/social/entra", params: {}
-
-    assert_response :not_found
-  end
-
   test "GET /social/entra/callback is unreachable from the app surface host" do
     host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL", "auth.app.localhost")
-
-    get "/social/entra/callback", params: { state: "irrelevant", code: "irrelevant" }
-
-    assert_response :not_found
-  end
-
-  test "GET /social/entra/callback is unreachable from the com surface host" do
-    host! ENV.fetch("PUBLIC_AUTH_CORPORATE_URL", "auth.com.localhost")
 
     get "/social/entra/callback", params: { state: "irrelevant", code: "irrelevant" }
 

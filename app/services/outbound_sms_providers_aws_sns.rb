@@ -3,6 +3,7 @@
 
 require "aws-sdk-sns"
 
+# TODO: AUDIT external access: sends SMS through AWS SNS.
 class OutboundSmsProvidersAwsSns
   HTTP_OPEN_TIMEOUT = 5
   HTTP_READ_TIMEOUT = 10

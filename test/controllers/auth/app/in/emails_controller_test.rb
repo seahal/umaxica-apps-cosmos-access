@@ -1248,7 +1248,7 @@ class Auth::App::Sign::In::EmailsControllerTest < ActionDispatch::IntegrationTes
       address: "redirect_login_test_#{SecureRandom.hex(4)}@example.com",
     ).tap(&:finalize_binding!)
 
-    redirect_url = auth_app_settings_path(ri: "jp")
+    redirect_url = auth_app_sign_in_path(ri: "jp")
     pt = redirect_url
 
     # Start authentication with pt parameter
@@ -1569,7 +1569,7 @@ class Auth::App::Sign::In::EmailsControllerTest < ActionDispatch::IntegrationTes
     refresh = token.rotate_refresh_token!
 
     rotations.times do
-      refresh = SignRefreshTokenIssuer.call(refresh_token: refresh)[:refresh_token]
+      refresh = AuthRefreshTokenIssuer.call(refresh_token: refresh)[:refresh_token]
     end
   end
   private
@@ -1753,7 +1753,7 @@ class Auth::App::Sign::In::EmailsControllerTest
   end
 
   def seed_social_auth_session(provider:, intent: "login", user: nil, entry: nil, ri: "jp", rt: nil, referer: nil)
-    host = configured_host(:sign_service)
+    host = configured_host(:auth_service)
     host!(host) if respond_to?(:host!)
     normalized_provider = SocialIdentifiable.normalize_provider(provider)
     continue_path =

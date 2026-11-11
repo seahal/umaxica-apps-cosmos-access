@@ -62,50 +62,6 @@ class BranchCoverageBatch34MassReturnsTest < ActiveSupport::TestCase
     assert_predicate r2, :valid?
   end
 
-  test "CollectiveMembership TransferUnit inactive membership" do
-    membership = Object.new
-    membership.define_singleton_method(:active?) { false }
-    unit = Object.new
-    assert_raises(CollectiveMembership::InactiveMembership) do
-      CollectiveMembership::TransferUnit.new(membership: membership, unit: unit).call
-    end
-  end
-
-  test "AcmeSelectableContext authorization helpers" do
-    helper = Class.new do
-      include AcmeSelectableContext
-
-      def config
-        @config ||=
-          begin
-            c = Object.new
-            c.define_singleton_method(:avatar_mode) { :none }
-            c.define_singleton_method(:account_class) { Client }
-            c
-          end
-      end
-
-      def principal = nil
-
-      def session = nil
-
-      def accounts = []
-    end.new
-
-    assert_equal [], helper.selectable_candidates
-  end
-
-  test "BaseSwitcherAuthority blank session" do
-    auth = BaseSwitcherAuthority.allocate
-    auth.define_singleton_method(:available_accounts) { [] }
-    auth.define_singleton_method(:available_organizations) { [] }
-
-    assert_nil auth.find_account(nil)
-    assert_not auth.find_account("")
-    assert_nil auth.find_account("missing")
-    assert_nil auth.find_organization(nil)
-  end
-
   test "OidcLogoutRequest blank client and jti" do
     assert_nil OidcLogoutRequest.verify(nil)
     assert_nil OidcLogoutRequest.verify("")
@@ -126,23 +82,6 @@ class BranchCoverageBatch34MassReturnsTest < ActiveSupport::TestCase
     assert_equal :no_active_flow, missing_ticket.refusal
     assert_equal :invalid, unsupported.status
     assert_includes unsupported.errors, "unsupported sign-up route"
-  end
-
-  test "AvatarFollowPolicy non-avatar pair" do
-    policy = AvatarFollowPolicy.new(Object.new)
-    policy.define_singleton_method(:user) { Client.new(security_mode_id: SecurityModeConfigurable::NORMAL) }
-
-    assert_not policy.create?
-  end
-
-  test "Publishing promote revision missing entry" do
-    revision = Object.new
-    revision.define_singleton_method(:id) { 1 }
-    revision.define_singleton_method(:entry) { nil }
-
-    assert_raises(Publishing::PromoteRevisionOperation::RevisionMismatchError) do
-      Publishing::PromoteRevisionOperation.new(revision: revision).call
-    end
   end
 
   test "OidcTokenRevoker digest and client mismatch" do

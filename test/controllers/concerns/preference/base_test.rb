@@ -17,7 +17,7 @@ class PreferenceSanitizeTestController < ::ApplicationController
   end
 
   def controller_path
-    @test_controller_path || "acme/app/preferences"
+    @test_controller_path || "auth/app/api/v0/preferences"
   end
 
   def params
@@ -37,7 +37,7 @@ module Preference
 
   class JwtConfigurationTest < ActiveSupport::TestCase
     test "issuer and key resolution are explicit for each preference realm" do
-      { "preference_app" => "app", "preference_com" => "com", "preference_org" => "org" }.each do |issuer_id, audience|
+      { "preference_app" => "app", "preference_org" => "org" }.each do |issuer_id, audience|
         issuer = JitSecurityJwtRegistry.issuer(issuer_id)
 
         assert_equal [audience], issuer.audiences
@@ -67,7 +67,7 @@ module Preference
   class TokenTest < ActiveSupport::TestCase
     setup do
       @preferences = SecurityJwtPreferenceTokenCodec::ANONYMOUS_PREFERENCE_VALUES.transform_values(&:first).freeze
-      @host = Rails.configuration.x.boot_config.fetch(:hosts).base_service.host
+      @host = Rails.configuration.x.boot_config.fetch(:hosts).auth_service.host
       @type = "AppPreference"
       @public_id = "test_id"
       @jti = "test_jti"
@@ -121,34 +121,11 @@ end
 
 # DAMP local route helper aliases for former shared test support.
 class PreferenceSanitizeTestController
-  SURFACE_ROUTE_PREFIX_MAP = {
-    "sign_app_" => "auth_app_",
-    "sign_org_" => "auth_org_",
-    "acme_app_" => "base_app_",
-    "acme_org_" => "base_org_",
-  }.freeze unless const_defined?(:SURFACE_ROUTE_PREFIX_MAP, false)
 
   private
 
-  def method_missing(name, ...)
-    aliased_name = aliased_surface_route_helper_name(name)
-    return public_send(aliased_name, ...) if aliased_name && respond_to?(aliased_name, true)
 
-    super
-  end
 
-  def respond_to_missing?(name, include_private = false)
-    aliased_name = aliased_surface_route_helper_name(name)
-    (aliased_name && respond_to?(aliased_name, include_private)) || super
-  end
-
-  def aliased_surface_route_helper_name(name)
-    helper_name = name.to_s
-    self.class::SURFACE_ROUTE_PREFIX_MAP.each do |source_prefix, target_prefix|
-      return helper_name.sub(source_prefix, target_prefix).to_sym if helper_name.start_with?(source_prefix)
-    end
-    nil
-  end
 end
 
 # DAMP local helper copy on the test class.

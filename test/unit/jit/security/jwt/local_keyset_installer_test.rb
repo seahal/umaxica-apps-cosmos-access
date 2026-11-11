@@ -141,7 +141,7 @@ module Jit
 
           store = JSON.parse(File.read(@store_path))
           expected_keys =
-            %w(AUTH PREFERENCE_APP PREFERENCE_COM PREFERENCE_ORG) +
+            %w(AUTH PREFERENCE_APP PREFERENCE_ORG) +
             JitSecurityJwtRegistry::SURFACE_NAMESPACES.map { |namespace| "JWT_#{namespace}" } +
             JitSecurityJwtRegistry::OIDC_CLIENT_NAMESPACES.map { |namespace| "OIDC_CLIENT_#{namespace}" }
 
@@ -156,7 +156,6 @@ module Jit
           public_keysets = [
             JSON.parse(store.fetch("AUTH").fetch("public_keyset")),
             JSON.parse(store.fetch("PREFERENCE_APP").fetch("public_keyset")),
-            JSON.parse(store.fetch("PREFERENCE_COM").fetch("public_keyset")),
             JSON.parse(store.fetch("PREFERENCE_ORG").fetch("public_keyset")),
           ]
           JitSecurityJwtRegistry::SURFACE_NAMESPACES.each do |namespace|
@@ -201,7 +200,6 @@ module Jit
           assert_predicate regenerated, :present?,
                            "first install with no store should warn that local keys were minted"
           assert(regenerated.any? { |message| message.include?("PREFERENCE_APP") })
-          assert(regenerated.any? { |message| message.include?("PREFERENCE_COM") })
           assert(regenerated.any? { |message| message.include?("PREFERENCE_ORG") })
           assert(regenerated.all? { |message| message.include?("will fail verification") })
         end
@@ -221,20 +219,20 @@ module Jit
 
         test "a surface signing key preset in ENV is refused instead of being used as a local Jump key" do
           foreign = OpenSSL::PKey::EC.generate("secp384r1")
-          ENV["JWT_BASE_APP_PRIVATE_KEY"] = Base64.strict_encode64(foreign.to_der)
+          ENV["JWT_AUTH_APP_PRIVATE_KEY"] = Base64.strict_encode64(foreign.to_der)
 
           error =
             assert_raises(ArgumentError) do
               JitSecurityJwtLocalKeysetInstaller.install!(store_path: @store_path)
             end
 
-          assert_match(/JWT_BASE_APP_PRIVATE_KEY must not be set/, error.message)
-          assert_not_includes error.message, ENV.fetch("JWT_BASE_APP_PRIVATE_KEY")
+          assert_match(/JWT_AUTH_APP_PRIVATE_KEY must not be set/, error.message)
+          assert_not_includes error.message, ENV.fetch("JWT_AUTH_APP_PRIVATE_KEY")
         end
 
         test "a surface kid preset in ENV is refused even when a store already exists" do
           JitSecurityJwtLocalKeysetInstaller.install!(store_path: @store_path)
-          ENV["JWT_PALM_APP_ACTIVE_KID"] = "production-palm-app-es384-a"
+          ENV["JWT_VISA_APP_ACTIVE_KID"] = "production-visa-app-es384-a"
 
           assert_raises(ArgumentError) do
             JitSecurityJwtLocalKeysetInstaller.install!(store_path: @store_path)
@@ -243,15 +241,15 @@ module Jit
 
         test "a restart reuses the persisted surface Jump key from the local store" do
           JitSecurityJwtLocalKeysetInstaller.install!(store_path: @store_path)
-          kid = ENV.fetch("JWT_BASE_APP_ACTIVE_KID")
-          private_key = ENV.fetch("JWT_BASE_APP_PRIVATE_KEY")
+          kid = ENV.fetch("JWT_AUTH_APP_ACTIVE_KID")
+          private_key = ENV.fetch("JWT_AUTH_APP_PRIVATE_KEY")
           clear_local_jwt_env!
 
           JitSecurityJwtLocalKeysetInstaller.install!(store_path: @store_path)
 
-          assert_equal kid, ENV.fetch("JWT_BASE_APP_ACTIVE_KID")
-          assert_equal private_key, ENV.fetch("JWT_BASE_APP_PRIVATE_KEY")
-          assert_equal "#{Rails.env}-base-app-es384-a", kid
+          assert_equal kid, ENV.fetch("JWT_AUTH_APP_ACTIVE_KID")
+          assert_equal private_key, ENV.fetch("JWT_AUTH_APP_PRIVATE_KEY")
+          assert_equal "#{Rails.env}-auth-app-es384-a", kid
         end
 
         test "installing twice in one process accepts the values the installer exported" do
@@ -285,7 +283,6 @@ module Jit
           keys = %w(
             AUTH_JWT_ACTIVE_KID AUTH_JWT_PRIVATE_KEYSET AUTH_JWT_PUBLIC_KEYSET
             PREFERENCE_APP_JWT_ACTIVE_KID PREFERENCE_APP_JWT_PRIVATE_KEYSET PREFERENCE_APP_JWT_PUBLIC_KEYSET
-            PREFERENCE_COM_JWT_ACTIVE_KID PREFERENCE_COM_JWT_PRIVATE_KEYSET PREFERENCE_COM_JWT_PUBLIC_KEYSET
             PREFERENCE_ORG_JWT_ACTIVE_KID PREFERENCE_ORG_JWT_PRIVATE_KEYSET PREFERENCE_ORG_JWT_PUBLIC_KEYSET
           )
           JitSecurityJwtRegistry::SURFACE_NAMESPACES.each do |namespace|

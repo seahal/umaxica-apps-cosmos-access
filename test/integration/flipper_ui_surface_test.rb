@@ -60,8 +60,8 @@ class FlipperUiSurfaceTest < ActionDispatch::IntegrationTest
   end
 
   test "no other surface routes the Flipper mount" do
-    ["base.app.localhost", "base.com.localhost", "base.org.localhost", "base.net.localhost",
-     "base.dev.localhost", "core.dev.localhost", "mission.core.dev.localhost",].each do |host|
+    ["auth.app.localhost", "auth.org.localhost", "visa.app.localhost", "visa.org.localhost",
+     "mission.core.dev.localhost", "unregistered.invalid",].each do |host|
       assert_raises(ActionController::RoutingError, "#{host} must not route #{MOUNT_PATH}") do
         Rails.application.routes.recognize_path("http://#{host}/features", method: :get)
       end
@@ -84,7 +84,7 @@ class FlipperUiSurfaceTest < ActionDispatch::IntegrationTest
   end
 
   test "application surfaces keep the strict-dynamic script policy" do
-    host! "base.app.localhost"
+    host! "auth.app.localhost"
     get "/health"
 
     assert_includes response.headers["Content-Security-Policy"], "strict-dynamic"

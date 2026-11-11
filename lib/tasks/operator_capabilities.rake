@@ -4,8 +4,7 @@
 # and the recovery path when no operator holds them. It grants to one explicitly named, eligible
 # operator; there is no "all operators" or "first operator" form and no environment that skips it.
 #
-# The Chronicle intent is written first, and nothing is granted if it cannot be. See
-# docs/runbooks/operator-capability.md.
+# The Chronicle intent is written first, and nothing is granted if it cannot be.
 namespace :operator_capabilities do
   desc "Grant capabilities to one operator (OPERATOR= CAPABILITIES=a,b TICKET= EXPIRES_AT=iso8601 [DRY_RUN=true])"
   task bootstrap: :environment do

@@ -19,9 +19,6 @@ apis:
   app:
     root: openapi/app.yml
     output: openapi/bundled/openapi.app.yml
-  com:
-    root: openapi/com.yml
-    output: openapi/bundled/openapi.com.yml
   org:
     root: openapi/org.yml
     output: openapi/bundled/openapi.org.yml
@@ -30,7 +27,7 @@ extends:
   - recommended
 
 rules:
-  # Every surface deliberately has no root `servers`. Only the Core paths have a host that is
+  # Every surface deliberately has no root `servers`. Only paths with a known host have a host that is
   # real, public, and knowable from the repository, so `servers` is declared per Path Item.
   # A root default would attach a host to paths it does not serve, which is the defect
   # adr/api-versioning-and-client-conventions.md section 4 exists to prevent.

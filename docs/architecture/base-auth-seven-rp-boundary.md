@@ -1,54 +1,27 @@
-# Base Authority and Seven RP Boundary
+# Local Auth/Visa Boundary and External RP Registrations
 
-Canonical decision: `adr/base-auth-ceremony-and-seven-rp-boundary.md`.
+This document describes the current local ownership after the 2026-11-10 surface reset. Earlier
+Base-led and multi-RP architecture remains in
+[`adr/base-auth-ceremony-and-seven-rp-boundary.md`](../../adr/base-auth-ceremony-and-seven-rp-boundary.md)
+as decision history; it does not define current Access routes or controllers.
 
-Machine-readable map: `AuthBoundaryAuthorityMap`.
+| Role                                   | Local Access owner                                   | Current responsibility                                                                       |
+| -------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| OpenID Provider / Authorization Server | Visa APP and ORG                                     | Discovery, JWKS, OAuth/OIDC authorization and token endpoints, logout, and DBSC endpoints    |
+| Credential ceremonies                  | Auth APP and ORG                                     | Auth-owned credential entry and provider callbacks; no general login-session or OP authority |
+| Operator tools                         | Mission, Flipper, Blazer, PgHero, Coverband, Swagger | Repository-local operational interfaces                                                      |
 
-Surfaces outside this table are OAuth/OIDC Non-Participants; see
-`docs/architecture/oidc-non-participant-surfaces.md`.
+Visa remains the only local OpenID Provider. Auth provides credential-ceremony continuity and does
+not issue general login sessions, refresh tokens, or Visa OP authority. Each local surface keeps its
+own host, credentials, routes, controllers, views, and state.
 
-| Role     | Surface                      | Notes                                                                                   |
-| -------- | ---------------------------- | --------------------------------------------------------------------------------------- |
-| OP / AS  | Visa app/org                 | `/oauth/*`, discovery, JWKS, authorization, token, UserInfo, revocation and end-session |
-| Ceremony | Auth app/org                 | Passkey/Google/Apple/Entra; app TOTP only; credential callbacks stay on Auth            |
-| RP       | Base app/org                 | `www.umaxica.{app,org}`; neutral `GET/POST /sign` + `GET /oidc/callback`, local RP Session |
-| RP       | Core app/org                 | Independent clients and local RP sessions                                               |
-| RP       | Warp app/org                 | Independent clients; OIDC client IDs retain `side-*`                                    |
-| RP       | Edit org, Tech org, Palm app | Independent browser RPs with host-local sessions                                        |
-| None     | Base com, Warp com           | Anonymous public preference entry and public read-only pages; no credential, session, admission or RP boundary |
+Visa's external relying-party client registrations remain protocol configuration. Their registered
+client identifiers, exact return URIs, issuer/JWKS bindings, and other accepted OIDC properties do
+not create local RP routes or controllers in Access. Each external RP owns its callback, local
+session, browser interface, and sign-out completion. Keep those registrations available to the
+external clients that use them.
 
-Retired browser paths: `/dashboard` (Auth/Base app and org faces), Base `/lobby`, `/sign/out/complete`, and
-the RP entry aliases `/sign/in` and `/sign/in/callback`. Auth credential ceremonies may still use
-`/sign/in/*`; those are not RP entrypoints and must not be used as the Core, Warp, or Edit browser
-authorization boundary.
-
-The former Rails surface name was Side. Its current internal namespace is Warp; the registered
-`side-*` OIDC client identifiers, audiences, and signing namespaces remain protocol values. Visa
-uses independent `VISA_APP` and `VISA_ORG` issuer/key namespaces; Base retains `BASE_APP` and
-`BASE_ORG` for RP responsibilities. Corporate authentication issuer and Jump namespaces are
-removed. Base com's anonymous Preference token issuer is separate from authentication and remains.
-A Base RP credential is never authority proof for Visa, and a Visa authority token is never used as a
-Base local RP credential.
-
-The RP `GET /sign` entry is non-mutating. Its CSRF-protected `POST /sign` refuses a browser that is
-already authenticated by either the root Browser Session or a valid access credential for that same
-RP; the refusal is server-side and does not start a second OIDC transaction. A credential for
-another surface is not accepted as authentication for the current RP. Sign-out remains the required
-preceding ceremony.
-
-Each browser and RP has one pending Sign-in entry. The last `POST /sign` replaces the earlier entry;
-an earlier tab may continue through Auth and Visa but is refused at the RP callback and sent to
-`GET /sign/interruption`. This is the intended D-155 behavior, not a defect. A Sign-up registration
-that already reached its decisive commit remains saved; only its later Sign-in handoff can be
-refused. Different browsers have independent pending entries.
-
-## Protected document and image responses
-
-Anonymous Base Dashboard documents are guided to the passive local Sign entry. Dashboard Avatar
-image retrieval on app/org instead uses a bodyless 401 for non-JSON GET/HEAD; JSON keeps the
-existing private-gate error. Accept, Fetch Metadata and valid Inertia headers do not turn an image
-request into an interactive login. Authentication still stops the request before selected image
-lookup or storage access. Authenticated image authorization, absence and storage failure contracts
-remain in [the image-delivery ADR](../../adr/base-dashboard-avatar-image-delivery.md). com has no
-Dashboard Avatar image route. These response differences do not change Base/Auth or Jump
-responsibilities.
+The earlier Base, Core, Warp, Palm, Edit, Tech, and other browser-RP flows documented by the ADR are
+not current local Access surfaces. Models, migrations, and database connections associated with
+those flows remain pending the separate model/database report and follow-up decision; their presence
+does not establish an active route, controller, or writer.

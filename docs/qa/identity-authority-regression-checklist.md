@@ -37,8 +37,8 @@ Remaining bounded legacy:
   session-management UI.
 - Auth settings does not own identity, profile, session-management, activity, or lifecycle routes
   except for the approved credential ceremony-backed settings matrix: app
-  passkeys/TOTP/Google/Apple, and org passkeys/Entra. The `com` surface owns no credential
-  ceremony, so it has no Auth settings matrix.
+  passkeys/TOTP/Google/Apple, and org passkeys/Entra. The retired local `com` surface has no
+  credential ceremony and no Auth settings matrix.
 - Retired Auth settings routes for emails, telephones, birthdate, secrets, secret credentials,
   sessions, revocations, activities, and withdrawal are unroutable. They must not redirect to Base,
   return compatibility `410 Gone`, or remain available through alias helpers.

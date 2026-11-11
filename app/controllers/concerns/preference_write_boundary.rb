@@ -9,15 +9,13 @@
 # reached. Refusing an unknown operation here means a later realm must not be able to bypass the
 # check by inventing a new operation name at its own controller.
 #
-# The realm names match the three WU-7 deployables (WU-7 ships com; WU-9 opens app/org through the
-# same named operations once their controllers hand over their write paths).
+# Auth and Visa use the same preference operations for their App and Org realms.
 module PreferenceWriteBoundary
   extend ActiveSupport::Concern
 
-  # The set two.md section 4.4 fixes as closed. `save` is Base's own authenticated write, `sign_in`
-  # is the Visa one-way reflect, `sign_out` is the Visa rebuild+retire, `reset` is Base's
-  # anonymous-row retirement. Anything else is unsupported and must be refused rather than guessed.
-  OPERATIONS = %i(save sign_in sign_out reset).freeze
+  # Auth owns actor preference writes; Visa owns sign-in reflection and sign-out rebuilding.
+  # Anything else is unsupported and is refused rather than guessed.
+  OPERATIONS = %i(save sign_in sign_out).freeze
   ANONYMOUS_DISPLAY_TYPES = %i(
     theme language timezone currency date_format time_format motion density page_size
   ).freeze
@@ -45,14 +43,10 @@ module PreferenceWriteBoundary
     }.freeze,
   }.freeze
 
-  # Static surface-to-realm map. Keys are the concrete presentation surfaces that can issue a write;
-  # values name the realm and the closed operation subset the surface may use. Base owns the
-  # actor-persistence writes (`save`, `reset`); Visa owns the sign-in reflection / sign-out rebuild
-  # (`sign_in`, `sign_out`). A surface not listed here has no write rights at all.
+  # Static surface-to-realm map. A surface not listed here has no write rights.
   SURFACE_REALMS = {
-    "base/com" => { realm: :com, operations: %i(save reset) },
-    "base/app" => { realm: :app, operations: %i(save reset) },
-    "base/org" => { realm: :org, operations: %i(save reset) },
+    "auth/app" => { realm: :app, operations: %i(save) },
+    "auth/org" => { realm: :org, operations: %i(save) },
     "visa/app" => { realm: :app, operations: %i(sign_in sign_out) },
     "visa/org" => { realm: :org, operations: %i(sign_in sign_out) },
   }.freeze
@@ -69,8 +63,6 @@ module PreferenceWriteBoundary
     return write_visa_preference!(operation:, actor:, submitted:) if %i(sign_in sign_out).include?(operation)
 
     case preference_class.name
-    when "ComPreference"
-      write_com_preference!(operation:, actor:, submitted:, &block)
     when "AppPreference", "OrgPreference"
       raise ArgumentError, "anonymous app/org preference writes do not accept callbacks" if block
 
@@ -78,57 +70,6 @@ module PreferenceWriteBoundary
     else
       raise UnsupportedSurfaceError, "unsupported Preference writer model: #{preference_class.name}"
     end
-  end
-
-  def write_com_preference!(operation:, actor:, submitted:, &block)
-    validate_com_write_request!(operation:, actor:, submitted:)
-    token = matching_access_token_value
-    payload = decode_matching_access_token(token) if token.present?
-    public_id = PreferenceToken.extract_public_id(payload)
-    issuance = nil
-    setting_committed = false
-
-    begin
-      with_com_chronicle_transaction do
-        with_preference_connection(:writing) do
-          preference_class.transaction do
-            preference = preference_class.lock.find_by(public_id: public_id) if public_id.present?
-            decision_time = preference_class.database_now
-            if preference && (!preference.issuance_active_at?(now: decision_time) ||
-                              payload.fetch("exp") <= decision_time.to_i ||
-                              !preference_access_token_current?(preference, payload))
-              preference = nil
-            end
-            if operation == :reset
-              retire_and_audit_com_preference!(preference) if preference
-              preference = nil
-            end
-            preference ||= create_anonymous_com_preference!(decision_time)
-            @preferences = preference
-            yield(preference, decision_time, submitted) if operation == :save
-            rotate_preference_jti!(preference)
-            preference.reload
-            ensure_preference_option_defaults("Com")
-            issuance = prepare_anonymous_com_token(
-              preference, build_preferences_payload(preference), issued_at: decision_time,
-            )
-            raise PreferenceBase::ResolutionError, "preference signing failed" if issuance.nil?
-
-            confirm_com_issuance!(preference, issuance)
-          end
-        end
-        setting_committed = true
-      end
-    rescue ActiveRecord::StatementInvalid, ActiveRecord::ConnectionNotEstablished,
-           ActiveRecord::RecordInvalid, ActiveRecord::RecordNotSaved, IOError, SystemCallError => e
-      log_com_write_failure(e, setting_committed: setting_committed)
-      raise PreferenceBase::ResolutionError, "preference persistence failed"
-    rescue JitSecurityJwtRegistry::ConfigurationError => e
-      raise_preference_resolution_error!(:signing_configuration, e)
-    end
-
-    emit_anonymous_com_token!(issuance)
-    issuance
   end
 
   def write_app_org_preference!(operation:, actor:, submitted:)
@@ -142,11 +83,10 @@ module PreferenceWriteBoundary
     )
     realm = context.fetch(:realm)
     normalized = normalize_anonymous_realm_submission(submitted, operation)
-    validate_base_preference_actor!(actor, realm)
-    token_payload = decode_base_preference_cookie(context)
-    actor_write_requested = operation == :reset ||
-      normalized.keys.intersect?(ANONYMOUS_DISPLAY_TYPES + [:region])
-    authorize_base_actor_preference_write!(actor, realm) if actor && actor_write_requested
+    validate_auth_preference_actor!(actor, realm)
+    token_payload = decode_auth_preference_cookie(context)
+    actor_write_requested = normalized.keys.intersect?(ANONYMOUS_DISPLAY_TYPES + [:region])
+    authorize_auth_actor_preference_write!(actor, realm) if actor && actor_write_requested
 
     actor_committed = false
     if actor && actor_write_requested
@@ -164,7 +104,6 @@ module PreferenceWriteBoundary
 
     emit_anonymous_realm_token!(issuance)
     write_browser_binding_cookie(binding_value, expires_at: issuance.expires_at) if binding_value
-    clear_retired_preference_cookies!(clear_binding: authorization.fetch(:operation) == :reset)
     issuance
   rescue ActiveRecord::StatementInvalid, ActiveRecord::ConnectionNotEstablished,
          ActiveRecord::RecordInvalid, ActiveRecord::RecordNotSaved, IOError, SystemCallError => e
@@ -183,10 +122,6 @@ module PreferenceWriteBoundary
       preference_class.transaction do
         decision_time = preference_class.database_now
         previous = current_realm_preference_for_write(preference_class, token_payload, decision_time)
-        if authorization.fetch(:operation) == :reset
-          previous&.retire!
-          previous = nil
-        end
         preference = previous || create_anonymous_realm_preference!(preference_class, context, decision_time)
         @preferences = preference
         apply_anonymous_realm_submission!(
@@ -207,9 +142,7 @@ module PreferenceWriteBoundary
 
   def normalize_anonymous_realm_submission(submitted, operation)
     raise ArgumentError, "Preference changes must be an object" unless submitted.is_a?(Hash)
-    raise ArgumentError, "reset cannot submit Preference changes" if operation == :reset && submitted.any?
-    return {} if operation == :reset
-    raise ArgumentError, "unsupported Base Preference operation" unless operation == :save
+    raise ArgumentError, "unsupported Auth Preference operation" unless operation == :save
 
     values = submitted.to_h.with_indifferent_access
     allowed = ANONYMOUS_DISPLAY_TYPES + [:region, *COOKIE_CONSENT_FIELDS, :web_push]
@@ -283,16 +216,16 @@ module PreferenceWriteBoundary
     normalized[:web_push] = web_push
   end
 
-  def validate_base_preference_actor!(actor, realm)
+  def validate_auth_preference_actor!(actor, realm)
     return if actor.nil?
 
     config = ACTOR_PREFERENCE_REALMS.fetch(realm)
     return if actor.instance_of?(config.fetch(:actor_class)) && actor.persisted?
 
-    raise UnsupportedSurfaceError, "Base Preference writer actor does not match its realm"
+    raise UnsupportedSurfaceError, "Auth Preference writer actor does not match its realm"
   end
 
-  def authorize_base_actor_preference_write!(actor, realm)
+  def authorize_auth_actor_preference_write!(actor, realm)
     config = ACTOR_PREFERENCE_REALMS.fetch(realm)
     record = config.fetch(:preference_class).new(
       config.fetch(:foreign_key) => actor.id,
@@ -316,12 +249,7 @@ module PreferenceWriteBoundary
           foreign_key => actor.id,
           :status_id => status_class::ACTIVE,
         )
-        if operation == :reset
-          if preference
-            preference.retire!
-            changed = true
-          end
-        elsif (values = submitted.slice(*ANONYMOUS_DISPLAY_TYPES, :region)).any?
+        if (values = submitted.slice(*ANONYMOUS_DISPLAY_TYPES, :region)).any?
           preference ||= preference_class.create!(
             foreign_key => actor.id,
             :status_id => status_class::ACTIVE,
@@ -373,7 +301,7 @@ module PreferenceWriteBoundary
     raise ActiveRecord::RecordNotFound, "#{prefix} #{type} option is unavailable"
   end
 
-  def decode_base_preference_cookie(context)
+  def decode_auth_preference_cookie(context)
     cookie_name = PreferenceCookieName.anonymous_jwt
     raw_cookie = request.get_header("HTTP_COOKIE").to_s
     matching_names =
@@ -447,10 +375,6 @@ module PreferenceWriteBoundary
     option_class = (realm == "app") ? AppPreferenceWebPushOption : OrgPreferenceWebPushOption
     option = preference_option_from_class(option_class, realm.capitalize, :web_push, value)
     record_class.find_by!(preference_id: preference.id).update!(preference: preference, option_id: option.id)
-  end
-
-  def clear_retired_preference_cookies!(clear_binding:)
-    clear_browser_binding_cookie! if clear_binding
   end
 
   def log_app_org_preference_write_failure(operation, error, actor_committed:)
@@ -607,7 +531,7 @@ module PreferenceWriteBoundary
   end
 
   def explicit_actor_preference_snapshot(actor, realm)
-    # Base explicit saves take the same actor lock; read from the owner database after that writer
+    # Auth explicit saves take the same actor lock; read from the owner database after that writer
     # commits so sign-in cannot reflect a lagging replica or a half-applied child set.
     case realm
     when "app"
@@ -805,7 +729,7 @@ module PreferenceWriteBoundary
   end
 
   def anonymous_realm_cookie_options(expires_at:, httponly:)
-    anonymous_com_cookie_options(expires_at:, httponly:)
+    anonymous_preference_cookie_options(expires_at:, httponly:)
   end
 
   def log_visa_preference_write_failure(operation, error)
@@ -816,74 +740,6 @@ module PreferenceWriteBoundary
         error_class: error.class.name,
         request_id: request.request_id,
       ),
-    )
-  end
-
-  def validate_com_write_request!(operation:, actor:, submitted:)
-    PreferenceWriteBoundary.authorize_writer!(
-      controller: self.class, action: action_name, surface_key: "base/com",
-      operation: operation, realm_model: preference_class,
-    )
-    unless actor.equal?(Actor.current) && actor.tld == :com && actor.unauthenticated?
-      raise UnsupportedSurfaceError, "com preference writes require the current anonymous com actor"
-    end
-    raise ArgumentError, "submitted preference changes must be a hash" unless submitted.is_a?(Hash)
-    raise ArgumentError, "reset cannot submit preference changes" if operation == :reset && submitted.any?
-  end
-
-  def log_com_write_failure(error, setting_committed:)
-    event =
-      if setting_committed
-        "preference.write.setting_committed_audit_failed"
-      else
-        "preference.write.persistence_failed"
-      end
-    Rails.logger.error(JitLogEvent.format(event, error_class: error.class.name, request_id: request.request_id))
-  end
-
-  def retire_and_audit_com_preference!(preference)
-    @preferences = preference
-    preference.retire!
-    create_audit_log(
-      event_id: ComPreferenceChronicleEvent::RESET_BY_USER_DECISION,
-      context: { preference_reset: true, rebootstrap: true },
-    )
-  end
-
-  def with_com_chronicle_transaction(&)
-    # A setting rollback must also roll back its creation audit. The two commits remain separate:
-    # a Chronicle commit failure after the setting commit cannot be made atomic by nesting them.
-    ChronicleRecord.connected_to(role: :writing) do
-      ChronicleRecord.transaction(requires_new: true) do
-        ComPreferenceChronicle.lock_preference_audit_writers!
-        yield
-      end
-    end
-  end
-
-  def create_anonymous_com_preference!(decision_time)
-    lifetime = SecurityJwtPreferenceTokenCodec::ANONYMOUS_REALM_TOKEN_TTL
-    expiry = Time.at(decision_time.to_i + lifetime.to_i).utc
-    ensure_preference_reference_defaults!
-    preference = ComPreference.create!(
-      jti: JitSecurityJwtJtiGenerator.generate,
-      last_issued_at: Time.at(decision_time.to_i).utc,
-      last_issued_expires_at: expiry,
-    )
-    @preferences = preference
-    create_preference_options(preference, {})
-    create_audit_log(
-      event_id: "CREATE_NEW_PREFERENCE_TOKEN",
-      context: { token_created: true },
-      expires_at: expiry,
-    )
-    preference
-  end
-
-  def confirm_com_issuance!(preference, issuance)
-    preference.confirm_issuance!(
-      issued_at: Time.at(issuance.decoded.fetch("iat")).utc,
-      expires_at: issuance.expires_at,
     )
   end
 
@@ -901,7 +757,7 @@ module PreferenceWriteBoundary
     end
 
     # Authorize a write against the closed contract. `surface_key` is the string the controller's
-    # route authority carries (e.g. "base/com"); `operation` is a Symbol drawn from OPERATIONS.
+    # route authority carries (e.g. "auth/app"); `operation` is a Symbol drawn from OPERATIONS.
     # `realm_model` is the concrete Preference model class the surface intends to write.
     def authorize!(surface_key:, operation:, realm_model:)
       surface = SURFACE_REALMS.fetch(surface_key) { raise UnsupportedSurfaceError, surface_key.to_s }
@@ -913,8 +769,6 @@ module PreferenceWriteBoundary
       realm =
         if [AppPreference, "AppPreference"].include?(realm_model)
           :app
-        elsif [ComPreference, "ComPreference"].include?(realm_model)
-          :com
         elsif [OrgPreference, "OrgPreference"].include?(realm_model)
           :org
         end
@@ -935,81 +789,29 @@ module PreferenceWriteBoundary
 
     def writer_callers(surface_key:, operation:, action:)
       case surface_key
-      when "base/com" then base_com_writer_callers(operation:, action:)
-      when "base/app" then base_app_writer_callers(operation:, action:)
-      when "base/org" then base_org_writer_callers(operation:, action:)
+      when "auth/app" then auth_app_writer_callers(operation:, action:)
+      when "auth/org" then auth_org_writer_callers(operation:, action:)
       when "visa/app" then visa_app_writer_callers(operation:, action:)
       when "visa/org" then visa_org_writer_callers(operation:, action:)
       else []
       end
     end
 
-    def base_com_writer_callers(operation:, action:)
-      return [Base::Com::Preference::CustomizationsController] if operation == :reset && action == "destroy"
+    def auth_app_writer_callers(operation:, action:)
       return [] unless operation == :save && action == "update"
 
       [
-        Base::Com::Api::V0::Preferences::CookiesController,
-        Base::Com::Api::V0::Preferences::ThemesController,
-        Base::Com::Api::V0::Preferences::WebPushesController,
-        Base::Com::Preference::CookiesController,
-        Base::Com::Preference::ThemesController,
-        Base::Com::Preference::CurrenciesController,
-        Base::Com::Preference::CalendarsController,
-        Base::Com::Preference::ClocksController,
-        Base::Com::Preference::MotionsController,
-        Base::Com::Preference::DensitiesController,
-        Base::Com::Preference::PaginationsController,
-        Base::Com::Preference::LanguagesController,
-        Base::Com::Preference::TimezonesController,
-        Base::Com::Preference::RegionsController,
-        Base::Com::Preference::ScreensController,
+        Auth::App::Api::V0::Preferences::CookiesController,
+        Auth::App::Api::V0::Preferences::ThemesController,
       ]
     end
 
-    def base_app_writer_callers(operation:, action:)
-      return [Base::App::Preference::CustomizationsController] if operation == :reset && action == "destroy"
+    def auth_org_writer_callers(operation:, action:)
       return [] unless operation == :save && action == "update"
 
       [
-        Base::App::Api::V0::Preferences::CookiesController,
-        Base::App::Api::V0::Preferences::ThemesController,
-        Base::App::Api::V0::Preferences::WebPushesController,
-        Base::App::Preference::CookiesController,
-        Base::App::Preference::ThemesController,
-        Base::App::Preference::CurrenciesController,
-        Base::App::Preference::CalendarsController,
-        Base::App::Preference::ClocksController,
-        Base::App::Preference::MotionsController,
-        Base::App::Preference::DensitiesController,
-        Base::App::Preference::PaginationsController,
-        Base::App::Preference::LanguagesController,
-        Base::App::Preference::TimezonesController,
-        Base::App::Preference::RegionsController,
-        Base::App::Preference::ScreensController,
-      ]
-    end
-
-    def base_org_writer_callers(operation:, action:)
-      return [Base::Org::Preference::CustomizationsController] if operation == :reset && action == "destroy"
-      return [] unless operation == :save && action == "update"
-
-      [
-        Base::Org::Api::V0::Preferences::CookiesController,
-        Base::Org::Api::V0::Preferences::ThemesController,
-        Base::Org::Api::V0::Preferences::WebPushesController,
-        Base::Org::Preference::CookiesController,
-        Base::Org::Preference::ThemesController,
-        Base::Org::Preference::CurrenciesController,
-        Base::Org::Preference::CalendarsController,
-        Base::Org::Preference::ClocksController,
-        Base::Org::Preference::MotionsController,
-        Base::Org::Preference::DensitiesController,
-        Base::Org::Preference::PaginationsController,
-        Base::Org::Preference::LanguagesController,
-        Base::Org::Preference::TimezonesController,
-        Base::Org::Preference::RegionsController,
-        Base::Org::Preference::ScreensController,
+        Auth::Org::Api::V0::Preferences::CookiesController,
+        Auth::Org::Api::V0::Preferences::ThemesController,
       ]
     end
 

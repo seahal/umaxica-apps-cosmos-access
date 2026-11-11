@@ -4,6 +4,11 @@ This document describes every request path that reaches Rails, the trust domain 
 and which component can forge which header. It exists because Cloudflare Tunnel, Cloudflare Access,
 and Workers VPC are distinct trust domains that must not be conflated.
 
+Access uses only `cloudflare-tunnel` with `CLOUDFLARED_TOKEN`. Workers VPC belongs to Press; Access
+supplies no connector or origin alias for it. See the
+[tunnel split plan](../../plans/2026-11-08-cloudflare-tunnel-split.md). Cloudflare resources and
+Press configuration are outside Access local cleanup.
+
 ## Hostname Families, Routing Targets, and Host Authorization
 
 `PUBLIC_*_URL` and `PRIVATE_*_URL` are the **only two hostname families** (see
@@ -11,17 +16,12 @@ and Workers VPC are distinct trust domains that must not be conflated.
 `PRIVATE_*` names the network-side ingress that Cloudflare or AWS connects to. They are not a
 development/production split.
 
-A **routing target** is not a hostname family member's role but a separate concept, and both
-Cloudflare mechanisms keep the two strictly apart:
+A **routing target** is not a hostname family member's role but a separate concept. Tunnel ingress
+keeps the two strictly apart:
 
 - A Tunnel ingress rule's `service:` address is a routing target. `cloudflared` leaves the HTTP
   `Host` header unmodified unless `httpHostHeader` is set, so the origin receives the **browser's**
   hostname, not the `service:` address. `originServerName` affects TLS certificate validation only.
-- A Workers VPC Service's configured host and port are the routing target. Cloudflare documents that
-  the host in the Worker's `fetch()` URL "is not used to route requests, and instead only populates
-  the `Host` field", and that the VPC Service configuration "will always be used to connect and
-  route requests to your services, even if a different host or port is present in the URL provided
-  to the `fetch()` operation".
 
 Therefore: **Rails Host Authorization evaluates the HTTP `Host` header Rails actually receives —
 never the routing target that delivered the request.** A routing target must never be added to
@@ -31,9 +31,9 @@ never the routing target that delivered the request.** A routing target must nev
 last comma-separated value of `X-Forwarded-Host` when that header is present. A request is rejected
 if _either_ is disallowed. Any hop that sets `X-Forwarded-Host` therefore adds a second name that
 `config.hosts` must admit. A hop that sets `X-Forwarded-Host` from one family while connecting under
-a `Host` from the other makes a `PUBLIC_* ∪ PRIVATE_*` union mandatory regardless of which family
-was chosen for `Host` — so a hop must either send both from the same family or omit
-`X-Forwarded-Host` entirely.
+a `Host` from the other makes a union of the retained `PUBLIC_*` and `PRIVATE_*` hosts mandatory
+regardless of which family was chosen for `Host` — so a hop must either send both from the same
+family or omit `X-Forwarded-Host` entirely.
 
 Which family supplies that `Host` follows from the ingress the listener sits behind:
 
@@ -42,10 +42,11 @@ Which family supplies that `Host` follows from the ingress the listener sits beh
 | Production  | Cloudflare edge → Tunnel                                                 | browser's public hostname                               | `PUBLIC_*`                  |
 | Development | Cloudflare edge → Access → Tunnel, **and** direct on the private network | browser's public hostname, or the private ingress alias | `PUBLIC_* ∪ PRIVATE_*`      |
 
-Development is the one environment with two live ingresses, so it is the one environment whose
-`config.hosts` is a union. That is a consequence of the rule above, not an exception to it: each
-ingress delivers a `Host` from its own family, and Rails must admit the `Host` it actually receives
-from each.
+Development is the environment with two live ingresses, so its `config.hosts` is a union of the
+configured retained public and private hosts. The local aliases are Auth APP/ORG, Visa APP/ORG and
+the Mission, Flipper, Blazer, PgHero, Coverband and Swagger tool hosts listed in
+[`docs/reference/subdomains.md`](../reference/subdomains.md). Each ingress delivers a `Host` from
+its own family, and Rails admits the `Host` it actually receives.
 
 `/health` and the three singular text probe paths (`/health/{liveness,readiness,startup}`) are the
 deliberate exception: orchestrator and container probes reach the origin directly and carry no
@@ -54,83 +55,63 @@ meaningful `Host`, so production excludes those exact paths from Host Authorizat
 `/api/v0/health.json` and `/api/v0/revision.json` are reached through the tunnel with a real `Host`
 and are deliberately not exempt.
 
-**A third hostname family is not justified.** Every observed request path resolves its `Host` to a
-member of one of the two existing families. The Workers VPC path is the only one where the value is
-a free choice rather than a consequence, and that choice is between the two existing families — see
-"Workers VPC Host Header" below. The historical defect was never a missing family; it was Host
-Authorization consuming the wrong family for its environment.
+**A third hostname family is not justified.** Current local routes use the two configured host
+families. Workers VPC is outside Access's request paths.
 
 ## Development Is Tunnel-Exposed Behind Access
 
-Development Rails **is** published through Cloudflare Tunnel under the browser-facing site names,
-with Cloudflare Access as the perimeter in front of them. This is a deliberate, supported access
-path, not a leak: reaching development requires passing an Access policy at the Cloudflare edge
-before the connector will proxy anything, and Rails authentication and authorization still apply
-behind it (see "Trust Domains" below — Access is a perimeter, never Rails' identity system).
+Development Rails **is** published through Cloudflare Tunnel under the retained browser-facing host
+names, with Cloudflare Access as the perimeter in front of them. Reaching development requires
+passing an Access policy at the Cloudflare edge before the connector will proxy anything; Rails
+authentication and authorization still apply behind it.
 
 Development is therefore reachable two ways, and both must work:
 
 - through the tunnel, where the request carries the browser's public site name, because cloudflared
   leaves `Host` unmodified unless `httpHostHeader` is set;
 - directly on the compose `frontend` network through the private `*.localhost` aliases, which is how
-  local Edge processes and the transport probe in `docs/operations/cloudflare-private-origin.md`
-  reach Rails.
+  the transport probe in `docs/operations/cloudflare-private-origin.md` reaches Rails.
 
 ### How the two families reach Host Authorization
 
-`config/environments/development.rb` builds `config.hosts` from the environment rather than a
-hardcoded list, so `compose.yaml` stays the single source of hostnames — a new tunnel hostname is
-added there, not in Rails config:
+`config/environments/development.rb` builds `config.hosts` from the environment plus explicit local
+aliases. `.devcontainer/compose.yaml` declares those private aliases, while configured public and
+private URLs supply the tunnel and ingress host values:
 
-1. `compose.yaml` aliases both the private `*.localhost` origins and the published site names to the
-   `core` container on the `frontend` network, so a Tunnel ingress rule's `service:` address
-   resolves.
-2. `development.rb` reads both `PRIVATE_*_URL` and `PUBLIC_*_URL` values into `env_host_keys`.
-3. `boot_config` is passed through unfiltered. `ConfigValues::HostFamilyValues` resolves several
-   families to browser-facing names in development (`#auth_key`, `#base_key`, `#warp_key` fall back
-   to `PUBLIC_AUTH_*`/`PUBLIC_BASE_*`/`PUBLIC_WARP_*_URL`), which is what the other consumers need
-   anyway: route constraints, the CSP form-action allowlist, and the OIDC authority all read
-   `PUBLIC_*`.
+1. `.devcontainer/compose.yaml` aliases the retained private `*.localhost` origins to the `core`
+   container on the `frontend` network.
+2. `development.rb` admits the configured `PRIVATE_*_URL` and `PUBLIC_*_URL` host values plus those
+   retained local aliases.
+3. `boot_config` defines Auth and Visa host families. The operator tools have their own configured
+   host entries; neither Base nor other retired product families are part of current host
+   authorization.
 
-The Edit staff Publishing surface is one such pair: `edit.umaxica.org` is the browser hostname and
-the remotely managed Tunnel routes it to `http://edit.org.localhost:3000`. It remains subject to
-Cloudflare Access at the perimeter and Rails operator authentication and Action Policy at the
-application boundary.
+The remotely managed Tunnel routes the retained Auth, Visa and operator hosts to the Rails origin.
+Its external configuration is not evidence that a retired Access host remains a local route.
 
-The effective development Host Authorization policy was verified by booting Rails in development and
-exercising its middleware with `Rack::MockRequest`. The probe accepted the configured private
-origins and browser-facing site names, including `jp.umaxica.*`, and rejected the unconfigured
-`core-jp.umaxica.app` and `evil.example.com`; see the
-[recorded observation](../../evidence/2026-10-13-environment-test-retirement-A6V9.md). This one-time
-evidence is not a regression-test guard. It checks Rails' effective host policy, not Compose DNS or
-alias-to-environment-variable consistency; inspect those configuration boundaries directly when they
-change.
+The historical Host Authorization observation in
+[`evidence/2026-10-13-environment-test-retirement-A6V9.md`](../../evidence/2026-10-13-environment-test-retirement-A6V9.md)
+predates the surface reset and used former host families. It does not verify the current host set.
+Inspect the active configuration when host ownership changes.
 
 ### Scheme and cookie behaviour on the tunnel path
 
-- **Scheme trust is not a blocker.** `ENV["TRUSTED_PROXIES"]` is unset and development sets neither
-  `assume_ssl` nor `force_ssl`, but Rack 3.1's `Rack::Request#scheme` honours the
+- **Scheme trust is not a blocker.** `TRUSTED_PROXIES` is not configured and development sets
+  neither `assume_ssl` nor `force_ssl`, but Rack 3.1's `Rack::Request#scheme` honours the
   `X-Forwarded-Proto: https` that the Cloudflare edge sets and cloudflared passes through without
-  gating it on the peer being a trusted proxy. Verified in this repository's development
-  environment: a request with `Host: auth.umaxica.com` and `X-Forwarded-Proto: https` yields
-  `request.base_url == "https://auth.umaxica.com"` and `request.ssl? == true`, so `Origin` matches
-  and non-GET requests pass CSRF.
-- **Cookie hardening is partial and deliberate.** `JitSessionCookieConfig.force_secure?` is `false`
-  in development, so the session cookie is emitted without `Secure` and without the `__Host-` prefix
-  even when it is set over the tunnel on a public domain. `CoreCookieOptions` is per-request
-  (`Rails.env.production? || FORCE_SECURE_COOKIES=1 || request.ssl?`) and does mark its cookies
-  `Secure` on that path, so the two differ. `FORCE_SECURE_COOKIES=1` is the lever that closes the
-  gap, at the cost of the plain-`http` `*.localhost` path: `Secure` cookies are not sent back over
-  `http`, so enabling it breaks local sign-in outside the tunnel. Left off so both paths stay
-  usable; turn it on for a development session that only uses the tunnel.
+  gating it on the peer being a trusted proxy. The recorded scheme probe used a retired host and
+  must not be treated as current Auth/Visa verification. Recheck origin and CSRF behavior on the
+  retained hosts after a proxy or host configuration change.
+- Session and preference cookie behavior is configured separately. Verify current cookie settings in
+  the owning Auth/Visa contract before relying on observations recorded against the former host set.
 
 ## Trust Domains
 
-| Domain            | Purpose                                               | Never used for                                                                                                    |
-| ----------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Cloudflare Tunnel | Selected externally reachable Rails ingress           | Service-to-service (Workers / Edge) traffic                                                                       |
-| Workers VPC       | Cloudflare Worker / Edge -> Rails, service-to-service | Public browser traffic, operator access                                                                           |
-| Cloudflare Access | Perimeter for explicitly protected hostnames          | Rails' primary identity system — Rails authentication and authorization remain authoritative regardless of Access |
+| Domain            | Purpose                                      | Never used for                                                                                                    |
+| ----------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Cloudflare Tunnel | Selected externally reachable Rails ingress  | Service-to-service (Workers / Edge) traffic                                                                       |
+| Workers VPC       | Press-owned service-to-service path          | Access ingress                                                                                                    |
+| Cloudflare Access | Perimeter for explicitly protected hostnames | Rails' primary identity system — Rails authentication and authorization remain authoritative regardless of Access |
 
 ## Request Paths
 
@@ -145,12 +126,10 @@ Browser --(HTTPS)--> Cloudflare edge --(QUIC tunnel)--> cloudflared (compose: cl
   `cloudflare/cloudflared:2026.8.2`,
   `tunnel --no-autoupdate --protocol auto --metrics 0.0.0.0:2000 run`, and `TUNNEL_TOKEN` resolved
   from the gitignored repository `.env`). A plain Compose `up` and the Dev Container lifecycle both
-  start it. The alternative connector stays behind `--profile tunnel-edge`. It is the only component
-  on the `frontend` network besides `core` itself.
-- The connector is attached only to Global's private `frontend` network. Edge and Global do not
-  share a Podman network. An Edge Worker reaches Rails through its Cloudflare Workers VPC Service
-  binding and this tunnel, including `remote: true` binding behavior during local Worker
-  development.
+  start it. Previous Edge connector instructions are deferred for separate reconciliation; they do
+  not describe the current Compose service inventory.
+- The connector is attached only to Access's private `frontend` network. Access and Edge do not
+  share a Podman network. Workers VPC connectivity belongs to Press, not Access.
 - `core` never publishes a host port in the base `compose.yaml`. No test asserts this any longer:
   `test/unit/security/tunnel_origin_isolation_test.rb` was removed, and Compose configuration is
   verified by running it (`adr/no-test-suite-for-environment-construction.md`). This is the actual
@@ -176,9 +155,9 @@ Browser --(HTTPS)--> Cloudflare edge --(QUIC tunnel)--> cloudflared (compose: cl
   either: Rails' `ActionDispatch::RemoteIp` has no configurable header name (verified —
   `forwarded_for`/`client_ip` are hardcoded to `X-Forwarded-For`/`Client-Ip` in Rack, not
   configurable), so honoring `CF-Connecting-IP` would require new custom middleware. Given the
-  network isolation invariant already holds and is regression-tested, that additional middleware is
-  not currently justified — revisit only if a feature specifically needs Cloudflare's more precise
-  client-IP header.
+  network isolation configuration boundary, that additional middleware is not currently justified.
+  Revisit only if a feature specifically needs Cloudflare's more precise client-IP header; the
+  removed regression test no longer guards this boundary.
 
 ### 2. Operator/browser request through Cloudflare Access
 
@@ -208,75 +187,21 @@ Browser --(HTTPS, Access cookie/JWT)--> Cloudflare edge --(Access policy check)-
   merely for "defense in depth" duplicates the connector-side check without a concrete requirement
   driving it.
 
-#### Core (`jp.*`) tunnel path rules
+#### Retained Access host families
 
-The browser-facing tunnel publishes the core hosts with a path regular expression, so only the
-listed paths reach Rails; every other path falls through to a later ingress rule and never appears
-in the Rails log. Like the rest of the ingress configuration, these rules live in the Cloudflare
-dashboard; this is the recorded intended value, not something the repository can enforce.
+Current local hosts are Auth APP/ORG, Visa APP/ORG and the six operator tools in
+[`docs/reference/subdomains.md`](../reference/subdomains.md). The Cloudflare account owns tunnel
+ingress and Access policy for published development hosts. The former `jp.*`, Base, Core, Warp,
+Palm, Edit and Tech paths in earlier tunnel inventories are retired and are not current route
+contracts. For an individual request, a Rails response carries an `x-request-id`; absence of that
+header does not by itself identify which external hop rejected the request.
 
-| Hostname         | Service                          |
-| ---------------- | -------------------------------- |
-| `jp.umaxica.app` | `http://core.app.localhost:3000` |
-| `jp.umaxica.com` | `http://core.com.localhost:3000` |
-| `jp.umaxica.org` | `http://core.org.localhost:3000` |
+### 3. Workers VPC ownership
 
-All three share this path:
-
-```text
-^/((api/v0|oidc|sign)(/.*)?|\.well-known/jwks\.json|csp-violation-report)$
-```
-
-- `sign(/.*)?` covers the whole `/sign` scope in `config/routes/core.rb`: `GET`/`POST /sign` (RP
-  start) and `/sign/out` (sign-out). An earlier value listed only `sign/out`, so `/sign` never
-  reached Rails and the edge answered with an empty HTTP 300.
-- `oidc(/.*)?` covers the `/oidc` scope, including the OIDC callback `/oidc/callback`. The callback
-  was `/sign/callback` until 2026-10-02.
-- The anchored group does not admit sibling prefixes such as `/signup` or `/signs`.
-- `jp.umaxica.dev` is not published through this rule set.
-- Diagnosis: a response that reached Rails carries `x-request-id`; a response without it, and no
-  matching line in `log/development.log`, was answered by Cloudflare.
-
-### 3. Worker / Edge request through Workers VPC
-
-```text
-Cloudflare Worker (fetch()) --(Workers VPC binding)--> VPC Service (bound to a Tunnel ID)
-  --(private tunnel connection)--> core (Rails)
-```
-
-- Workers VPC binds to a VPC Service on the dedicated `umaxica-dev-workers-vpc` tunnel. The local
-  connector is `cloudflare-tunnel-workers-vpc`; it is distinct from the browser-facing `Auth` tunnel
-  and has no ingress rules, public hostname, or Access application. Workers VPC requires cloudflared
-  `2025.7.0` or newer; `compose.yaml` pins the supported `2026.8.2` release and uses
-  `--protocol auto` so QUIC remains available.
-- The VPC Service connects to `core-workers-vpc.internal:3000`. This is a Compose DNS alias on the
-  private `frontend` network, so it survives container and network recreation without pinning a
-  Podman-assigned IP. It is the routing target only, not an HTTP Host family.
-- Authentication for this path follows its own threat model (a Worker is a Cloudflare-controlled,
-  non-browser client) rather than reusing the browser-facing Access flow. Rails surface routing,
-  authentication, and authorization remain authoritative after the request reaches the origin.
-
-#### Workers VPC Host header — an explicit design decision
-
-Because the VPC Service configuration alone decides routing, the `Host` the Worker sends is free of
-the network path and must be chosen deliberately. It remains a choice **between the two existing
-families**; it is not grounds for a third.
-
-- **`PUBLIC_*`** keeps one rule true in production — Rails always sees the public site name — so
-  `config.hosts` stays a single family, and the value already matches the surface route constraints,
-  which are `PUBLIC_*`-derived.
-- **`PRIVATE_*`** would make the `Host` describe the private ingress instead, forcing production
-  `config.hosts` to become a `PUBLIC_* ∪ PRIVATE_*` union solely to admit this one caller, and
-  splitting the production rule in two.
-
-**Decided** by `adr/core-canonical-public-host.md`: the Worker sends a `Host` from the `PUBLIC_*`
-family and does **not** set `X-Forwarded-Host`. The `Host` must be a narrowly allowlisted Umaxica
-surface hostname that matches the surface route constraint — for Core that is
-`jp.umaxica.{app,com,org}`, the canonical family chosen by the same ADR.
-
-Omitting `X-Forwarded-Host` is part of the decision, not an incidental detail: per the Host
-Authorization note above, setting it would add a second name to admit and could force the
-`PUBLIC_* ∪ PRIVATE_*` union that choosing `PUBLIC_*` for `Host` exists to avoid.
+Workers VPC is used only by Press. Access has no `cloudflare-tunnel-workers-vpc` service or
+`core-workers-vpc.internal` origin alias. The Press tunnel and Worker configuration remain unchanged
+by local Access cleanup. Historical Host decisions remain in `adr/core-canonical-public-host.md`;
+they do not establish a current Access VPC path.
 
 ## Header Trust Summary
 
@@ -289,6 +214,6 @@ Authorization note above, setting it would add a second name to admit and could 
 ## Non-Goals of This Document
 
 - Does not configure the Worker binding or the VPC Service resource; those are owned outside this
-  Rails repository. It does configure the stable Rails-side target and dedicated connector.
+  Access repository. Access provides neither a VPC target nor a VPC connector.
 - Does not add Rails-side `CF-Connecting-IP` support — no feature currently needs it, and adding
   custom middleware for it now would be unjustified scope.

@@ -1,42 +1,16 @@
-# WebAuthn RP ID And Origin Boundary
+# WebAuthn RP ID and Origin Boundary
 
-> **Legacy Sign/Acme vocabulary:** The signed-result handoff described below is historical. Auth
-> owns the credential ceremony, while Base owns browser sessions, RP sessions, and authorization
-> code issuance in the current Rails architecture. Do not use this document to introduce a new
-> signed or one-shot result path.
+Auth APP/ORG owns the WebAuthn ceremony routes and validates RP ID, origin, challenge, and
+credential response against the current host and admitted Auth flow. A ceremony result is evidence;
+it does not itself issue a Visa session or authorize an external RP session.
 
-## Boundary
+Visa owns the APP/ORG OpenID Provider transaction and consumes credential evidence only when it is
+bound to that transaction. External relying parties own their WebAuthn interfaces, callback routes,
+browser sessions, and local credential state in their own repositories.
 
-WebAuthn and passkey ceremonies run in `sign/id` because browser origin, RP ID, provider callback,
-and challenge handling require stable credential ceremony URLs.
+Passkey credential management outside retained Auth routes is not served by Access. Persisted
+identity and credential records remain pending the separate model/database usage report; they do not
+establish a removed Base or RP route.
 
-The WebAuthn ceremony result is evidence. `acme/www` consumes the signed result and commits any
-session, account, credential-enrollment, authorization, or freshness effect that belongs to acme.
-
-## Sign/ID Responsibilities
-
-`sign/id` may own:
-
-- WebAuthn RP ID and origin ceremony validation;
-- challenge generation and short-lived challenge state;
-- credential inventory needed for assertion or registration;
-- attestation and assertion verification;
-- ceremony audit records.
-
-## Acme/WWW Responsibilities
-
-`acme/www` owns:
-
-- account lifecycle decisions;
-- session creation and freshness updates;
-- authorization decisions;
-- preference/settings/dashboard state;
-- downstream token issuance.
-
-Physical credential tables may remain sign-side during this implementation phase. That placement
-does not authorize sign-side sessions, account lifecycle, preference writes, or freshness storage.
-
-## Related
-
-- `docs/security/credential-gateway.md`
-- `docs/security/ceremony-grant-result.md`
+See [Passkeys](passkeys.md), [Credential Gateway](credential-gateway.md), and the accepted
+[`visa-op-host` decision](../../adr/visa-op-host.md).

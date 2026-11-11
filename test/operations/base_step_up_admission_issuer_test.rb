@@ -261,7 +261,7 @@ class BaseStepUpAdmissionIssuerTest < ActiveSupport::TestCase
         oidc_jti: SecureRandom.uuid,
         oidc_nonce: SecureRandom.hex(16),
         oidc_auth_time: Time.at(now.to_i).utc,
-        oidc_acr: StepUpEvidenceResolver::STEP_UP_ACR,
+        oidc_acr: StepUpEvidenceVerifier::STEP_UP_ACR,
         oidc_amr: JSON.generate(["passkey"]),
         refresh_token_expires_at: now + 1.hour,
       )
@@ -358,7 +358,7 @@ class BaseStepUpAdmissionIssuerTest < ActiveSupport::TestCase
       authentication_epoch: token.authentication_epoch, client_token: token,
       oidc_client_id: oidc_client.client_id, oidc_scope: "openid profile", oidc_jti: SecureRandom.uuid,
       oidc_nonce: SecureRandom.hex(16), oidc_auth_time: Time.at(now.to_i).utc,
-      oidc_acr: StepUpEvidenceResolver::STEP_UP_ACR, oidc_amr: JSON.generate(["email_otp"]),
+      oidc_acr: StepUpEvidenceVerifier::STEP_UP_ACR, oidc_amr: JSON.generate(["email_otp"]),
       refresh_token_expires_at: now + 1.hour,
     )
     grant.issue_refresh_token!(now:)

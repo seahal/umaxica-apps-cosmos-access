@@ -69,13 +69,4 @@ class BranchCoverageBatch12OtpAndZerosTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the corporate credential host routes no sign-in or sign-up ceremony" do
-    host = ENV.fetch("PUBLIC_AUTH_CORPORATE_URL")
-
-    %w(/sign/in /sign/up /sign/out /verification /verification/passkey/options /ceremony_bindings).each do |path|
-      assert_raises(ActionController::RoutingError, "#{path} must stay unrouted on the corporate host") do
-        Rails.application.routes.recognize_path("https://#{host}#{path}", method: :get)
-      end
-    end
-  end
 end

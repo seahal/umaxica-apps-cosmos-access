@@ -30,10 +30,4 @@ class BranchCoverageBatch33PreciseArmsTest < ActiveSupport::TestCase
       assert_raises(SignInSelectorParticipant::InvalidCycle) { participant.auto_commit_single! }
     end
   end
-
-  test "Publishing create entry operation easy guard" do
-    error = assert_raises(ArgumentError) { Publishing::CreateEntryOperation.new }
-
-    assert_match(/missing keyword/, error.message)
-  end
 end

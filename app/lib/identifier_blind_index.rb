@@ -55,13 +55,11 @@ module IdentifierBlindIndex
   end
 
   def required_secret_credential(key)
-    Rails.app.creds.option(key).presence || required_env_secret_credential(key)
-  end
+    # Rails.app.creds gives ENV priority; lookup keys belong only to encrypted credentials.
+    secret = Rails.application.credentials.option(key)
+    raise_missing_secret_credential(key) unless secret.is_a?(String) && secret.present?
 
-  def required_env_secret_credential(key)
-    ENV.fetch(key.to_s).presence || raise_missing_secret_credential(key)
-  rescue KeyError
-    raise_missing_secret_credential(key)
+    secret
   end
 
   def raise_missing_secret_credential(key)

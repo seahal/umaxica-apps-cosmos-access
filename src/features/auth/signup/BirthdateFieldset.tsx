@@ -1,4 +1,4 @@
-// React port of the `sign_up_birthdate_fields` helper.
+// Renders the birthdate parts that the Auth sign-up checkpoint prepared on the server.
 //
 // The part order and the separator follow the visitor's date-format preference, which the server
 // resolves and sends; the browser never re-derives it. Today's date is a typing convenience only —

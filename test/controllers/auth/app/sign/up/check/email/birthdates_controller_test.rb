@@ -36,8 +36,7 @@ class Auth::App::Sign::Up::Check::Email::BirthdatesControllerTest < ActionDispat
     TurnstileVerifierStub.challenge_response = { "success" => true }
     browser = self
     auth_host = @host
-    bootstrap_auth_sign_in_admission!(surface: "app")
-    switch_browser_to_sign_up!(integration_session, surface: "app", base_browser: @base_browser)
+    bootstrap_auth_sign_up_admission!(surface: "app")
     browser.get("/sign/up/email/new", params: { ri: "jp" })
 
     assert_equal 200, browser.response.status
@@ -741,7 +740,7 @@ class Auth::App::Sign::Up::Check::Email::BirthdatesControllerTest < ActionDispat
     assert_equal ClientSignUpFlowStatus::CANCELLED, first_flow.reload.status_id
 
     # Cancellation ended this admission. A fresh Base admission is required before signup.
-    base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    base_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     host!(base_host)
     https!
     get("/sign", params: { ri: "jp" })
@@ -1281,7 +1280,7 @@ class Auth::App::Sign::Up::Check::Email::BirthdatesControllerTest
   end
 
   def seed_social_auth_session(provider:, intent: "login", user: nil, entry: nil, ri: "jp", rt: nil, referer: nil)
-    host = configured_host(:sign_service)
+    host = configured_host(:auth_service)
     host!(host) if respond_to?(:host!)
     normalized_provider = SocialIdentifiable.normalize_provider(provider)
     continue_path =

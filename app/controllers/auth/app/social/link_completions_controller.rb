@@ -46,7 +46,7 @@ module Auth
             )
           end
           session.delete(SocialAuth::SOCIAL_LINK_COMPLETION_SESSION_KEY)
-          redirect_to(auth_app_settings_path(ri: params[:ri]), status: :see_other)
+          redirect_to(social_auth_provider_settings_path(candidate.provider), status: :see_other)
         rescue IdentitySocialCeremonyContract::Error, ActiveRecord::RecordNotFound, ActionController::BadRequest
           head :bad_request
         rescue SocialAuth::BaseError => e

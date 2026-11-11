@@ -1,7 +1,6 @@
 // User-facing strings shared by the React passkey ceremonies.
 //
-// They were string literals in the controllers rather than i18n lookups, so the React port keeps
-// them literal: inventing translation keys here would change what an operator reads mid-ceremony.
+// Keep ceremony feedback explicit here so it stays consistent across the Auth passkey flows.
 export const PASSKEY_MESSAGES = {
   unsupported: "このブラウザはPasskeyに対応していません",
   fetchingOptions: "認証オプションを取得中...",

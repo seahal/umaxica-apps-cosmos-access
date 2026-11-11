@@ -88,33 +88,6 @@ class AuthenticationContextOperationInventoryTest < ActiveSupport::TestCase
                  AuthenticationContextValue.standby.constrain_scopes(operator_scopes)
   end
 
-  test "an ordinary publishing write keeps the active-operator policy in normal and standby" do
-    operator = Operator.new
-
-    assert_predicate operator, :active?
-
-    entry = Publishing::Docs::Org::Entry.new
-    outcomes =
-      {
-        normal: AuthenticationContextValue::NORMAL_KEY,
-        standby: AuthenticationContextValue::STANDBY_KEY,
-        unknown: "elevated",
-      }.to_h do |name, context|
-        claims = {
-          "scope" => "authenticated domain:operator read:org write:org",
-          AuthenticationContextValue::CLAIM => context,
-        }
-        Actor.install_context!(
-          authz: Actor::Authz.new(policy_user: operator, token_claims: claims, surface: "org"),
-        )
-        policy = PublishingEntryPolicy.new(entry, user: operator)
-        [name, !!policy.apply(:create?)]
-      end
-
-    assert_equal({ normal: true, standby: true, unknown: false }, outcomes)
-  ensure
-    Actor.reset
-  end
 
   private
 

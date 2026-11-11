@@ -70,15 +70,10 @@ class IdentifierHistoryFingerprintVerifier
       raise KeyError, "Missing key: #{key_name}" if key.strip.empty?
 
       LIVE_HMAC_KEY_NAMES.each do |live_key_name|
-        credential_key = Rails.app.creds.option(live_key_name.to_sym)
+        credential_key = Rails.application.credentials.option(live_key_name.to_sym)
         if key == credential_key
           raise ArgumentError, "history key must be distinct from live identifier keys"
         end
-
-        live_key = ENV[live_key_name]
-        next if live_key.nil?
-
-        raise ArgumentError, "history key must be distinct from live identifier keys" if key == live_key
       end
 
       OpenSSL::HMAC.hexdigest("SHA256", key, "identifier-history:v1:#{realm}:#{channel}:#{normalized}")

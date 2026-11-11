@@ -1,7 +1,5 @@
-// React port of the `turnstile` Stimulus controller.
-//
 // The widget renders the Cloudflare challenge and writes its token into a hidden field that the
-// form submits, exactly as the ERB partial did. The token is never trusted here: the server
+// form submits. The token is never trusted here: the server
 // validates it, and a challenge that cannot be presented leaves the field empty so the server
 // rejects the submission rather than the client deciding it passed.
 import { useEffect, useRef, useState } from "react";

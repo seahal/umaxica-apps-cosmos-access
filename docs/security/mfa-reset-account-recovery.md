@@ -4,6 +4,11 @@
 
 # MFA Reset Account Recovery
 
+> Historical security contract for the retired Base identity and operator-review routes. Access has
+> no current local MFA-reset or account-recovery route. Any persisted request or credential history
+> remains subject to the deferred model/database report; this document does not authorize a current
+> writer.
+
 This document describes the approved security behavior for resetting MFA when an actor has lost,
 destroyed, or can no longer use their MFA keys. The implementation is intentionally separate from
 step-up verification.

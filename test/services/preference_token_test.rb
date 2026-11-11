@@ -7,7 +7,7 @@ class PreferenceTokenAudienceMismatchTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
   test "wrong realm audience is refused and strict writers receive an audience error" do
-    host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     preferences = {
       "theme" => "dark",
       "language" => "ja",

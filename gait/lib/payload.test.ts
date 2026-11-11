@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readBoolean, readNumber, readObject, readRecord, readString } from "@/lib/payload";
+import { readBoolean, readNumber, readObject, readString } from "@/lib/payload";
 
 describe("payload readers", () => {
   it("read string, number and boolean properties only when they have that type", () => {
@@ -27,11 +27,5 @@ describe("payload readers", () => {
     expect(readObject({ nested }, "nested")).toEqual(nested);
     expect(readObject({ nested: null }, "nested")).toBeUndefined();
     expect(readObject({ nested: "no" }, "nested")).toBeUndefined();
-  });
-
-  it("readRecord keeps only string-valued keys", () => {
-    expect(readRecord({ a: "1", b: 2, c: null })).toEqual({ a: "1" });
-    expect(readRecord(null)).toEqual({});
-    expect(readRecord("no")).toEqual({});
   });
 });

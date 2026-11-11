@@ -93,16 +93,11 @@ class AuthAuthenticationRateLimitTest < ActionDispatch::IntegrationTest
     TurnstileVerifierStub.challenge_response = nil
   end
 
-  test "app Secret requires admission before limiting while com and org Secret routes remain absent" do
+  test "app Secret requires admission before limiting while the org Secret route remains absent" do
     host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     post "/sign/in/secret", params: { secret: "" }
 
     assert_response :bad_request
-
-    host! ENV.fetch("PUBLIC_AUTH_CORPORATE_URL")
-    post "/sign/in/secret", params: { secret_credential_login_form: { identifier: "", secret_credential_value: "" } }
-
-    assert_response :not_found
 
     host! ENV.fetch("PUBLIC_AUTH_STAFF_URL")
     post "/sign/in/secret", params: { secret_credential_login_form: { identifier: "", secret_credential_value: "" } }

@@ -801,9 +801,9 @@ class SessionLimitResolutionTransactionableTest < ActiveSupport::TestCase
   end
 
   [
-    ["app", Base::App::AuthorityController, "PUBLIC_BASE_SERVICE_URL", ClientToken, :user_id,
+    ["app", Visa::App::AuthorityController, "PUBLIC_VISA_SERVICE_URL", ClientToken, :user_id,
      ClientToken::MAX_SESSIONS_PER_USER, ClientSessionLimitResolutionTransaction,],
-    ["org", Base::Org::AuthorityController, "PUBLIC_BASE_STAFF_URL", OperatorToken, :staff_id,
+    ["org", Visa::Org::AuthorityController, "PUBLIC_VISA_STAFF_URL", OperatorToken, :staff_id,
      OperatorToken::MAX_SESSIONS_PER_STAFF, OperatorSessionLimitResolutionTransaction,],
   ].each do |surface, controller_class, host_env, token_class, owner_key, limit, resolution_class|
     test "#{surface} refuses a different root flow when a live waiting slot is occupied" do
@@ -890,9 +890,9 @@ class SessionLimitResolutionTransactionableTest < ActiveSupport::TestCase
   # last slot must leave the actor exactly at the limit: one commits, the other is sent to the
   # ordinary resolution and issues nothing.
   [
-    ["app", Base::App::AuthorityController, "PUBLIC_BASE_SERVICE_URL", ClientToken, :user_id,
+    ["app", Visa::App::AuthorityController, "PUBLIC_VISA_SERVICE_URL", ClientToken, :user_id,
      ClientToken::MAX_SESSIONS_PER_USER, ClientSessionLimitResolutionTransaction,],
-    ["org", Base::Org::AuthorityController, "PUBLIC_BASE_STAFF_URL", OperatorToken, :staff_id,
+    ["org", Visa::Org::AuthorityController, "PUBLIC_VISA_STAFF_URL", OperatorToken, :staff_id,
      OperatorToken::MAX_SESSIONS_PER_STAFF, OperatorSessionLimitResolutionTransaction,],
   ].each do |surface, controller_class, host_env, token_class, owner_key, limit, resolution_class|
     test "#{surface} concurrent root logins for the last slot commit one session and resolve the other" do

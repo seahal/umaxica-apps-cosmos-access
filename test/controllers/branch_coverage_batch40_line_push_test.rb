@@ -27,39 +27,6 @@ class BranchCoverageBatch40LinePushTest < ActiveSupport::TestCase
     assert_not guard.call("bob", "secret")
   end
 
-  test "RailsPerformanceRecordSanitizer RequestRecordPatch save redacts fields" do
-    record = Object.new
-    record.instance_variable_set(:@path, "/x?token=1")
-    record.instance_variable_set(:@http_referer, "https://ex.example/cb?code=abc")
-    record.instance_variable_set(:@exception, "RuntimeError leaked")
-    record.extend(RailsPerformanceRecordSanitizer::RequestRecordPatch)
-    record.define_singleton_method(:save) { :saved }
-    # Prepend-style: call the patch method via unbound binding
-    Module.new do
-      include RailsPerformanceRecordSanitizer::RequestRecordPatch
-    end
-    host =
-      Class.new do
-        attr_accessor :path, :http_referer, :exception
-
-        def save = :saved
-      end
-    obj = host.new
-    obj.path = "/sign/in?code=1"
-    obj.http_referer = "https://auth.example/cb?code=xyz"
-    obj.exception = "RuntimeError token=secret"
-    obj.singleton_class.prepend(RailsPerformanceRecordSanitizer::RequestRecordPatch)
-    # Patch uses @path ivars; set those too
-    obj.instance_variable_set(:@path, obj.path)
-    obj.instance_variable_set(:@http_referer, obj.http_referer)
-    obj.instance_variable_set(:@exception, obj.exception)
-
-    assert_equal :saved, obj.save
-    assert_equal "/sign/in", obj.instance_variable_get(:@path)
-    assert_not_includes obj.instance_variable_get(:@http_referer).to_s, "code=xyz"
-    assert_equal "RuntimeError", obj.instance_variable_get(:@exception)
-  end
-
   test "SignInSequence readers expose payload fields" do
     sequence = SignInSequence.new(
       "method" => "passkey",

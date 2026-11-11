@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Verified, short-lived authentication evidence carried by the OP Access JWT.
-# Callers must obtain it through StepUpEvidenceResolver and recheck it at the write boundary.
+# Callers derive it from a verified OP token and recheck it at the write boundary.
 class StepUpEvidenceValue < Data.define(:acr, :amr, :auth_time, :sid, :sub, :client_id, :aud, :jti)
   MAX_AGE_SECONDS = 300
 

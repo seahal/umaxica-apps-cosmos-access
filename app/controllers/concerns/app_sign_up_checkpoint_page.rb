@@ -49,10 +49,10 @@ module AppSignUpCheckpointPage
         origin: "passkey_registration",
       )
       return unless issuance
-      return t("base.app.secrets.distribution_omitted") if issuance.planned_count.zero?
+      return t("sign.app.registration.checkpoint.show.secrets.distribution_omitted") if issuance.planned_count.zero?
       return unless issuance.confirmed_at && issuance.planned_count == 1
 
-      t("base.app.secrets.distribution_one_confirmed")
+      t("sign.app.registration.checkpoint.show.secrets.distribution_one_confirmed")
     end
   end
 

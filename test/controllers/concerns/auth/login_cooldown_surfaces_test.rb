@@ -5,7 +5,7 @@ require "test_helper"
 
 # The login cooldown lives in the shared AuthenticationBase, so every sign-in surface must enforce it
 # against its own token table and answer it the same way. Each surface is exercised through its real
-# Base application controller and the public `log_in` boundary.
+# Visa authority controller and the public `log_in` boundary.
 #
 # The anchor is `root_login_established_at`, written only when a root login commits
 # (adr/root-login-establishment-boundary.md). Token creation time, RP sessions, and revocation do
@@ -17,8 +17,8 @@ class AuthLoginCooldownSurfacesTest < ActiveSupport::TestCase
 
   SURFACES = {
     app: {
-      controller: Base::App::AuthorityController,
-      host: "PUBLIC_BASE_SERVICE_URL",
+      controller: Visa::App::AuthorityController,
+      host: "PUBLIC_VISA_SERVICE_URL",
       token_class: ClientToken,
       resource: -> {
         Client.create!(
@@ -29,8 +29,8 @@ class AuthLoginCooldownSurfacesTest < ActiveSupport::TestCase
       token: ->(resource, attrs) { ClientToken.create!(authentication_epoch: 0, user: resource, **attrs) },
     },
     org: {
-      controller: Base::Org::AuthorityController,
-      host: "PUBLIC_BASE_STAFF_URL",
+      controller: Visa::Org::AuthorityController,
+      host: "PUBLIC_VISA_STAFF_URL",
       token_class: OperatorToken,
       resource: -> {
         Operator.create!(
@@ -142,24 +142,6 @@ class AuthLoginCooldownSurfacesTest < ActiveSupport::TestCase
             assert_no_difference(-> { config[:token_class].where(fk_for(config) => resource.id).count }) do
               2.times { assert_raises(AuthenticationBase::LoginCooldownError) { root_login(config, resource) } }
             end
-          end
-
-          assert_equal anchor, latest_anchor(config, resource)
-        end
-      end
-    end
-
-    test "#{surface}: an RP session neither checks nor records the root login anchor" do
-      freeze_time do
-        config[:token_class].stub(:database_now, Time.current) do
-          resource = config[:resource].call
-          anchor = 1.second.ago
-          signed_out_token(config, resource, root_login_established_at: anchor)
-
-          with_login_cooldown(WINDOW) do
-            result = build_controller(config).log_in(resource, establishment: :rp_session, require_totp_check: false)
-
-            assert_equal :success, result.fetch(:status)
           end
 
           assert_equal anchor, latest_anchor(config, resource)

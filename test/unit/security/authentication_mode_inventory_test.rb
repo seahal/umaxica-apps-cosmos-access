@@ -62,12 +62,8 @@ module Security
       [
         Auth::App::ApplicationController,
         Auth::Org::ApplicationController,
-        Base::App::ApplicationController,
-        Base::Org::ApplicationController,
-        Core::App::ApplicationController,
-        Core::Org::ApplicationController,
-        Warp::App::ApplicationController,
-        Warp::Org::ApplicationController,
+        Visa::App::AuthorityController,
+        Visa::Org::AuthorityController,
       ].each do |controller_class|
         assert_equal :deny_all, controller_class.authentication_mode_for(:index), controller_class.name
       end

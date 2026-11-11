@@ -85,7 +85,7 @@ class TotpRegistrationBoundaryTest < ActionDispatch::IntegrationTest
     assert_equal "pending", issuance.ticket.reload.status
   end
 
-  # The candidate, registration proof and Base credential must remain distinct across requests.
+  # The candidate and registration proof remain distinct until an RP completion is available.
   test "admitted bootstrap confirms a DB TOTP candidate without Auth root credentials or freshness" do
     actor = Client.create!(security_mode_id: SecurityModeConfigurable::NORMAL, id: 9_106_000_000_002, status_id: ClientStatus::ACTIVE)
     token = ClientToken.create!(authentication_epoch: 0, user: actor, root_login_established_at: Time.current)
@@ -196,16 +196,11 @@ class TotpRegistrationBoundaryTest < ActionDispatch::IntegrationTest
                                                            ENV.fetch("PUBLIC_AUTH_SERVICE_URL"), csrf: csrf,
                                                          )
 
-    assert_response :see_other
-    result = Rack::Utils.parse_nested_query(URI.parse(response.location).query)
-    credential = IdentityTotpEnrollmentFinalCommitter.call!(
-      actor: actor, token: token, transaction: issuance.transaction.reload,
-      result_reference: result.fetch("result_ref"),
-    )
+    assert_response :bad_request
+    assert_nil response.headers["Location"]
+    assert_empty actor.client_totp_credentials
+    assert_equal "verified", issuance.transaction.reload.status
 
-    assert_equal actor.id, credential.user_id
-    assert_equal "My app", credential.title
-    assert_equal "consumed", issuance.transaction.reload.status
     assert_nil token.reload.last_step_up_at
     assert_nil cookies[AuthenticationCookieName.access]
     assert_nil cookies[AuthenticationCookieName.refresh]
@@ -224,7 +219,6 @@ class TotpRegistrationBoundaryTest < ActionDispatch::IntegrationTest
         auth_host = ENV.fetch("PUBLIC_AUTH_STAFF_URL")
         display_path = new_auth_org_verification_setup_path(ri: "jp")
         cancel_path = auth_org_verification_cancellation_path(ri: "jp")
-        base_host = ENV.fetch("PUBLIC_BASE_STAFF_URL")
       end
       issuance = BaseStepUpAdmissionIssuer.call!(
         actor: actor,
@@ -324,8 +318,8 @@ class TotpRegistrationBoundaryTest < ActionDispatch::IntegrationTest
         end
       end
 
-      assert_equal 303, browser.response.status
-      assert_equal base_host, URI.parse(browser.response.location).host
+      assert_equal 400, browser.response.status
+      assert_nil browser.response.location
       assert_nil destination
       assert_equal "pending", issuance.transaction.reload.status
     end
@@ -453,13 +447,8 @@ class TotpRegistrationBoundaryTest < ActionDispatch::IntegrationTest
       end
     end
 
-    assert_response :see_other
-    assert_equal URI.parse(
-      base_app_dashboard_url(
-        ri: "jp", host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
-        protocol: "https",
-      ),
-    ).path, URI.parse(destination).path
+    assert_response :no_content
+    assert_nil response.headers["Location"]
     assert_equal "canceled", issuance.transaction.reload.status
     get new_auth_app_settings_totp_path(ri: "jp")
 

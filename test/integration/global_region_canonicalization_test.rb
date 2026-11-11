@@ -5,55 +5,28 @@ require "test_helper"
 class GlobalRegionCanonicalizationTest < ActionDispatch::IntegrationTest
   self.fixture_table_names = []
 
-  test "Global browser roots canonicalize missing region on GET and HEAD" do
-    %w(base.app.localhost base.com.localhost base.org.localhost
-       auth.app.localhost auth.org.localhost
-       visa.app.localhost visa.org.localhost
-       tech.org.localhost edit.org.localhost).each do |host|
-      host! host
-      get "/", params: { lx: "en", ct: "dr", marker: "retained" }
+  CEREMONY_HOSTS = %w(
+    PUBLIC_AUTH_SERVICE_URL PUBLIC_AUTH_STAFF_URL
+    PUBLIC_VISA_SERVICE_URL PUBLIC_VISA_STAFF_URL
+  ).freeze
 
-      assert_response :found
-      destination = URI.parse(response.location)
+  test "Auth and Visa have no root home for missing, invalid, or valid regions" do
+    CEREMONY_HOSTS.each do |environment_key|
+      host! ENV.fetch(environment_key)
 
-      assert_equal host, destination.host
-      assert_equal "/", destination.path
-      assert_equal(
-        { "ri" => "jp", "lx" => "en", "ct" => "dr", "marker" => "retained" },
-        Rack::Utils.parse_nested_query(destination.query),
-      )
+      [{}, { ri: "xx" }, { ri: "jp" }, { ri: "us" }].each do |params|
+        get "/", params: params
 
-      head "/"
-
-      assert_response :found
-      assert_empty response.body
-      assert_equal "jp", Rack::Utils.parse_nested_query(URI.parse(response.location).query).fetch("ri")
-    end
-  end
-
-  test "Base Auth and Visa roots normalize invalid region inputs and accept both regions" do
-    %w(base.app.localhost base.com.localhost base.org.localhost
-       auth.app.localhost auth.org.localhost
-       visa.app.localhost visa.org.localhost).each do |host|
-      host! host
-      ["", "xx", "j", "jpp", "0", ["jp"], { value: "jp" }].each do |invalid|
-        get "/", params: { ri: invalid }
-
-        assert_response :found
-        assert_equal "jp", Rack::Utils.parse_nested_query(URI.parse(response.location).query).fetch("ri")
-      end
-      %w(jp us).each do |region|
-        get "/", params: { ri: region }
-
-        assert_response :ok
+        assert_response :not_found
         assert_nil response.location
+        assert_equal "unknown_host", response.parsed_body.fetch("error")
       end
     end
   end
 
   test "Visa protocol metadata does not canonicalize missing region" do
-    %w(visa.app.localhost visa.org.localhost).each do |host|
-      host! host
+    %w(PUBLIC_VISA_SERVICE_URL PUBLIC_VISA_STAFF_URL).each do |environment_key|
+      host! ENV.fetch(environment_key)
       get "/.well-known/openid-configuration"
 
       assert_response :ok

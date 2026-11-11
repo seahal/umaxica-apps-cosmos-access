@@ -20,15 +20,7 @@ module Security
       # Engines that self-mount with no authentication by default. Each must be
       # confined to `group :development` in the Gemfile so it is never loaded in
       # test or production.
-      #
-      # rails_db: config/routes.rb in the gem calls
-      #   `Rails.application.routes.draw { mount_rails_db_routes }` whenever
-      #   RailsDb.automatic_routes_mount is true (the default), and
-      #   RailsDb.verify_access_proc defaults to `proc { |controller| true }`
-      #   with http_basic_authentication_enabled = false. Mounted, it exposes
-      #   POST /rails/db/execute (arbitrary SQL) and GET /rails/db/tables/:id/truncate.
       UNAUTHENTICATED_ENGINE_CONSTANTS = %w(
-        RailsDb
         Blazer
         PgHero
       ).freeze
@@ -36,6 +28,8 @@ module Security
       # Path prefixes that must not appear in the route set outside development.
       FORBIDDEN_MOUNT_PATHS = %w(
         /rails/db
+        /rails/performance
+        /_inertia/devtools
         /blazer
         /pghero
       ).freeze
@@ -67,12 +61,10 @@ module Security
       # Every mounted Rack app, with the control that stands in for the application
       # authorization stack it bypasses. Adding an entry here is a security review.
       REVIEWED_MOUNTS = {
-        # Rails mounts the ActionCable server by default. The application defines no
-        # channels and no Connection class, so there is no reachable subscription.
-        "/cable" => "ActionCable::Server::Base",
         # Feature-flag UI on its dedicated hosts (config/routes/flipper.rb). Guarded by
         # Rack::Auth::Basic, which fails closed when credentials are unset.
-        "flipper.umaxica.dev /" => "Rack::Auth::Basic",
+        "#{ENV.fetch("PUBLIC_FLIPPER_URL")} /" => "Rack::Auth::Basic",
+        "#{ENV.fetch("PRIVATE_FLIPPER_URL")} /" => "Rack::Auth::Basic",
         "flipper.core.dev.localhost /" => "Rack::Auth::Basic",
         # Solid Queue job-monitoring UI, dedicated host (config/routes/mission.rb). Guarded by
         # MissionControl::Jobs' own HTTP Basic Auth (config/initializers/mission_control_jobs.rb),
@@ -89,9 +81,8 @@ module Security
         "pghero.core.dev.localhost /" => "Rack::Auth::Basic",
       }.freeze
 
-      # Both the Flipper and Mission Control mounts sit at the path root of their own dedicated
-      # host, so path alone no longer identifies a mount uniquely; the key folds in the route's
-      # host constraint (nil for an unconstrained mount such as /cable).
+      # Flipper and Mission Control sit at the path root of their own dedicated host, so the key
+      # includes the route's host constraint.
       def self.mount_key(route) = [route.constraints[:host]&.first, route.path.spec.to_s].compact.join(" ")
 
       # A directly-mounted Rails::Engine class responds to `.call` as a class method, so its
@@ -135,7 +126,7 @@ module Security
       test "the Flipper UI mount is wrapped in an authorization guard" do
         flipper_route =
           Rails.application.routes.routes.find do |route|
-            Array(route.constraints[:host]).include?("flipper.core.dev.localhost")
+            Array(route.constraints[:host]).include?(ENV.fetch("PRIVATE_FLIPPER_URL"))
           end
 
         assert_not_nil flipper_route, "The protected Flipper control surface must remain mounted"

@@ -7,8 +7,8 @@ require "test_helper"
 class Auth::RouteNamingTest < ActionDispatch::IntegrationTest
   BOOT_HOSTS = Rails.configuration.x.boot_config.fetch(:hosts)
   SURFACES = {
-    app: BOOT_HOSTS.sign_service.host,
-    org: BOOT_HOSTS.sign_staff.host,
+    app: BOOT_HOSTS.auth_service.host,
+    org: BOOT_HOSTS.auth_staff.host,
   }.freeze
 
   test "sign entry helpers use explicit lifecycle resources" do
@@ -20,16 +20,15 @@ class Auth::RouteNamingTest < ActionDispatch::IntegrationTest
     assert_unrecognized(:app, "/sign/in/device", :get)
   end
 
-  test "sign logout helpers expose the explicit ceremony lifecycle" do
+  test "Auth does not expose an RP sign-out relay" do
     helpers = Rails.application.routes.url_helpers
 
-    assert_respond_to helpers, :auth_app_sign_out_path
-    assert_respond_to helpers, :new_auth_app_sign_out_path
-    assert_respond_to helpers, :edit_auth_app_sign_out_path
-    assert_not_respond_to helpers, :auth_app_sign_out_confirmation_path
-    assert_not_respond_to helpers, :auth_app_sign_out_attempt_path
-    assert_not_respond_to helpers, :complete_auth_app_sign_out_path
-    assert_not_respond_to helpers, :auth_app_sign_out_completion_path
+    assert_not_respond_to helpers, :auth_app_sign_out_path
+    assert_not_respond_to helpers, :new_auth_app_sign_out_path
+    assert_not_respond_to helpers, :edit_auth_app_sign_out_path
+    assert_not_respond_to helpers, :auth_org_sign_out_path
+    assert_not_respond_to helpers, :new_auth_org_sign_out_path
+    assert_not_respond_to helpers, :edit_auth_org_sign_out_path
   end
 
   test "top-level sign entry routes resolve conventionally on the account sign surfaces" do
@@ -41,11 +40,11 @@ class Auth::RouteNamingTest < ActionDispatch::IntegrationTest
       assert_unrecognized(surface, "/sign/in", :post)
       assert_unrecognized(surface, "/sign/up/entrance", :get)
       assert_unrecognized(surface, "/sign/in/entrance", :get)
-      assert_recognizes_sign_route(surface, "/sign/out/new", :get, "auth/#{surface}/sign/outs", "new")
-      assert_recognizes_sign_route(surface, "/sign/out/edit", :get, "auth/#{surface}/sign/outs", "edit")
+      assert_unrecognized(surface, "/sign/out/new", :get)
+      assert_unrecognized(surface, "/sign/out/edit", :get)
       assert_unrecognized(surface, "/sign/out/complete", :get)
-      assert_recognizes_sign_route(surface, "/sign/out", :post, "auth/#{surface}/sign/outs", "create")
-      assert_recognizes_sign_route(surface, "/sign/out", :delete, "auth/#{surface}/sign/outs", "destroy")
+      assert_unrecognized(surface, "/sign/out", :post)
+      assert_unrecognized(surface, "/sign/out", :delete)
       assert_unrecognized(surface, "/signed-out", :get)
       assert_unrecognized(surface, "/oidc/backchannel/logout", :post)
       assert_unrecognized(surface, "/oidc/authorization", :get)
@@ -134,11 +133,10 @@ class Auth::RouteNamingTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "auth org has no settings helpers and Base owns Entra status" do
+  test "auth org identity settings routes remain unavailable" do
     helper_names = Rails.application.routes.named_routes.helper_names.map(&:to_s)
 
     assert helper_names.none? { |name| name.start_with?("auth_org_settings") }
-    assert helper_names.any? { |name| name.start_with?("base_org_identity_social_identities") }
 
     %w(
       auth_org_settings_passkey

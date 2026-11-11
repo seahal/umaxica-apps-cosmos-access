@@ -1,15 +1,23 @@
-# Current transition inventory
+# Persisted State And Transition Inventory
 
-## O-9 sensitive admission (implementation in progress)
+> **Current route scope (2026-11-10):** Access retains Auth APP/ORG, Visa APP/ORG, and operator
+> tools. Visa OIDC, JWKS, and DBSC endpoints remain local. This inventory preserves state/schema and
+> transition history; a listed model or former writer is not evidence of a current route,
+> controller, or writer. Base and other removed RP surface axes are retained for the separate
+> model/database report and follow-up ownership decision. External RP registrations remain available
+> through Visa, while their local session state and callbacks belong to their owning repositories.
+
+## O-9 persisted sensitive-admission axes (deferred local ownership)
 
 `idp-sensitive-admission.mmd` describes the additive APP passkey, APP social-link, and ORG passkey
 Visa-owned axes. The new tables define `issued`, `browser_confirmed`, `source_committed`, `refused`,
-and `cancelled`; the legacy bearer-flow tables remain separate and inert. Base sign-out cancels
-issued or browser-confirmed admissions before local RP-session revocation, and the Visa writer locks
-the matching pending rows. Base browser confirmation through Visa is required before Auth may write.
-Auth source commit and result APIs remain in progress. The arrows are **not delivered behavior**
-until their implementations and tests land. Expiry is capped at the RP-local session deadline. See
-`specs/op-mediated-step-up/contracts/o9-visa-roundtrip-design.md`.
+and `cancelled`; the legacy bearer-flow tables remain separate and inert. The former Base sign-out,
+Base browser confirmation, and Base RP-session writer descriptions are historical: Access no longer
+has those local RP routes or controllers. Preserve the axes and migrations pending the
+model/database report; do not treat their retained rows as an active writer contract. Visa/Auth
+behavior that remains must be derived from the current route and caller inventory. Expiry was
+designed against the RP-local session deadline. See
+`specs/op-mediated-step-up/contracts/o9-visa-roundtrip-design.md` for the historical design.
 
 ## Credential removal commit ordering (2026-10-31)
 
@@ -22,11 +30,12 @@ Client/Operator Passkey removal, while an outer Ticket rollback has been observe
 after a Client TOTP removal committed. The writer does not yet reject that outer transaction. TOTP
 source audit and the other failure windows remain open.
 
-## Corporate credential entry is retired (2026-10-29, WU-3)
+## Historical corporate credential retirement record (2026-10-29, WU-3)
 
-No corporate (`com`) host serves a credential ceremony any more. The `auth`, `visa`, and `core` com
-routes and controllers are removed, Base com is anonymous, and Warp com keeps only public read-only
-pages and operational endpoints.
+At the WU-3 checkpoint, no corporate (`com`) host served a credential ceremony. The `auth`, `visa`,
+and `core` com routes and controllers had been removed; Base com was anonymous, and Warp com kept
+public read-only pages and operational endpoints. These are dated topology observations, not current
+Access route descriptions.
 
 Completed in WU-5 (2026-10-29): every `visitor_*` model, table and writer file was deleted, and the
 visitor/com realm databases (`com_zenith`, `com_signal`, `op_base_com`, `rp_*_com`) were dropped.
@@ -86,32 +95,35 @@ lives in `test/operations/rp_cell_session_revoker_test.rb` and
 
 ## DBSC HTTP admission (2026-10-22)
 
-The client, visitor and operator **authentication-token** DBSC axes retain their existing state
-transitions. Preference-specific DBSC axes were retired with the WU-7/WU-9 Preference contract. The
-HTTP entry points parse Structured Field strings once and serialize response strings with escaping.
-Refresh requires a matching stored session identifier before challenge issuance; malformed or
-mismatched identifiers leave the challenge and cookies unchanged. The three current `idp-*-dbsc.mmd`
-diagrams cover authentication tokens only. See
-[DBSC HTTP boundary](../architecture/dbsc.md#http-header-boundary),
+The retained Client, Visitor, and Operator **authentication-token** DBSC axes record the previously
+implemented state transitions. Only routes in the current Visa APP/ORG route inventory establish
+active local DBSC behavior; Visitor axes are persisted-model history. Preference-specific DBSC axes
+were retired with the WU-7/WU-9 Preference contract. The HTTP entry points parse Structured Field
+strings once and serialize response strings with escaping. Refresh requires a matching stored
+session identifier before challenge issuance; malformed or mismatched identifiers leave the
+challenge and cookies unchanged. The `idp-*-dbsc.mmd` diagrams preserve the authentication-token
+history. See [DBSC HTTP boundary](../architecture/dbsc.md#http-header-boundary),
 `test/controllers/dbsc_header_boundary_test.rb` and
 `test/services/dbsc/proof_input_validation_test.rb`.
 
-## Preference lifecycle axes (WU-9, 2026-10-31)
+## Preference lifecycle axes (WU-9, 2026-10-31; writer ownership deferred)
 
-The four APP/ORG axes use the same two-state lifecycle as COM. Account-local axes are included
-because Base save creates an account row and reset retires it; Visa sign-in only reads the explicit
-account snapshot. The owner-approved APP/ORG schema cutover migrations were applied to the eight
-local development/test databases. These diagrams describe the writer contract; runtime acceptance
-results are recorded separately in evidence.
+The four APP/ORG axes use the same two-state lifecycle as COM in the persisted schema. The earlier
+Base save/reset writers have no current local Base routes; account-local transitions are deferred
+until the model/database report identifies any remaining Auth/Visa caller. Visa sign-in/out rows
+below preserve the OP preference handoff history, but each writer still requires a surviving caller
+in the route inventory. The owner-approved APP/ORG schema cutover migrations were applied to the
+eight local development/test databases. These diagrams describe persisted state and prior writer
+contracts, not current route acceptance.
 
 ### idp-app-preference-status
 
 Diagram: [App anonymous Preference](./idp-app-preference-status.mmd). Storage target:
 `app_preferences.status_id` / `app_preference_statuses` (`ACTIVE=0`, `RETIRED=1`).
 
-| Transition ID                  | From   | Trigger                               | To      | Guard and effect                                                               | Writer                                                                          |
-| ------------------------------ | ------ | ------------------------------------- | ------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| idp-app-preference-status:T001 | ACTIVE | Base reset or committed Visa sign-out | RETIRED | Lock current valid row; replacement and issuance share the setting transaction | `PreferenceWriteBoundary#write_app_org_preference!` / `#write_visa_preference!` |
+| Transition ID                  | From   | Trigger                                       | To      | Guard and effect                                                               | Writer                                                                       |
+| ------------------------------ | ------ | --------------------------------------------- | ------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| idp-app-preference-status:T001 | ACTIVE | Former Base reset (deferred) or Visa sign-out | RETIRED | Lock current valid row; replacement and issuance share the setting transaction | Visa writer only where a current caller remains; former Base writer deferred |
 
 Visa sign-in applies only explicit Client display children and leaves the anonymous row active. The
 sign-out writer copies stored display children, including region, plus consent receipt, Web Push,
@@ -123,10 +135,10 @@ authentication finalization and does not change the authentication result.
 Diagram: [Client account Preference](./idp-client-preference-status.mmd). Target storage:
 `client_preferences.status_id` / `client_preference_statuses` (`ACTIVE=0`, `RETIRED=1`).
 
-| Transition ID                     | From   | Trigger                          | To      | Guard and effect                                                    | Writer                                            |
-| --------------------------------- | ------ | -------------------------------- | ------- | ------------------------------------------------------------------- | ------------------------------------------------- |
-| idp-client-preference-status:T001 | absent | explicit authenticated Base save | ACTIVE  | Actor is realm-matched; create the row and explicit option children | `PreferenceWriteBoundary#write_actor_preference!` |
-| idp-client-preference-status:T002 | ACTIVE | Base Preference reset            | RETIRED | Lock the active actor row; the retired row is not reactivated       | `ClientPreference#retire!`                        |
+| Transition ID                     | From   | Trigger                                   | To      | Guard and effect                                                    | Writer                                                          |
+| --------------------------------- | ------ | ----------------------------------------- | ------- | ------------------------------------------------------------------- | --------------------------------------------------------------- |
+| idp-client-preference-status:T001 | absent | former authenticated Base save (deferred) | ACTIVE  | Actor is realm-matched; create the row and explicit option children | No current Base route writer; deferred pending caller inventory |
+| idp-client-preference-status:T002 | ACTIVE | former Base Preference reset (deferred)   | RETIRED | Lock the active actor row; the retired row is not reactivated       | `ClientPreference#retire!` retained; caller deferred            |
 
 A later explicit save creates a new row. Visa sign-in reads the explicit display snapshot and does
 not create or mutate the account row. Legacy `explicit_fields = NULL` is not classified or inferred.
@@ -136,9 +148,9 @@ not create or mutate the account row. Legacy `explicit_fields = NULL` is not cla
 Diagram: [Org anonymous Preference](./idp-org-preference-status.mmd). Storage target:
 `org_preferences.status_id` / `org_preference_statuses` (`ACTIVE=2`, `RETIRED=1`).
 
-| Transition ID                  | From   | Trigger                               | To      | Guard and effect                                                               | Writer                                                                          |
-| ------------------------------ | ------ | ------------------------------------- | ------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| idp-org-preference-status:T001 | ACTIVE | Base reset or committed Visa sign-out | RETIRED | Lock current valid row; replacement and issuance share the setting transaction | `PreferenceWriteBoundary#write_app_org_preference!` / `#write_visa_preference!` |
+| Transition ID                  | From   | Trigger                                       | To      | Guard and effect                                                               | Writer                                                                       |
+| ------------------------------ | ------ | --------------------------------------------- | ------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| idp-org-preference-status:T001 | ACTIVE | Former Base reset (deferred) or Visa sign-out | RETIRED | Lock current valid row; replacement and issuance share the setting transaction | Visa writer only where a current caller remains; former Base writer deferred |
 
 Visa sign-in applies only explicit Operator display children. Sign-out copies stored display
 children, including region, plus consent receipt, Web Push, and browser binding from the old row's
@@ -150,10 +162,10 @@ pending.
 Diagram: [Operator account Preference](./idp-operator-preference-status.mmd). Target storage:
 `operator_preferences.status_id` / `operator_preference_statuses` (`ACTIVE=0`, `RETIRED=1`).
 
-| Transition ID                       | From   | Trigger                          | To      | Guard and effect                                                    | Writer                                            |
-| ----------------------------------- | ------ | -------------------------------- | ------- | ------------------------------------------------------------------- | ------------------------------------------------- |
-| idp-operator-preference-status:T001 | absent | explicit authenticated Base save | ACTIVE  | Actor is realm-matched; create the row and explicit option children | `PreferenceWriteBoundary#write_actor_preference!` |
-| idp-operator-preference-status:T002 | ACTIVE | Base Preference reset            | RETIRED | Lock the active actor row; the retired row is not reactivated       | `OperatorPreference#retire!`                      |
+| Transition ID                       | From   | Trigger                                   | To      | Guard and effect                                                    | Writer                                                          |
+| ----------------------------------- | ------ | ----------------------------------------- | ------- | ------------------------------------------------------------------- | --------------------------------------------------------------- |
+| idp-operator-preference-status:T001 | absent | former authenticated Base save (deferred) | ACTIVE  | Actor is realm-matched; create the row and explicit option children | No current Base route writer; deferred pending caller inventory |
+| idp-operator-preference-status:T002 | ACTIVE | former Base Preference reset (deferred)   | RETIRED | Lock the active actor row; the retired row is not reactivated       | `OperatorPreference#retire!` retained; caller deferred          |
 
 A later explicit save creates a new row. Visa sign-in reads the explicit display snapshot and does
 not create or mutate the account row. Legacy `explicit_fields = NULL` is not classified or inferred.
@@ -163,21 +175,26 @@ not create or mutate the account row. Legacy `explicit_fields = NULL` is not cla
 Axis: derived relation between a root's issuance epoch and its canonical actor's monotonic
 `authentication_epoch`. Diagram: [root epoch](./idp-root-authentication-epoch.mmd).
 
-| From    | To      | Public writer / guard and effect                                                                                                                                    |
-| ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| no root | current | root establishment stamps current actor epoch under actor-first locks                                                                                               |
-| current | current | Code/Refresh/reissue checks current active actor before OP commit; `BaseSelfRpCredentialIssuer.call!` also locks actor then device/root/grant before claim mutation |
-| current | cut off | `IdentityAuthenticationStopRecorder.call` increments actor epoch and inserts the Zenith event in the locked actor transaction                                       |
-| cut off | cut off | stale root cannot mint or redeliver; `OpIdentityEventInvalidator.call` applies durable OP invalidation separately and idempotently                                  |
+| From    | To      | Public writer / guard and effect                                                                                                                               |
+| ------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| no root | current | root establishment stamps current actor epoch under actor-first locks                                                                                          |
+| current | current | Visa Code/Refresh checks current active actor before OP commit; former `BaseSelfRpCredentialIssuer.call!` RP reissue is historical, not a current local writer |
+| current | cut off | `IdentityAuthenticationStopRecorder.call` increments actor epoch and inserts the Zenith event in the locked actor transaction                                  |
+| cut off | cut off | stale root cannot mint or redeliver; `OpIdentityEventInvalidator.call` applies durable OP invalidation separately and idempotently                             |
 
-The Base claim update releases actor/OP locks before token exchange; the coordinator independently
-rechecks current actor authority through rotation commit. A stale actor passed to reissue cannot
-change authentication claims after a higher epoch committed. No distributed transaction is claimed.
-New authority after recovery is a distinct current-epoch root; cutoff is absorbing for the
-historical root. See `base_self_rp_credential_issuer_test.rb`, the exchange/receipt suites and
+The former Base claim update released actor/OP locks before token exchange; that RP writer is no
+longer local. Visa's token coordinator independently rechecks current actor authority through
+rotation commit. A stale actor passed to an external reissue cannot change authentication claims
+after a higher epoch committed. No distributed transaction is claimed. New authority after recovery
+is a distinct current-epoch root; cutoff is absorbing for the historical root. See
+`base_self_rp_credential_issuer_test.rb`, the exchange/receipt suites and
 `op_identity_event_invalidator_test.rb` for public coverage. Actual results remain in evidence.
 
-## Separated RP local enrollment and logout (2026-10-18)
+## Historical separated RP local enrollment and logout (2026-10-18)
+
+These cell-local RP writer transitions describe the prior local RP implementation. Access no longer
+owns those RP routes/controllers; the external RP owner maintains any corresponding local session
+contract. Retained models and diagrams remain part of the model/database report.
 
 Axis: row existence and derived timestamps in cell-local `rp_op_session_bindings` and `rp_sessions`.
 Diagram: [local enrollment](./idp-rp-local-enrollment.mmd). No status enum is added.
@@ -332,8 +349,8 @@ lifecycle status. Diagram: `idp-credential-registration-otp-challenge.mmd`.
 
 Legacy Source checks and immutable-proof triggers remain until remaining callers are retired. The
 Email series uses bounded keyed receipts and an original bootstrap FK bound into proof; Source
-binding/audit commit before Ticket receipts. APP Email HTTP and encrypted Notifier journeys
-passed targeted tests. `EmailCredentialRegistrationOtpDeliveryGuard` checks original
+binding/audit commit before Ticket receipts. APP Email HTTP and encrypted Notifier journeys passed
+targeted tests. `EmailCredentialRegistrationOtpDeliveryGuard` checks original
 owner/device/Root/candidate/generation and bootstrap Parent/Session/admission under locks through
 transport without a state transition. Resend and verification reject cancelled or invalid original
 bootstrap authority rather than adopting a later permission. Whole-suite checks, HTTP receipt-fault
@@ -342,17 +359,17 @@ production queue or secret was changed.
 
 ## idp-sign-up-otp-challenge
 
-Storage: APP typed Email/Telephone Ticket ceremonies' OTP verifier, generation, expiry,
-consumption and bounded receipt columns. This is a derived issued/verified proof axis, not a new
-signup flow status. Sources are the independently implemented `EmailSignUpOtpIssuer`,
+Storage: APP typed Email/Telephone Ticket ceremonies' OTP verifier, generation, expiry, consumption
+and bounded receipt columns. This is a derived issued/verified proof axis, not a new signup flow
+status. Sources are the independently implemented `EmailSignUpOtpIssuer`,
 `EmailSignUpOtpVerificationCommitter`, `EmailSignUpOtpDeliveryGuard` and corresponding Telephone
 operations. The old Source context/HOTP implementation is superseded for these wired signup paths;
 remaining legacy callers and column removal are separately tracked implementation work.
 
-The service requires the original browser nonce from the explicit APP locator session, compares
-its digest with the original Ticket and repeats admission after taking its row lock. The public
-Ticket ID is not a browser credential. Missing, mistyped, malformed, foreign or rotated nonces
-refuse without proof consumption; Rails CSRF and the separate HTTP phase gate remain intact.
+The service requires the original browser nonce from the explicit APP locator session, compares its
+digest with the original Ticket and repeats admission after taking its row lock. The public Ticket
+ID is not a browser credential. Missing, mistyped, malformed, foreign or rotated nonces refuse
+without proof consumption; Rails CSRF and the separate HTTP phase gate remain intact.
 
 | Transition ID                  | From               | Event                      | To                    | Guard and effect                                                                                                                             |
 | ------------------------------ | ------------------ | -------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -412,8 +429,7 @@ transition.
 ## idp-contact-audit-outbox
 
 Storage: `client_contact_audit_outboxes` in app Zenith. Sources: `ContactAuditOutbox`,
-`ContactBindingAuditRecorder`,
-`IdentityEmailPreferenceCommitter`, `ContactAuditDeliveryJob`. Tests:
+`ContactBindingAuditRecorder`, `IdentityEmailPreferenceCommitter`, `ContactAuditDeliveryJob`. Tests:
 `contact_audit_delivery_job_test.rb`, `contact_ceremony_source_audit_test.rb`,
 `identity_email_preference_committer_test.rb`, `identity_email_preference_commit_order_test.rb`.
 
@@ -719,11 +735,11 @@ continuation. The RP callback renders `/sign/interruption`; it does not return t
 is refused without changing the actor or terminal facts. HTTP coverage:
 `test/integration/email_signup_http_delivery_commit_test.rb`.
 
-APP contact entry is fail-closed (D-177): a second entry submit while the browser's attempt
-is not terminal-and-cleaned is refused and writes nothing; no entry path halts or cleans an earlier
-Flow. The former `superseded_by_restart` HALTED writer is removed. The birthdate checkpoint no
-longer halts by age (ADR `sign-up-one-day-minimum-age-and-feature-level-age-restrictions`, R-AU-50):
-an ineligible birthdate — today or later — is refused with the public date copy before it is written
+APP contact entry is fail-closed (D-177): a second entry submit while the browser's attempt is not
+terminal-and-cleaned is refused and writes nothing; no entry path halts or cleans an earlier Flow.
+The former `superseded_by_restart` HALTED writer is removed. The birthdate checkpoint no longer
+halts by age (ADR `sign-up-one-day-minimum-age-and-feature-level-age-restrictions`, R-AU-50): an
+ineligible birthdate — today or later — is refused with the public date copy before it is written
 (D-178) and the checkpoint stays active; other events still halt through `SignUpTermination` with
 same-request cleanup. The lifecycle edges and terminal absorption remain unchanged.
 
@@ -739,10 +755,10 @@ owner and the exact Ticket deadline refuse. This adds no state edge and does not
 complete fault/concurrency matrix.
 
 Signup policies compare expiry with the owning Ticket database clock; authorization is refused at
-and after the deadline. Real app Ticket policy tests cover the microsecond before, exact
-deadline and microsecond after. The controller rebuilds context and revalidates finalization policy
-after acquiring the Ticket lock, before Source mutation. Email HTTP deadline-crossing tests verify
-that refusal creates neither binding nor Source intent. Email and telephone Source finalizers
+and after the deadline. Real app Ticket policy tests cover the microsecond before, exact deadline
+and microsecond after. The controller rebuilds context and revalidates finalization policy after
+acquiring the Ticket lock, before Source mutation. Email HTTP deadline-crossing tests verify that
+refusal creates neither binding nor Source intent. Email and telephone Source finalizers
 additionally require an active owner under its lock; suspended-owner public tests preserve the
 candidate proof and create no intent. The complete fault/concurrency and exact recovery matrix
 remains unfinished.
@@ -1260,8 +1276,8 @@ same resolver. Re-verification retains its separate purpose check.
 
 WU-24c/d store one immutable `curfew_at` at OP database issuance time + 30 minutes; Switch copies
 the original deadline and refuses inconsistent history. `entry_intent` is NOT NULL and immutable:
-APP binding collection also locks every owned sign-up Flow in ID order and retains the whole set
-if any child is in progress, not physically purgeable, or awaiting artifact cleanup. A completed
+APP binding collection also locks every owned sign-up Flow in ID order and retains the whole set if
+any child is in progress, not physically purgeable, or awaiting artifact cleanup. A completed
 registration does not require artifact cleanup, but still obeys its own physical-retention boundary;
 the default infinite retention is not shortened here. Eligible Flow rows are deleted before their
 restrictive Binding. The collector does not delete principals or Auth-session rows.
@@ -2872,12 +2888,12 @@ so HTTP runtime wiring is UNCONFIRMED. Legacy email ceremonies allow evp_outcome
 Storage: auth-state Valkey integer at
 `otp-verification:<surface>:<purpose>:<channel>:<destination digest>`; existing test-run namespace
 isolation prefixes the scope in test runs. Owner, candidate, flow and browser do not partition the
-key. Connected to app signup email/telephone, app email sign-in and app/org
-authenticated destination confirmation. Independent Email/Telephone enforcement recovery and
-withdrawal reentry use their explicit purpose scopes; credential-distribution recovery is unchanged.
-Dummy app email sign-in counts well-formed six-digit input in its authentication scope and
-always refuses, including `000000`. Malformed input does not spend the budget. No transient dummy
-Contact is persisted or validated as an owned credential.
+key. Connected to app signup email/telephone, app email sign-in and app/org authenticated
+destination confirmation. Independent Email/Telephone enforcement recovery and withdrawal reentry
+use their explicit purpose scopes; credential-distribution recovery is unchanged. Dummy app email
+sign-in counts well-formed six-digit input in its authentication scope and always refuses, including
+`000000`. Malformed input does not spend the budget. No transient dummy Contact is persisted or
+validated as an owned credential.
 
 Sources: `app/models/email_otp_verification_failure_budget.rb`,
 `app/models/telephone_otp_verification_failure_budget.rb`, the independent ceremony OTP concerns and
@@ -2888,8 +2904,7 @@ candidate/flow/browser recreations, not a shared Email/Telephone policy implemen
 `test/models/otp_verification_failure_budget_test.rb` and
 `test/operations/email_sign_up_otp_verification_committer_test.rb` (independent current APIs).
 Public sign-in integration coverage is in `test/controllers/auth/app/in/emails_controller_test.rb`;
-complete lifecycle/timing parity
-remains open.
+complete lifecycle/timing parity remains open.
 
 | Transition ID                           | From          | Trigger                 | To        | Guard and effect                                                                                                  |
 | --------------------------------------- | ------------- | ----------------------- | --------- | ----------------------------------------------------------------------------------------------------------------- |
@@ -3592,8 +3607,8 @@ Sources: `app/models/concerns/session_limit_resolution_transactionable.rb`,
 
 The browser gate carries an opaque raw challenge; its lookup uses the model's digest primitive and
 the persisted `challenge_digest`, never a nonexistent raw `challenge` column. Actor, browser
-binding, original parent and expiry checks still precede selection or revocation. APP
-session-limit promotion and APP controller/gate checks passed the 18-test selection recorded in
+binding, original parent and expiry checks still precede selection or revocation. APP session-limit
+promotion and APP controller/gate checks passed the 18-test selection recorded in
 `evidence/2026-10-08-email-login-capacity-query-3Q7M.md`.
 
 Tests executed: `test/models/session_limit_resolution_transactionable_test.rb`.
@@ -4309,8 +4324,8 @@ result/grant/operation/browser/actor/candidate/digest provenance and an identity
 intent; released bindings and consumed Tickets without a committed Source fact remain refused.
 Initial consumption requires the same Ticket candidate reference and digest; final binding mutation
 rechecks the digest under the Source lock, rejecting same-owner candidate substitution. Base app
-settings confirmation commits finalization and its Source intent under the owner lock. App
-telephone signup OTP success retains the original signed flow binding when redirecting to the guard
+settings confirmation commits finalization and its Source intent under the owner lock. App telephone
+signup OTP success retains the original signed flow binding when redirecting to the guard
 checkpoint; the next endpoint does not infer another Ticket from destination or browser input.
 Replacement releases the old effective binding without overwriting its status, clears its old OTP
 and finalizes the new candidate with both Source intents in that transaction. Wrong OTP leaves the

@@ -90,21 +90,7 @@ module Auth
             }
           end
 
-          links << email_registration_link
-        end
-
-        # Email is not an admitted method of this ceremony: Base owns email registration under its own
-        # browser session and bootstrap exemption. Bootstrap is issued only to an actor without a
-        # confirmed email, so the entry is always offered. Following it leaves the pending transaction
-        # untouched; confirming the address on Base revokes it through CredentialSecurityTransition.
-        def email_registration_link
-          {
-            key: "email",
-            label: t("sign.app.verification.setup.methods.email"),
-            href: new_base_app_identity_emails_registration_url(
-              ri: params[:ri], host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"), protocol: "https",
-            ),
-          }
+          links
         end
       end
     end

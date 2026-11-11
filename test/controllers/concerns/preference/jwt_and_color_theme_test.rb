@@ -33,7 +33,7 @@ end
 
 class PreferenceJwtConfigurationTest < ActiveSupport::TestCase
   test "preference realms use separate fixed issuers and audiences" do
-    { "preference_app" => "app", "preference_com" => "com", "preference_org" => "org" }.each do |issuer_id, audience|
+    { "preference_app" => "app", "preference_org" => "org" }.each do |issuer_id, audience|
       issuer = JitSecurityJwtRegistry.issuer(issuer_id)
 
       assert_equal [audience], issuer.audiences
@@ -51,7 +51,7 @@ end
 
 class PreferenceTokenTest < ActiveSupport::TestCase
   test "token issued on id host decodes on same TLD sibling when audience is configured" do
-    host = "base.app.localhost"
+    host = "auth.app.localhost"
     token = PreferenceToken.encode(
       SecurityJwtPreferenceTokenCodec::ANONYMOUS_PREFERENCE_VALUES.transform_values(&:first),
       host:,
@@ -64,11 +64,11 @@ class PreferenceTokenTest < ActiveSupport::TestCase
 
     assert token
     assert PreferenceToken.decode(token, host: "visa.app.localhost", jwt_issuer_id: "preference_app")
-    assert_nil PreferenceToken.decode(token, host: "base.com.localhost", jwt_issuer_id: "preference_com")
+    assert_nil PreferenceToken.decode(token, host: "auth.org.localhost", jwt_issuer_id: "preference_org")
   end
 
   test "an anonymous Preference JWT has no account or preference type claim" do
-    host = "base.app.localhost"
+    host = "auth.app.localhost"
     token = PreferenceToken.encode(
       SecurityJwtPreferenceTokenCodec::ANONYMOUS_PREFERENCE_VALUES.transform_values(&:first),
       host:,

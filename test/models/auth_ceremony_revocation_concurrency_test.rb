@@ -168,7 +168,7 @@ class AuthCeremonyRevocationConcurrencyTest < ActiveSupport::TestCase
             :authentication_epoch => token.authentication_epoch, grant_owner => token,
             :device_session_id => device.id, :oidc_client_id => oidc_client.client_id,
             :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
-            :oidc_auth_time => Time.at(op_now.to_time.to_i).utc, :oidc_acr => StepUpEvidenceResolver::STEP_UP_ACR,
+            :oidc_auth_time => Time.at(op_now.to_time.to_i).utc, :oidc_acr => StepUpEvidenceVerifier::STEP_UP_ACR,
             :oidc_amr => JSON.generate(["passkey"]), :refresh_token_expires_at => op_now + 10.minutes,
           )
           grant.issue_refresh_token!(now: op_now)

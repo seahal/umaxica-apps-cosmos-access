@@ -40,7 +40,6 @@ class OperatorEmail < OrgPrincipalRecord
   include Email
   include EmailDeadIdentifierHistory
 
-  include PromotionalEmailUnsubscribable
 
   IDENTIFIER_REALM = "org"
 

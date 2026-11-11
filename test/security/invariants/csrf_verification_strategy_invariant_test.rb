@@ -24,13 +24,10 @@ module Security
 
       EXPECTED_STRATEGY = :header_or_legacy_token
       TOKEN_REQUIRED_ROOTS = %w(
-        app/controllers/base/app/application_controller.rb
-        app/controllers/base/com/application_controller.rb
-        app/controllers/base/org/application_controller.rb
-        app/controllers/base/app/authority_controller.rb
-        app/controllers/base/org/authority_controller.rb
         app/controllers/auth/app/application_controller.rb
         app/controllers/auth/org/application_controller.rb
+        app/controllers/visa/app/authority_controller.rb
+        app/controllers/visa/org/authority_controller.rb
       ).freeze
 
       test "every protect_from_forgery declaration states its verification strategy" do
@@ -70,7 +67,7 @@ module Security
                      ApplicationController.forgery_protection_strategy
       end
 
-      test "Base and Auth stateful roots require Rails tokens before surface callbacks" do
+      test "Auth and Visa authority controllers require Rails tokens before surface callbacks" do
         missing =
           TOKEN_REQUIRED_ROOTS.filter_map do |relative|
             source = Rails.root.join(relative).read
@@ -80,7 +77,7 @@ module Security
             relative
           end
 
-        assert_empty missing, "Base/Auth roots must enforce the Rails token check before surface callbacks: #{missing}"
+        assert_empty missing, "Auth/Visa authority controllers must enforce Rails tokens before callbacks: #{missing}"
       end
 
       private

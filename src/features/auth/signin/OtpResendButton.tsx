@@ -1,6 +1,4 @@
-// React port of `src/controllers/otp_resend_controller.js`.
-//
-// The ceremony is unchanged: the browser posts the opaque resend state to the same endpoint with the
+// The browser posts the opaque resend state to the endpoint with the
 // same CSRF header, and the server decides whether another code may be sent. A 429 starts the same
 // client-side countdown, which is a courtesy - the server re-checks the cooldown on every request.
 import { useCallback, useEffect, useRef, useState } from "react";

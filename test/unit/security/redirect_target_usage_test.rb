@@ -16,11 +16,9 @@ class RedirectTargetUsageTest < ActiveSupport::TestCase
     app/controllers/auth/app/verification/cancellations_controller.rb
     app/controllers/auth/org/ceremony_bindings_controller.rb
     app/controllers/auth/org/verification/cancellations_controller.rb
-    app/controllers/base/app/identity/totps_controller.rb
     app/controllers/concerns/auth_oidc_result_handoff.rb
     app/controllers/concerns/auth_step_up_result_handoff.rb
-    app/controllers/concerns/base_ceremony_binding_confirmation.rb
-    app/controllers/concerns/base_identity_passkey_management.rb
+    app/controllers/concerns/visa_ceremony_binding_confirmation.rb
     app/controllers/concerns/common_redirect.rb
     app/controllers/concerns/oidc_rp_logout_launcher.rb
     app/controllers/concerns/oidc_sso_initiator.rb

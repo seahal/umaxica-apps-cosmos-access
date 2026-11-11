@@ -11,7 +11,6 @@ module ExternalAuthentication
       "org" => {
         "entra" => %w(login).freeze,
       }.freeze,
-      "com" => {}.freeze,
     }.freeze
 
     def allowed?(surface:, provider:, operation:)

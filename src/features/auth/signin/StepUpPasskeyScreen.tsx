@@ -1,6 +1,4 @@
-// React port of `src/controllers/step_up_passkey_controller.js` for the app second-factor page.
-//
-// The server issued the challenge and put its options into the page, so the browser only runs
+// The server issues the challenge and puts its options into the page, so the browser only runs
 // `navigator.credentials.get` and posts the assertion back to the same endpoint with the same
 // parameter names. The submission stays a native document POST because that is what the ERB form
 // was: the server answers it with a redirect, not with an Inertia visit, so the form carries the

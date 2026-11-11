@@ -101,23 +101,4 @@ class BaseAuthAdmissionCancellationTest < ActiveSupport::TestCase
     end
   end
 
-  test "base browser marker map keeps separate transaction entries behind one opaque locator" do
-    store = BaseStepUpMarkerAdapter.new
-    locator = SecureRandom.urlsafe_base64(32, padding: false)
-    first_ref = SecureRandom.uuid
-    second_ref = SecureRandom.uuid
-    expires_at = 5.minutes.from_now
-
-    store.issue!(
-      locator:, transaction_ref: first_ref, surface: "app", actor_ref: "actor-1",
-      session_ref: "session-1", expires_at:,
-    )
-    store.issue!(
-      locator:, transaction_ref: second_ref, surface: "app", actor_ref: "actor-1",
-      session_ref: "session-1", expires_at:,
-    )
-
-    assert_equal first_ref, store.read(locator:, transaction_ref: first_ref).fetch("transaction_ref")
-    assert_equal second_ref, store.read(locator:, transaction_ref: second_ref).fetch("transaction_ref")
-  end
 end

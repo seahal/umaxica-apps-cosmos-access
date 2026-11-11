@@ -30,3 +30,9 @@ verified_with_sign_up:
   id: 10
 withdrawn:
   id: 5
+
+# Complete the fixed catalog from its owning model.
+<% ClientStatus::DEFAULTS.reject { |id| [ClientStatus::NOTHING, ClientStatus::ACTIVE, ClientStatus::DELETED, ClientStatus::GHOST, ClientStatus::RESERVED, ClientStatus::INACTIVE, ClientStatus::PENDING, ClientStatus::PENDING_DELETION, ClientStatus::PRE_WITHDRAWAL_CONDITION, ClientStatus::UNVERIFIED_WITH_SIGN_UP, ClientStatus::VERIFIED_WITH_SIGN_UP, ClientStatus::WITHDRAWN].include?(id) }.each_with_index do |id, index| %>
+reference_<%= index %>:
+  id: <%= id %>
+<% end %>

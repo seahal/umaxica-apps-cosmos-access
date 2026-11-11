@@ -1,9 +1,8 @@
 # typed: false
 # frozen_string_literal: true
 
-# Auth owns the credential gateway surfaces. Base is the sole IdP /
-# Authorization Server; Auth surfaces handle credential ceremonies and do not
-# own RP authority.
+# Auth owns app and org credential gateway surfaces. Visa owns the OpenID
+# Provider and Authorization Server endpoints.
 scope(module: :auth, as: :auth) do
   # User credential gateway host. Hosts listed declaratively (DRY intentionally broken).
   constraints(
@@ -11,8 +10,6 @@ scope(module: :auth, as: :auth) do
            "auth.app.localhost",].compact,
   ) do
     scope(module: :app, as: :app) do
-      root "roots#index"
-
       namespace(:well_known, path: ".well-known") do
         resource(:jwks, only: :show, path: "jwks.json", format: false)
       end
@@ -46,10 +43,6 @@ scope(module: :auth, as: :auth) do
         controller: :ceremony_bindings, as: :ceremony_bindings,
       )
 
-      # Service Worker retirement: adr/pwa-offline-route-exception.md. This URL stays only so a browser
-      # that installed the old Worker fetches its self-unregistering replacement.
-      get("service-worker", to: "service_worker_retirements#show", as: :pwa_service_worker)
-
       namespace :apple do
         resources :notifications, only: :create
       end
@@ -59,8 +52,7 @@ scope(module: :auth, as: :auth) do
         resource :registration, only: :show, path: "up", controller: :ups, as: :up
         resource :session, only: :show, path: "in", controller: :ins, as: :in
         resource :oidc_handoff, only: :show, path: "oidc/handoff", controller: :oidc_handoffs
-        resource :termination, only: %i(show new edit create destroy), path: "out", controller: :outs, as: :out
-        # D05/D06/D09: first-page Cancel to the RP and Sign In/Up Switch.
+        # First-page cancellation and sign-in/sign-up switching.
         resource :cancellation, only: :create
         resource :switch, only: :create
         namespace :in do
@@ -70,8 +62,6 @@ scope(module: :auth, as: :auth) do
           resource :sentry, only: :show
         end
       end
-
-      # Auth is ceremony-only: no OIDC RP callback/authorization/backchannel routes.
 
       # Public web API: OTP delivery (a ceremony endpoint, not migrated).
       namespace :web do
@@ -84,8 +74,8 @@ scope(module: :auth, as: :auth) do
         end
       end
 
-      # Browser preference API for this host's own chrome controls (theme, cookie consent). Same
-      # contract as Core: see adr/preference-browser-transport-family-capability.md. GET + PATCH only:
+      # Browser preference API for this host's own chrome controls (theme and cookie consent).
+      # GET + PATCH only:
       # `resource ... only: :update` would also map PUT (adr/api-route-vocabulary-consolidation.md,
       # 2026-10-02 amendment).
       namespace :api do
@@ -99,7 +89,6 @@ scope(module: :auth, as: :auth) do
         end
       end
 
-      # Edge compatibility API: token lifecycle management.
       # Sign-up and sign-in ceremonies.
       namespace :sign do
         # Auth-up ceremony.
@@ -227,18 +216,13 @@ scope(module: :auth, as: :auth) do
         end
       end
 
-      # Settings and credential management.
-      resource :settings, only: :show
+      # Auth-owned identity and credential setup routes are used by active authentication flows.
       namespace :settings do
-        # Enrolment of a new authenticator is its own lifecycle: POST starts it with a fresh secret,
-        # DELETE ends it. Declared before `resources :totps` so `/settings/totps/enrollment` is not
-        # read as a credential id.
         namespace :totps do
           resource :enrollment, only: %i(create destroy)
           resource :handoff, only: %i(show create)
         end
         resources :totps, only: %i(new create)
-
         resource :apple, only: %i(show edit create destroy)
         resource :google, only: %i(show edit create destroy)
       end
@@ -251,8 +235,6 @@ scope(module: :auth, as: :auth) do
            "auth.org.localhost",].compact,
   ) do
     scope(module: :org, as: :org) do
-      root "roots#index"
-
       namespace(:well_known, path: ".well-known") do
         resource(:jwks, only: :show, path: "jwks.json", format: false)
       end
@@ -286,10 +268,6 @@ scope(module: :auth, as: :auth) do
         controller: :ceremony_bindings, as: :ceremony_bindings,
       )
 
-      # Service Worker retirement: adr/pwa-offline-route-exception.md. This URL stays only so a browser
-      # that installed the old Worker fetches its self-unregistering replacement.
-      get("service-worker", to: "service_worker_retirements#show", as: :pwa_service_worker)
-
       # Staff management areas.
 
       # Canonical ceremony entrypoints and authed-out confirmation.
@@ -297,8 +275,7 @@ scope(module: :auth, as: :auth) do
         resource :registration, only: :show, path: "up", controller: :ups, as: :up
         resource :session, only: :show, path: "in", controller: :ins, as: :in
         resource :oidc_handoff, only: :show, path: "oidc/handoff", controller: :oidc_handoffs
-        resource :termination, only: %i(show new edit create destroy), path: "out", controller: :outs, as: :out
-        # D09: first-page Cancel to the RP. Org has no public Sign Up, so no Switch.
+        # First-page cancellation. Org has no public sign-up, so it has no switch action.
         resource :cancellation, only: :create
         namespace :in do
           resource :sentry, only: :show
@@ -308,10 +285,8 @@ scope(module: :auth, as: :auth) do
         end
       end
 
-      # Auth is ceremony-only: no OIDC RP callback/authorization/backchannel routes.
-
-      # Browser preference API for this host's own chrome controls (theme, cookie consent). Same
-      # contract as Core: see adr/preference-browser-transport-family-capability.md. GET + PATCH only:
+      # Browser preference API for this host's own chrome controls (theme and cookie consent).
+      # GET + PATCH only:
       # `resource ... only: :update` would also map PUT (adr/api-route-vocabulary-consolidation.md,
       # 2026-10-02 amendment).
       namespace :api do
@@ -325,7 +300,6 @@ scope(module: :auth, as: :auth) do
         end
       end
 
-      # Edge compatibility API: token lifecycle management.
       # Sign-up and sign-in ceremonies.
       namespace :sign do
         # Sign-in ceremony.
@@ -343,8 +317,8 @@ scope(module: :auth, as: :auth) do
           # because it is the same implementation with a different ceremony
           # purpose and post-verification context; only the entry differs.
           # There is deliberately no emergency sign-up and no emergency
-          # sign-out -- both modes terminate through the canonical
-          # /sign/out ceremony. See docs/security/org-emergency-access.md.
+          # sign-out -- both modes terminate through Visa's OIDC logout surface.
+          # See docs/security/org-emergency-access.md.
           namespace :emergency do
             resource :passkey, only: :new
 

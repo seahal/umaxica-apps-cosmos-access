@@ -5,7 +5,7 @@ module Visa
   module App
     module Sign
       module In
-        # Base sign-in limitation ceremony for OIDC resume and social handoff.
+        # Visa resolves session limits only for an in-progress OIDC authorization.
         #
         # A pending sign-in reaches this page through the browser-bound
         # SessionLimitResolutionTransaction. The parent sign-in flow remains in
@@ -38,13 +38,13 @@ module Visa
 
             token = selected_token
             unless token_belongs_to_actor?(token)
-              @form_error = t("base.app.sign.in.limitations.revoke_failed")
+              @form_error = t("visa.app.sign.in.limitations.revoke_failed")
               load_session_inventory
               return render_limitation_page(status: :unprocessable_content)
             end
 
             unless select_session(token)
-              @form_error = t("base.app.sign.in.limitations.revoke_failed")
+              @form_error = t("visa.app.sign.in.limitations.revoke_failed")
               load_session_inventory
               return render_limitation_page(status: :unprocessable_content)
             end
@@ -55,22 +55,18 @@ module Visa
           def destroy
             return render_invalid_resolution unless resolution_loaded?
 
-            cancellation = @oidc_transaction ? cancel_oidc_pending_resolution! : nil
-            return render_invalid_resolution if @oidc_transaction && !cancellation
-            return render_invalid_resolution if @oidc_transaction.nil? && !cancel_pending_resolution!
+            return render_invalid_resolution unless @oidc_transaction
 
-            if cancellation
-              redirect_to(
-                visa_app_oidc_cancellation_path(
-                  cancellation_ref: cancellation.reference,
-                  transaction_ref: cancellation.transaction.transaction_id,
-                  ri: params[:ri],
-                ), status: :see_other,
-              )
-            else
-              # A local/social sign-in has no OIDC parent to cancel or return to.
-              redirect_to(base_app_sign_show_path(ri: params[:ri]), status: :see_other)
-            end
+            cancellation = cancel_oidc_pending_resolution!
+            return render_invalid_resolution unless cancellation
+
+            redirect_to(
+              visa_app_oidc_cancellation_path(
+                cancellation_ref: cancellation.reference,
+                transaction_ref: cancellation.transaction.transaction_id,
+                ri: params[:ri],
+              ), status: :see_other,
+            )
             # The entry is a plain document, not an Inertia page.
             convert_redirect_to_inertia_location!
           rescue BaseAuthAdmissionCoordinator::Denied, ActiveRecord::RecordNotFound
@@ -96,18 +92,9 @@ module Visa
           end
 
           def continue_pending_resolution
-            if social_resolution?
-              complete_social_resolution
-            else
-              resume_authorization_after_resolution
-            end
-          end
+            return render_invalid_resolution unless @oidc_transaction
 
-          def cancel_pending_resolution!
-            return false unless cancel_pending_resolution_records!
-
-            finish_pending_resolution_cancellation!
-            true
+            resume_authorization_after_resolution
           end
 
           def cancel_oidc_pending_resolution!
@@ -120,22 +107,6 @@ module Visa
             finalize_oidc_secret_claim_cancellation!
             finish_pending_resolution_cancellation!
             cancellation
-          end
-
-          def cancel_pending_resolution_records!
-            return false unless @resolution && @resolution_binding.present?
-
-            @resolution.cancel!(
-              actor: @actor,
-              challenge: @resolution_challenge,
-              browser_binding_digest: @resolution.class.digest_challenge(@resolution_binding),
-            )
-            flow = ClientSignInFlow.find(@resolution.sign_in_flow_id)
-            flow.cancel_sign_in! unless flow.sign_in_completed? || flow.sign_in_expired? ||
-              flow.sign_in_cancelled? || flow.sign_in_halted?
-            true
-          rescue FlowInvalidTransition, ActiveRecord::RecordNotFound
-            false
           end
 
           def finalize_oidc_secret_claim_cancellation!
@@ -205,7 +176,7 @@ module Visa
 
           def load_resolution
             @resolution_challenge = resolution_challenge_from_session
-            return load_social_resolution if @resolution_challenge.blank?
+            return if @resolution_challenge.blank?
             return if requested_resolution_challenge_mismatch?
 
             load_resolution_transaction
@@ -219,12 +190,15 @@ module Visa
 
           def requested_resolution_challenge_mismatch?
             requested_challenge = params[:resolution_challenge].to_s
+            # NOTICE: Compares the submitted resolution challenge with `!=`. It is random, short-lived and
+            # bound to this session, so a remote timing attack is impractical; move to secure_compare
+            # (docs/backlog/2026-11-10-core-security-review-followups.md, item 3).
             requested_challenge.present? && requested_challenge != @resolution_challenge
           end
 
           def load_resolution_transaction
             @resolution_binding = session_limit_resolution_binding
-            @resolution = ClientSessionLimitResolutionTransaction.find_by(
+            @resolution = ClientSessionLimitResolutionTransaction.includes(:sign_in_flow).find_by(
               challenge_digest: ClientSessionLimitResolutionTransaction.digest_challenge(@resolution_challenge),
             )
             return unless @resolution && @resolution_binding.present?
@@ -256,30 +230,17 @@ module Visa
           end
 
           def valid_resolution_oidc?(now)
-            return true unless @oidc_transaction
-
-            @oidc_transaction.actor_ref == @actor.public_id && @oidc_transaction.authenticated? &&
+            @oidc_transaction && @oidc_transaction.actor_ref == @actor.public_id && @oidc_transaction.authenticated? &&
               @oidc_transaction.base_finalized_at.nil? && !@oidc_transaction.expired?(now: now) &&
               !@oidc_transaction.login_challenge_expired?(now: now)
           end
 
           def render_invalid_resolution
-            render plain: t("base.app.sign.in.limitations.invalid_or_expired"), status: :gone
+            render plain: t("visa.app.sign.in.limitations.invalid_or_expired"), status: :gone
           end
 
           def resolution_loaded?
             @resolution.present?
-          end
-
-          def social_resolution?
-            @resolution.present? && @oidc_transaction.nil?
-          end
-
-          # The pending flow is found only through the locator this browser's
-          # Rails session holds; the actor is the flow's principal, never a
-          # request parameter or a principal id stored beside the locator.
-          def load_social_resolution
-            nil
           end
 
           def load_session_inventory
@@ -298,30 +259,6 @@ module Visa
 
           def token_belongs_to_actor?(token)
             token.present? && @actor.present? && token.user_id == @actor.id && token.active_status?
-          end
-
-          def complete_social_resolution
-            result = promote_current_session_limit_cycle!(
-              @actor,
-              resolution: @resolution,
-              resolution_challenge: @resolution_challenge,
-              resolution_binding: @resolution_binding,
-            )
-            return render_pending_resolution(result) if result[:status] == :session_limit_pending
-            return render_invalid_resolution unless result[:status] == :success
-
-            session[:inertia_clear_history] = true
-            redirect_to(base_app_dashboard_path(ri: params[:ri]), status: :see_other)
-          rescue BaseAuthAdmissionCoordinator::Denied, ActiveRecord::RecordNotFound,
-                 ActiveRecord::SoleRecordExceeded, AuthCeremonySession::InvalidTransition => e
-            Rails.logger.warn(
-              JitLogEvent.format(
-                "base.sign_in.local_resume.refused", error_class: e.class.name,
-                                                     source_location: e.backtrace&.first,
-                                                     request_id: request.request_id,
-              ),
-            )
-            render_invalid_resolution
           end
 
           def resume_authorization_after_resolution
@@ -393,7 +330,7 @@ module Visa
             @resolution = result.fetch(:resolution_transaction)
             @resolution_challenge = result.fetch(:resolution_challenge)
             @resolution_binding = result.fetch(:resolution_binding)
-            @form_notice = t("base.app.sign.in.limitations.capacity_still_full")
+            @form_notice = t("visa.app.sign.in.limitations.capacity_still_full")
             load_session_inventory
             render_limitation_page(status: :unprocessable_content)
           end

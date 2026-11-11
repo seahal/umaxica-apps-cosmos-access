@@ -82,7 +82,7 @@ class EnforcementCaseApplyFailureTest < ActiveSupport::TestCase
     )
     rp_client = OidcClientRegistry.find!("base-org-ww")
     evidence = StepUpEvidenceValue.new(
-      acr: StepUpEvidenceResolver::STEP_UP_ACR,
+      acr: StepUpEvidenceVerifier::STEP_UP_ACR,
       amr: ["passkey"],
       auth_time: OpBaseOrgRecord.database_now.to_i,
       sid: SecureRandom.uuid,
@@ -141,7 +141,7 @@ class EnforcementCaseApplyFailureTest < ActiveSupport::TestCase
       oidc_jti: SecureRandom.uuid,
       oidc_nonce: SecureRandom.hex(16),
       oidc_auth_time: Time.at(now.to_time.to_i).utc,
-      oidc_acr: StepUpEvidenceResolver::STEP_UP_ACR,
+      oidc_acr: StepUpEvidenceVerifier::STEP_UP_ACR,
       oidc_amr: JSON.generate(["passkey"]),
       refresh_token_expires_at: now + 10.minutes,
     )

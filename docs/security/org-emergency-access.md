@@ -22,9 +22,9 @@ emergency service, emergency session revocation events) are a separate matter an
 
 ## Scope
 
-Org only. The `app` and `com` surfaces have no Emergency ceremony, no Emergency routes, and no
-column to record an authentication context in; their sessions are Normal by construction. Sign-up
-and invitation provisioning are unchanged on every surface.
+Emergency Access has one current local entry surface: Auth ORG. Auth APP has no matching ceremony;
+the former COM product surface is retired. This restriction does not create an RP callback or
+browser-session route in Access.
 
 ## The two ceremonies
 
@@ -59,7 +59,7 @@ is **not** available in Emergency Access: Emergency Access is passkey-only.
 | Auth evidence     | `normal`                      | `standby`                                 |
 | OIDC Root today   | `normal`                      | `normal` (Standby propagation incomplete) |
 | Step-Up           | available                     | **unavailable**                           |
-| Sign-out          | `/sign/out`                   | `/sign/out` (the same ceremony)           |
+| Sign-out          | Visa-owned OIDC logout        | Visa-owned OIDC logout                    |
 
 ## Current end-to-end issuance status
 
@@ -204,8 +204,8 @@ is refused. A signed `normal` claim bound to an Emergency root is also refused; 
 alone cannot establish the correct context. Existing issuer, audience, client, subject, session and
 expiry checks remain necessary.
 
-Issuance derives context from the authoritative root on initial issue, Code exchange, Refresh and
-reissue. App/com roots are Normal because they have no alternative-context column. On org roots, SQL
+Issuance derives context from the authoritative root on initial issue, code exchange, refresh and
+reissue. APP roots are Normal because they have no alternative-context column. On ORG roots, SQL
 `NULL` and explicit `normal` mean Normal, and `standby` means Standby (Emergency Access). The NULL
 storage representation is not a missing token claim and does not require a data backfill. An unknown
 or empty stored context cannot authorize issuance.
@@ -278,20 +278,15 @@ operations only; the policy-derived Normal Step-Up / Standby comparison and actu
 issuance remain open. See `evidence/2026-11-02-wua6-org-owner-stepup-ops-N3F6.md` and the linked
 operation-specific evidence below.
 
-A separate Normal ORG integration flow now passes real WebAuthn verification in Auth, Base result
-consumption, freshness resolution, and access to the protected Passkey page (5 tests, 35 assertions
-in the affected file). It does not perform a sensitive mutation after Step-Up, so it verifies the
-shared ceremony boundary but does not close AC-41's per-operation comparison. See
+An earlier Normal ORG integration flow passed real WebAuthn verification in Auth, Base result
+consumption, freshness resolution, and access to the protected Passkey page. Its Base result route
+is retired, so the dated evidence below is implementation history and does not establish current
+route acceptance. It did not perform a sensitive mutation after Step-Up. See
 `evidence/2026-11-01-wua6-normal-step-up-fixture-isolation-F7N3.md`.
 
-One write outside the catalogued Step-Up scopes has an explicit current-policy disposition:
-`PublishingEntryPolicy#create?` requires an active Operator but has no Step-Up requirement. Under
-R-AU-10, its policy result is the same for Normal and Standby; the focused policy check confirms
-that parity and refuses an unknown context. A fixture-free integration test now calls the Base ORG
-Publishing create API with a valid Edit client assertion and signed access tokens bound to
-separately seeded Normal and Standby roots. Both requests create an entry attributed to the same
-active Operator. This verifies the downstream HTTP authorization path with a directly seeded Standby
-root; it does not demonstrate Visa issuance from the Auth Standby ceremony. That Root issuance path
+Earlier Publishing policy and HTTP evidence exercised Base ORG and Edit routes. Those local product
+surfaces were retired in the reset; the dated evidence does not describe a current Access writer or
+authorization path. It also did not demonstrate Visa issuance from the Auth Standby ceremony, which
 remains unavailable. See `evidence/2026-11-01-wua6-publishing-http-parity-P8J2.md`.
 
 The pre-check reads the context from the verified access-token claims that
@@ -303,7 +298,7 @@ pre-check with no claims, so it treated every session as Normal.
 
 This is not "step-up has not happened yet". The authentication context is not eligible to perform
 step-up-protected operations at all, however valid the Operator's step-up passkey is. There is no
-separate Emergency step-up mechanism, and normal step-up behaviour is unchanged. The Base ORG
+separate Emergency step-up mechanism, and normal step-up behaviour is unchanged. The Auth ORG
 Step-Up start and first-authenticator bootstrap pages also refuse Standby before offering or issuing
 any verification admission.
 
@@ -314,7 +309,7 @@ Three independent layers enforce it:
 2. `StepUpResolver` never reports a requirement as satisfied for an Emergency session, so a session
    that somehow held freshness columns still cannot authorize a sensitive action.
 3. `IdentityStepUpCeremonyFreshnessCommitter` refuses to write freshness onto an Emergency session,
-   which is where acme commits it (`docs/security/step-up-ceremony-delegation.md`). An operation is
+   which is where Visa commits it (`docs/security/step-up-ceremony-delegation.md`). An operation is
    unavailable to an Emergency session exactly when it carries a Step-Up gate (`step_up only:` or a
    `require_*_step_up!` callback). A sensitive operation without one is reachable from Restricted
    Mode, so adding a sensitive operation means adding its gate. The inventory of write actions that

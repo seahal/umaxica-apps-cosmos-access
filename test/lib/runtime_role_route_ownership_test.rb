@@ -10,7 +10,7 @@ class RuntimeRoleRouteOwnershipTest < ActiveSupport::TestCase
   # Framework engines are not application surfaces; a role process does not serve them. The
   # inertia_rails DevTools routes are drawn in every environment but only match in development;
   # the test below shows they are unreachable here.
-  FRAMEWORK_PREFIXES = %w(rails/ active_storage/ action_mailbox/ turbo/ inertia_rails/devtools/).freeze
+  FRAMEWORK_PREFIXES = %w(rails/ action_mailbox/ turbo/ inertia_rails/devtools/).freeze
 
   test "inertia_rails DevTools routes are unreachable outside development" do
     assert_raises(ActionController::RoutingError) do

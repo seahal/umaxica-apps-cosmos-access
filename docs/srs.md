@@ -1,4 +1,9 @@
-# Software Requirements Specification (SRS)
+# Historical Software Requirements Specification (Pre-Reset)
+
+> This legacy requirements snapshot describes a broader pre-reset site topology. Its old surface,
+> host, and route descriptions are not current Access behavior. The current local product scope is
+> Auth APP/ORG and Visa APP/ORG, plus the six operator tools. Current behavior and acceptance live
+> in accepted specs and durable checklists.
 
 ## Project: Umaxica Apps Cosmos Access
 

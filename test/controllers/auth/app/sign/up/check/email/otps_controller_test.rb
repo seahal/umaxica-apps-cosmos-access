@@ -33,35 +33,17 @@ class Auth::App::Sign::Up::Check::Email::OtpsControllerTest < ActionDispatch::In
     TurnstileVerifierStub.challenge_enabled = true
     TurnstileVerifierStub.challenge_response = { "success" => true }
     browser = self
-    base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
     auth_host = @host
-    browser.host!(base_host)
+    browser.host!(auth_host)
     browser.https!
-    browser.get("/sign", params: { ri: "jp" })
-    csrf = browser.response.parsed_body.at_css('input[name="authenticity_token"]')["value"]
-    browser.post(
-      "/sign", params: { ri: "jp", authenticity_token: csrf }, headers: {
-        "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin",
-      },
+    issuance = OidcTestEntry.issue!(
+      surface: "app", intent: "sign_up", base_browser_nonce: SecureRandom.urlsafe_base64(32), base_token: nil,
     )
-    12.times do
-      break unless browser.response.redirect?
-
-      target = URI.parse(browser.response.location)
-      if target.host == "jump.umaxica.net"
-        token = Rack::Utils.parse_query(target.query).fetch("rt")
-        payload, = JWT.decode(token, nil, false)
-        target = URI.parse(payload.fetch("url"))
-      end
-
-      assert_includes [base_host, visa_host_for_test_base_host(base_host), auth_host], target.host
-      browser.host!(target.host)
-      browser.get(target.request_uri, headers: { "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document" })
-    end
+    admit_auth_ceremony_entry!("/sign/up", reference: issuance.reference, params: { ri: "jp" }, browser:)
+    follow_redirect!
 
     assert_equal 200, browser.response.status
     assert_equal auth_host, browser.host
-    switch_browser_to_sign_up!(browser)
     browser.get("/sign/up/email/new", params: { ri: "jp" })
 
     assert_equal 200, browser.response.status
@@ -1187,7 +1169,7 @@ class Auth::App::Sign::Up::Check::Email::OtpsControllerTest
   end
 
   def seed_social_auth_session(provider:, intent: "login", user: nil, entry: nil, ri: "jp", rt: nil, referer: nil)
-    host = configured_host(:sign_service)
+    host = configured_host(:auth_service)
     host!(host) if respond_to?(:host!)
     normalized_provider = SocialIdentifiable.normalize_provider(provider)
     continue_path =

@@ -4,22 +4,27 @@
 module Auth
   module Org
     class PreferencesBaseController < ::Auth::Org::ApplicationController
-      include ::SignAcmeAuthorityRedirect
-
       # D-59: the preference transport API is not a Sign Entry.
       sign_entry_classification! :excluded, reason: "preference transport API, not a sign entry"
 
       AUTHENTICATION_MODE = :open
+      PREFERENCE_WRITE_CONTEXT = {
+        surface_key: "auth/org",
+        realm: "org",
+        preference_model: OrgPreference,
+        issuer_id: "preference_org",
+      }.freeze
 
       layout "auth/org/application"
 
-      prepend_before_action :redirect_localhost_preference_authority!
       ensure_fqdn_gate_first!
       # Restores the inherited default no-store ahead of the gate (DefaultNoStore).
       prepend_before_action :apply_default_no_store
       before_action :authorize_preference_write!, if: :preference_write_request?
 
       private
+
+      def preference_write_context = PREFERENCE_WRITE_CONTEXT
 
       def set_preferences_cookie
         return if request.host.end_with?(".localhost")
@@ -35,11 +40,6 @@ module Auth
         authorize!(@preferences || preference_class, to: :update?)
       end
 
-      def redirect_localhost_preference_authority!
-        return if request.ssl?
-
-        redirect_to_acme_authority!(request.path, query: request.query_parameters)
-      end
     end
   end
 end

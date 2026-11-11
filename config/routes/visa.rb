@@ -1,8 +1,8 @@
 # typed: false
 # frozen_string_literal: true
 
-# Visa is the OpenID Provider surface. It has no Base browser-RP routes and
-# each realm is constrained to its own Visa host.
+# Visa owns the OpenID Provider and browser-bound authority flows. Each realm
+# is constrained to its own Visa host.
 scope(module: :visa, as: :visa) do
   {
     app: :service,

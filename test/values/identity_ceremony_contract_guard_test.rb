@@ -7,12 +7,8 @@ class IdentityCeremonyContractGuardTest < ActiveSupport::TestCase
   test "ceremony contracts reject blank invalid and unsafe headers" do
     [
       [IdentityStepUpCeremonyContract, IdentityStepUpCeremonyContract::Error],
-      [IdentityTelephoneCeremonyContract, IdentityTelephoneCeremony::Error],
       [IdentityPasskeyCeremonyContract, IdentityPasskeyCeremonyContract::Error],
-      [IdentityTotpCeremonyContract, IdentityTotpCeremonyContract::Error],
       [IdentitySocialCeremonyContract, IdentitySocialCeremonyContract::Error],
-      [IdentitySecretCredentialCeremonyContract, IdentitySecretCredentialCeremonyContract::Error],
-      [IdentityEmailCeremonyContract, IdentityEmailCeremonyContract::Error],
     ].each do |contract, error_class|
       assert_raises(error_class) { contract.validate_header!({}, expected_type: "grant") }
       assert_raises(error_class) { contract.validate_header!(nil, expected_type: "grant") }
@@ -39,12 +35,8 @@ class IdentityCeremonyContractGuardTest < ActiveSupport::TestCase
     now = Time.zone.local(2026, 1, 2, 3, 4, 5)
     [
       [IdentityStepUpCeremonyContract, IdentityStepUpCeremonyContract::Error],
-      [IdentityTelephoneCeremonyContract, IdentityTelephoneCeremony::Error],
       [IdentityPasskeyCeremonyContract, IdentityPasskeyCeremonyContract::Error],
-      [IdentityTotpCeremonyContract, IdentityTotpCeremonyContract::Error],
       [IdentitySocialCeremonyContract, IdentitySocialCeremonyContract::Error],
-      [IdentitySecretCredentialCeremonyContract, IdentitySecretCredentialCeremonyContract::Error],
-      [IdentityEmailCeremonyContract, IdentityEmailCeremonyContract::Error],
     ].each do |contract, error_class|
       assert_raises(error_class) do
         contract.validate_keys!({ "unexpected" => "x" }, allowed: %w(iss aud))

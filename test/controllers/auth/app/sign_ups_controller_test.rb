@@ -467,8 +467,8 @@ class Auth::App::SignUpsControllerTest < ActionDispatch::IntegrationTest
     follow_redirect!
 
     assert_response :success
-    # Footer should contain copyright and links
-    assert_not_empty inertia_props.fetch("chrome").fetch("footer_navigation")
+    # Auth has no RP identity, so its ceremony pages have no out-of-procedure navigation.
+    assert_nil inertia_props.fetch("chrome").fetch("footer_navigation")
     assert_not_empty inertia_props.fetch("chrome").fetch("copyright")
   end
 

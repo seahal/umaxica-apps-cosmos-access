@@ -28,8 +28,7 @@ module AuthenticationWithdrawalGate
       return
     end
 
-    # HTML: redirect to the withdrawal lifecycle surface
-    safe_redirect_to(withdrawal_gate_redirect_path, fallback: acme_withdrawal_gate_redirect_path, status: :found)
+    render plain: "WITHDRAWAL_REQUIRED", status: :forbidden
   end
 
   def withdrawal_gate_allowlisted?
@@ -43,7 +42,6 @@ module AuthenticationWithdrawalGate
 
   def withdrawal_controller_allowlisted?
     %w(
-      base/app/identity/withdrawals
     ).include?(controller_path) && %w(show new edit update create destroy).include?(action_name)
   end
 
@@ -53,27 +51,5 @@ module AuthenticationWithdrawalGate
     return true if resource.respond_to?(:terminated?) && resource.terminated?
 
     resource.respond_to?(:deactivated?) && resource.deactivated?
-  end
-
-  def withdrawal_gate_redirect_path
-    ri = params[AuthIoKeys::Params::RI]
-
-    case withdrawal_gate_surface_family
-    when "app" then edit_base_app_identity_withdrawal_path(ri: ri)
-    when "org" then base_org_identity_withdrawal_path(ri: ri)
-    else
-      raise ArgumentError, "no withdrawal redirect path configured for controller_path=#{controller_path}"
-    end
-  end
-
-  # Derives the app/org family from the surface/family/... controller_path shape shared by
-  # every surface (auth, base, core, warp). A rescued default here would silently cross surfaces
-  # (e.g. redirect an org request to the app withdrawal page), so unknown families raise instead.
-  def withdrawal_gate_surface_family
-    controller_path.split("/")[1]
-  end
-
-  def acme_withdrawal_gate_redirect_path
-    edit_base_app_identity_withdrawal_path(ri: params[AuthIoKeys::Params::RI])
   end
 end

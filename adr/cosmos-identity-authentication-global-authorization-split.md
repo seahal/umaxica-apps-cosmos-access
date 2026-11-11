@@ -5,6 +5,10 @@
 Accepted (2026-11-08), architecture only. Implementation, migration order and the open questions
 below are not decided by this record.
 
+Amended 2026-11-10 by `adr/access-is-a-pure-openid-provider.md`: Identity (Access) holds only
+authentication data; profile, avatar and settings data live in Global (Governance), replacing the
+"no copy of profile data" part of decision 12.
+
 Revised the same day: an earlier draft of this record made Global a runtime authorization decision
 service behind an Identity relay. That model is replaced by the one below and is listed under
 Rejected Alternatives.
@@ -126,10 +130,9 @@ decision. Using the vocabulary does not adopt the XACML policy language.
   revocation, and add token-exchange steps in which services can use the wrong token.
 - **Global as a token-issuing authorization server.** Two token issuers blur the boundary for the
   same reason.
-- **Global as the runtime PDP behind an Identity relay.** Identity would forward every
-  authorization query to Global. Every request would pay an internal hop, and Global's outage would
-  deny all authorization. Separating the PAP from the PDP keeps the management tool out of the
-  request path.
+- **Global as the runtime PDP behind an Identity relay.** Identity would forward every authorization
+  query to Global. Every request would pay an internal hop, and Global's outage would deny all
+  authorization. Separating the PAP from the PDP keeps the management tool out of the request path.
 - **Sharing a database between Identity and Global.** It would reconnect the halves below the
   application boundary.
 
@@ -167,7 +170,8 @@ decision. Using the vocabulary does not adopt the XACML policy language.
 - Permission changes take effect after distribution, not immediately; the revocation limit makes
   that delay explicit.
 - Services integrate with one endpoint and one token type, and keep their own resource rules.
-- The split proceeds by first establishing the boundary inside one application (authorization
-  evaluation reads only the applied configuration, and authorization editing writes only through the
-  control plane), then deleting the unowned half from each repository, so each step keeps a working
-  application.
+- Superseded 2026-11-08 by the hard reset in `adr/cosmos-base-surface-decomposition.md` (each
+  repository uses only its own databases from the first step): the split proceeds by first
+  establishing the boundary inside one application (authorization evaluation reads only the applied
+  configuration, and authorization editing writes only through the control plane), then deleting the
+  unowned half from each repository, so each step keeps a working application.

@@ -31,12 +31,6 @@ development:
     args:
       - batch_size: 500
     schedule: every minute
-  step_up_dispatch_recovery:
-    class: RpStepUpDispatchRecoveryJob
-    queue: retention
-    priority: 50
-    args: []
-    schedule: every minute
   clear_solid_queue_finished_jobs:
     command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
     schedule: every hour at minute 12
@@ -191,12 +185,6 @@ production:
     priority: 50
     args:
       - batch_size: 500
-    schedule: every minute
-  step_up_dispatch_recovery:
-    class: RpStepUpDispatchRecoveryJob
-    queue: retention
-    priority: 50
-    args: []
     schedule: every minute
   clear_solid_queue_finished_jobs:
     command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"

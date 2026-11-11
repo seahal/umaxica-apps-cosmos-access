@@ -25,7 +25,7 @@ class JumpRtIssuer
 
   def initialize(namespace:, url:, dst:, preserve_query_keys: [], ttl: nil, now: Time.current,
                  jti: SecureRandom.uuid)
-    @namespace = JumpRtSurface.normalize_namespace(namespace)
+    @namespace = JumpRtSurface.normalize_issuer_namespace(namespace)
     @url = url
     @dst = dst
     @preserve_query_keys = Array(preserve_query_keys).map(&:to_s)

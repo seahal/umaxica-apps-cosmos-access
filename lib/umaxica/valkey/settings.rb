@@ -16,7 +16,7 @@ module Umaxica
     class Settings
       PATH = File.expand_path("../../../config/valkey.yml", __dir__).freeze
       APPLICATION_RESPONSIBILITIES = %i(cache rate_limit auth_state).freeze
-      DIAGNOSTIC_RESPONSIBILITIES = %i(performance coverband).freeze
+      DIAGNOSTIC_RESPONSIBILITIES = %i(coverband).freeze
       NONPROD_ENVIRONMENTS = %w(development test).freeze
       CURRENT_CACHE = Concurrent::Map.new
       CURRENT_CACHE_KEY = :current
@@ -86,10 +86,6 @@ module Umaxica
         @resolved.fetch(:auth_state)
       end
 
-      def performance
-        @resolved.fetch(:performance)
-      end
-
       def coverband
         @resolved.fetch(:coverband)
       end
@@ -128,7 +124,7 @@ module Umaxica
 
       def resolve_all
         names = APPLICATION_RESPONSIBILITIES.dup
-        names.concat(DIAGNOSTIC_RESPONSIBILITIES) if @raw.key?(:performance) || @raw.key?(:coverband)
+        names.concat(DIAGNOSTIC_RESPONSIBILITIES) if @raw.key?(:coverband)
         names.index_with { |name| resolve(name) }
       end
 

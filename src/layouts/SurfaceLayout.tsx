@@ -1,9 +1,9 @@
-// The persistent layout every Inertia page of every surface renders inside.
+// The persistent layout every Auth and Visa Inertia page renders inside.
 //
 // It replaces the header and footer that the surface ERB layouts used to build, and it is
 // persistent in the Inertia sense: a visit swaps the page below it without remounting the chrome,
-// so the cookie banner keeps its dismissed state and the theme control keeps its selection across
-// navigation. It renders nothing it decides for itself — `chrome` is a shared prop assembled by
+// so server-provided chrome remains stable across navigation. It renders nothing it decides for
+// itself — `chrome` is a shared prop assembled by
 // SurfaceChrome on the server.
 //
 // The document structure here is plain semantic HTML on purpose. Landmarks, headings and lists are
@@ -11,34 +11,18 @@
 // interaction layer, and there is no interaction in a header.
 //
 // Horizontal measure is owned here and nowhere else. The header, the main column and the footer all
-// take `SHELL`, so the brand, the page title and the footer links sit on one vertical line at every
-// width. A page picks how narrow it wants to be inside that column through `Page`'s `width`; it
-// never restates the gutter.
+// take `SHELL`, so the brand and page content share one vertical line at every width. A page picks
+// how narrow it wants to be inside that column through `Page`'s `width`; it never restates the gutter.
 import { router, usePage } from "@inertiajs/react";
 import { useEffect, type ReactNode } from "react";
 
-import CookieBanner from "@/components/chrome/CookieBanner";
-import ThemeControls from "@/components/chrome/ThemeControls";
 import DocumentLocale from "@/components/ui/DocumentLocale";
 import type { SharedProps } from "@/types/inertia";
 
 const SHELL = "mx-auto w-full max-w-4xl px-4 sm:px-6";
 
-const NAV_LINK =
-  "ui-text-link text-base text-fg-muted underline underline-offset-4 hover:text-fg hover:underline";
-
 export default function SurfaceLayout({ children }: { children: ReactNode }) {
   const { chrome, clear_history: clearHistory } = usePage<SharedProps>().props;
-
-  useEffect(() => {
-    if (chrome.surface !== "com") {
-      return;
-    }
-    if (chrome.locale !== "ja" && chrome.locale !== "en") {
-      throw new Error("com page locale is missing or unsupported");
-    }
-    document.documentElement.lang = chrome.locale;
-  }, [chrome.surface, chrome.locale]);
 
   useEffect(() => {
     if (clearHistory) {
@@ -46,10 +30,6 @@ export default function SurfaceLayout({ children }: { children: ReactNode }) {
     }
   }, [clearHistory]);
 
-  const footerLabel =
-    typeof document === "undefined"
-      ? undefined
-      : document.querySelector<HTMLMetaElement>('meta[name="ui-footer"]')?.content;
   const informationLabel =
     typeof document === "undefined"
       ? undefined
@@ -105,34 +85,21 @@ export default function SurfaceLayout({ children }: { children: ReactNode }) {
             className={`${SHELL} flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3`}
           >
             <p className="flex flex-wrap items-baseline gap-x-2 text-base font-semibold text-fg">
-              <a
-                href={chrome.brand.href}
-                className="ui-text-link underline-offset-4 hover:underline"
-              >
-                {chrome.brand.name}
-              </a>
+              {chrome.brand.href ? (
+                <a
+                  href={chrome.brand.href}
+                  className="ui-text-link underline-offset-4 hover:underline"
+                >
+                  {chrome.brand.name}
+                </a>
+              ) : (
+                <span>{chrome.brand.name}</span>
+              )}
               {chrome.family_label ? (
                 <span className="font-normal text-fg-muted">{chrome.family_label}</span>
               ) : null}
               <span className="text-sm font-normal text-fg-muted">({chrome.surface})</span>
             </p>
-
-            {chrome.account_navigation ? (
-              <nav aria-label={chrome.account_navigation.label}>
-                <ul className="flex flex-wrap items-baseline gap-x-5 gap-y-2">
-                  {chrome.account_navigation.links.map((link) => (
-                    <li key={link.href}>
-                      <a
-                        href={link.href}
-                        className={NAV_LINK}
-                      >
-                        {link.label}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </nav>
-            ) : null}
           </div>
         </header>
 
@@ -151,35 +118,9 @@ export default function SurfaceLayout({ children }: { children: ReactNode }) {
       */}
         <footer className="mt-8 border-t border-line bg-canvas">
           <div className={`${SHELL} flex flex-col gap-6 py-8`}>
-            {chrome.footer_navigation ? (
-              <nav aria-label={footerLabel}>
-                <ul className="flex flex-wrap gap-x-5 gap-y-2">
-                  {chrome.footer_navigation.map((link) => (
-                    <li key={link.href}>
-                      <a
-                        href={link.href}
-                        className={NAV_LINK}
-                      >
-                        {link.label}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </nav>
-            ) : null}
-
-            {chrome.theme_controls ? (
-              <aside aria-label={chrome.theme_controls.title}>
-                <ThemeControls controls={chrome.theme_controls} />
-              </aside>
-            ) : null}
-
             <p className="text-sm text-fg-muted">{chrome.copyright}</p>
           </div>
         </footer>
-
-        {/* Consent remains a named region in document flow, so it cannot cover keyboard focus. */}
-        {chrome.cookie_controls ? <CookieBanner controls={chrome.cookie_controls} /> : null}
       </div>
     </DocumentLocale>
   );

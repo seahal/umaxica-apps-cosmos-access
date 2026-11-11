@@ -1,18 +1,16 @@
-import { createInertiaApp, router, type ResolvedComponent } from "@inertiajs/react";
+import { createInertiaApp, type ResolvedComponent } from "@inertiajs/react";
 
 import SurfaceLayout from "@/layouts/SurfaceLayout";
-import { handleStepUpChallenge } from "@/lib/step_up_challenge";
 import { applyTheme, readThemeCookie, watchThemeCookie } from "@/lib/theme";
 
-// Shared pieces for the per-FQDN Inertia entrypoints.
+// Shared pieces for the Auth and Visa Inertia entrypoints.
 //
-// Every trust boundary (base/app, base/com, auth/org, ...) boots its own Inertia application from
-// its own entrypoint and globs only its own page directory, so one surface can never resolve
-// another surface's page component. This module holds what is genuinely identical between them;
-// the glob itself stays a literal in each entrypoint because Vite can only rewrite a literal.
+// Each trust boundary boots its own Inertia application and globs only its own page directory, so
+// one surface can never resolve another surface's page component. The glob stays a literal in each
+// entrypoint because Vite can only rewrite a literal.
 
 /**
- * Rails sends surface-qualified component names ("base/app/groups/index") so the Inertia page
+ * Rails sends surface-qualified component names ("auth/app/sign_ins/new") so the Inertia page
  * object stays self-describing in logs and in the browser devtools, while each entrypoint globs
  * only its own directory. A name that does not carry this surface's prefix is a cross-surface
  * render and fails loudly rather than falling through to a "Page not found" that looks like a
@@ -152,7 +150,8 @@ export function reportInertiaBootFailure(error: unknown): void {
  *
  * The cookie store reports that write directly, so this listens to the cookie rather than to the
  * navigation that happened to carry it. It needs no Inertia counterpart of the `DOMContentLoaded`
- * listener in `src/theme_cookie.ts`: both surfaces watch the same signal, from the same authority.
+ * listener in the removed document entrypoint: both surfaces watch the same signal, from the same
+ * authority.
  */
 function keepDocumentThemeInStep(): void {
   void readThemeCookie().then(applyTheme);
@@ -180,17 +179,6 @@ export function bootSurfaceInertiaApp(
   surface: string,
 ): Promise<unknown> {
   keepDocumentThemeInStep();
-
-  if (surface === "base/app" || surface === "base/org") {
-    router.on("httpException", (event) => {
-      if (handleStepUpChallenge(event.detail.response)) {
-        event.preventDefault();
-        return false;
-      }
-
-      return true;
-    });
-  }
 
   const nonce = cspNonce();
 

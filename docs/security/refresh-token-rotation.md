@@ -1,10 +1,9 @@
 # Refresh Token Rotation
 
-> **Current boundary (2026-10-24):** Visa is the sole Identity Provider, Authorization Server and
-> authority token issuer. Auth is a credential ceremony surface; it is not an RP, token issuer,
-> session authority or assurance-policy authority. Base is the browser RP on `www.umaxica.*` and
-> only owns its RP session and credential transport. Older Acme/Sign/Base-OP names in this document
-> describe legacy physical namespaces only and do not change the current Visa/Auth/Base-RP boundary.
+> **Current boundary (2026-11-10):** Visa APP/ORG is the sole local Identity Provider, Authorization
+> Server, and authority token issuer. Auth APP/ORG is the credential ceremony surface; it is not an
+> RP or general session authority. Approved external RPs own their callbacks and browser sessions in
+> their own repositories. Earlier local Base RP references are retired.
 
 ## Authority
 
@@ -34,8 +33,8 @@ rotation: the resolver receives the controller-selected realm and queries only t
 writing database and RP-session class. It does not scan the other surface databases and then rely on
 a later realm comparison. The request does not supply or select the expected realm.
 
-For one Visa Root Session and one registered RP client, an authorization-code exchange may have
-at most one non-retired RP Session. A second authorization-code request is rejected; it does not
+For one Visa Root Session and one registered RP client, an authorization-code exchange may have at
+most one non-retired RP Session. A second authorization-code request is rejected; it does not
 replace the existing JTI, scope, refresh family, or session row. Revoked sessions remain occupied
 until the latest Access JWT they issued is outside the configured verifier clock-skew window. The
 maximum Access JWT `exp` is persisted monotonically on the RP Session before the token response is
@@ -48,9 +47,9 @@ recording the revocations. This prevents a revocation that already owns a child 
 the parent while an exchange owns the parent and waits on that child.
 
 Initial refresh issuance, refresh-token rotation, and RP-session revocation use the same
-parent-before-child order. The refresh issuer locks the surface-local Visa Root Session before
-its RP Session and performs replay, activity, digest, and rotation checks while both locks are held.
-A refresh cannot acquire a child-only lock and pass a revoke that has already serialized on the
+parent-before-child order. The refresh issuer locks the surface-local Visa Root Session before its
+RP Session and performs replay, activity, digest, and rotation checks while both locks are held. A
+refresh cannot acquire a child-only lock and pass a revoke that has already serialized on the
 parent. The RP-session model methods enforce the same boundary for direct callers; issuance after
 the RP Session or its parent is no longer active is rejected before a refresh digest is written.
 
@@ -66,8 +65,8 @@ RP-session-only revocation follows the same order on the writing connection: it 
 Browser Session, then the targeted RP Session, and never revokes the parent or sibling RP Sessions.
 OIDC token revocation and verified back-channel logout use this operation rather than directly
 updating the child row. Back-channel logout records a successful RP-session revoke only after the
-client-bound, surface-local lookup succeeds. A legacy UUID `sid` that identifies a Visa Root
-Session remains on the existing parent logout primitive; it is not reinterpreted as an RP Session.
+client-bound, surface-local lookup succeeds. A legacy UUID `sid` that identifies a Visa Root Session
+remains on the existing parent logout primitive; it is not reinterpreted as an RP Session.
 
 First-party browser RPs use the same child-only authority for their normal POST `/sign/out` flow.
 The RP validates its host-bound Access/Refresh cookie pair against the registered client, resource
@@ -196,8 +195,8 @@ concurrent revocation.
 
 OIDC token revocation is scoped to the RP Session identified by the token's `sid`, and the matching
 client and `jti` are required. If no RP Session matches, revocation does not fall back to a parent
-Visa Root Session. Parent-session termination remains an explicit logout or parent-scope
-operation; an RP cannot revoke sibling RPs or the parent merely because it knows a parent `sid`.
+Visa Root Session. Parent-session termination remains an explicit logout or parent-scope operation;
+an RP cannot revoke sibling RPs or the parent merely because it knows a parent `sid`.
 
 Back-channel logout uses the verified logout-token audience as the client binding. Its `sid` is an
 opaque, bounded identifier: the implementation accepts the URL-safe Nanoid used by RP Sessions as
@@ -240,9 +239,9 @@ renamed. They must not assert sign-side authority.
 
 Refresh follows RFC 6749 section 6 and RFC 9700 section 4.14 with no grace period:
 
-- every use rotates the grant's refresh credential (`OidcRefreshTokenIssuer`, writer role, grant
-  row lock; the token response is built inside that lock, so a failure to build it rolls the
-  rotation back);
+- every use rotates the grant's refresh credential (`OidcRefreshTokenIssuer`, writer role, grant row
+  lock; the token response is built inside that lock, so a failure to build it rolls the rotation
+  back);
 - presenting the consumed predecessor answers `invalid_grant` and revokes only that grant (its
   refresh family); the OP Root Session and other grants are untouched;
 - an unknown public ID, a wrong verifier or a malformed token answers `invalid_grant` and revokes

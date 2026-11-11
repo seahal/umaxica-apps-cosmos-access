@@ -1,0 +1,8 @@
+_fixture:
+  model_class: OperatorEntraIdentityState
+
+# Complete the fixed catalog from its owning model.
+<% OperatorEntraIdentityState::DEFAULTS.each_with_index do |id, index| %>
+reference_<%= index %>:
+  id: <%= id %>
+<% end %>

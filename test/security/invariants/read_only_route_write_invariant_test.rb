@@ -6,9 +6,8 @@ require "test_helper"
 module Security
   module Invariants
     class ReadOnlyRouteWriteInvariantTest < ActionDispatch::IntegrationTest
-      test "ordinary Base GET navigation does not write authentication or preference state" do
+      test "the unknown-host root performs no writes" do
         observed_writes = []
-
         callback =
           lambda do |_name, _started, _finished, _unique_id, payload|
             sql = payload[:sql].to_s.squish
@@ -19,69 +18,16 @@ module Security
             observed_writes << sql
           end
 
-        # The com surface is anonymous-only: it has no dashboard or sign-out page, so its
-        # read-only navigation set is the public root and the preference entry points.
-        surfaces = {
-          "app" => {
-            host: "base.app.localhost",
-            paths: [
-              ["/", :success],
-              # Anonymous Base Dashboard redirects to passive Sign (accepted ADR amendment 2026-10-08).
-              ["/dashboard", :found],
-              ["/preference", :success],
-              ["/preference/region/edit", :success],
-              ["/preference/theme/edit", :success],
-              ["/sign/out/edit", :success],
-            ],
-          },
-          "com" => {
-            host: "base.com.localhost",
-            paths: [
-              ["/", :success],
-              ["/preference", :success],
-              ["/preference/region/edit", :success],
-              ["/preference/theme/edit", :success],
-            ],
-          },
-          "org" => {
-            host: "base.org.localhost",
-            paths: [
-              ["/", :success],
-              ["/dashboard", :found],
-              ["/preference", :success],
-              ["/preference/region/edit", :success],
-              ["/preference/theme/edit", :success],
-              ["/sign/out/edit", :success],
-            ],
-          },
-        }
-        methods = [
-          "GET",
-          "HEAD",
-        ]
-
-        surfaces.each do |surface, config|
-          host = config.fetch(:host)
-          paths = config.fetch(:paths)
-          methods.each do |method_name|
-            paths.each do |path, expected_status|
-              reset!
-              host! host
-              observed_writes.clear
-
-              ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
-                if method_name == "GET"
-                  get "#{path}?ri=jp"
-                else
-                  head "#{path}?ri=jp"
-                end
-              end
-
-              assert_response expected_status, "#{surface} #{method_name} #{path} response"
-              assert_empty observed_writes,
-                           "#{surface} #{method_name} #{path} must not persist preference or auth state"
-            end
+        { "GET" => :get, "HEAD" => :head }.each do |method_name, method|
+          reset!
+          host! "unregistered.invalid"
+          observed_writes.clear
+          ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+            public_send(method, "/", params: { ri: "jp" })
           end
+
+          assert_response :not_found, "#{method_name} unknown-host root"
+          assert_empty observed_writes, "#{method_name} unknown-host root must not persist state"
         end
       end
     end

@@ -26,6 +26,8 @@ class AuthenticationCheckpointAndTargetTest < ActiveSupport::TestCase
 
     def current_region_identifier = "jp"
 
+    def auth_app_sign_in_path(ri:) = "/sign/in?ri=#{ri}"
+
     def signed_pt_token(pt) = pt
 
     def path_from_signed_pt(value) = value
@@ -68,11 +70,11 @@ class AuthenticationCheckpointAndTargetTest < ActiveSupport::TestCase
     assert_nil harness.invoke(:resolved_path_or_navigation_target)
   end
 
-  test "a navigation target inside the scope resolves to its own path" do
+  test "an Auth navigation target inside the scope resolves to its own path" do
     harness = BaseHarness.new
-    harness.params = ActionController::Parameters.new("ri" => "jp", AuthIoKeys::Params::NT => "home")
+    harness.params = ActionController::Parameters.new("ri" => "jp", AuthIoKeys::Params::NT => "selector")
 
-    assert_equal "/?ri=jp", harness.invoke(:resolved_path_or_navigation_target)
+    assert_equal "/sign/in?ri=jp", harness.invoke(:resolved_path_or_navigation_target)
   end
 
   test "no navigation target falls back to the signed path target" do

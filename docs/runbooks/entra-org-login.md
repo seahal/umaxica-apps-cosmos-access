@@ -118,8 +118,9 @@ The ordinary test suite never contacts Microsoft. This procedure does, and is ru
 
 3. In a browser, start sign-in from the org Auth sign-in page, or go to `/social/entra/session/new`
    directly. Complete the Microsoft sign-in with the account whose Object ID was provisioned above.
-   Entra is sign-in only: operators cannot link or unlink an identity themselves. A signed-in
-   operator can read its administrator-provisioned status on Base ORG `/identity/social_identities`.
+   Entra is sign-in only: operators cannot link or unlink an identity themselves. The status command
+   in the next step is the supported read path. Access has no local identity management page; the
+   operator's Entra mapping remains administrator-provisioned.
 
 4. A successful sign-in lands in the org sign-in sequence. Confirm the record moved:
 

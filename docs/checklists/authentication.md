@@ -1,7 +1,9 @@
 # Authentication
 
-Applies to browser authentication on each supported surface; method availability remains
-surface-specific. These are durable requirements, not current verification results.
+Applies to local Auth APP/ORG credential ceremonies and Visa APP/ORG OpenID Provider behavior.
+Requirements for relying-party clients describe external integrations whose callbacks, sessions, and
+browser routes belong to their own repositories. These are durable requirements, not current
+verification results.
 
 - AUTH-1: State-changing browser requests retain Rails CSRF, Origin and Fetch Metadata protection;
   ceremony binding adds protection rather than replacing it. Scoped exceptions: the Sign-in path
@@ -32,7 +34,7 @@ surface-specific. These are durable requirements, not current verification resul
   Entra ID is company-owned and is not automatically unlinked by app account withdrawal.
 - AUTH-6: The Device sign-in mock is retired: `/sign/in/device` reaches no controller and sign-in
   selection offers no device option, while the remaining sign-in methods keep working.
-- AUTH-7: Base and Auth require a valid CSRF token on state-changing requests, including JSON and
+- AUTH-7: Auth and Visa require a valid CSRF token on state-changing requests, including JSON and
   same-origin requests with Fetch Metadata. A missing or invalid token or an origin mismatch is
   refused before any update or flow issuance. Protocol callbacks keep their own state, nonce, PKCE
   and signature checks, and passing through Jump exempts nothing.
@@ -68,9 +70,10 @@ surface-specific. These are durable requirements, not current verification resul
   sid anchor. Callback checks fresh writer time after acquiring it, refuses expired authority and
   disabled principals, and cannot reopen a logout tombstone. Concurrent duplicate logout deliveries
   return the committed result with one receipt, rather than failing its unique index.
-- AUTH-14: Base self-RP reissue locks and reloads its canonical actor before OP device/root/grant
-  claim updates, refuses stopped or superseded-epoch authority, and leaves claims unchanged on
-  refusal. Token rotation separately rechecks current actor authority through its OP commit.
+- AUTH-14: An external RP reissue flow locks and reloads its canonical actor before OP
+  device/root/grant claim updates, refuses stopped or superseded-epoch authority, and leaves claims
+  unchanged on refusal. Token rotation separately rechecks current actor authority through the Visa
+  OP commit. This is an external client contract, not an Access RP route.
 - AUTH-15: Separated RP request authentication reads local session, binding and principal without
   query-cache reuse from the fixed cell writer, and compares local expiry with its fresh database
   clock. Application clock lag and a caller's reading role cannot extend that local authority.
@@ -88,17 +91,17 @@ surface-specific. These are durable requirements, not current verification resul
   or actor reference. Delivery preserves nil system actors and business occurrence time after
   credential deletion; retry after Chronicle commit before acknowledgement creates no second event.
   See [Passkey lifecycle and audit](../security/passkey-lifecycle-and-audit.md).
-- AUTH-19: APP/ORG sign-in and APP sign-up: a Base → Auth admission reference (`entry_ref`) or an
-  Auth → Base result reference presented from any browser other than the one that started the flow
-  never attaches a ceremony that Base confirms, never redeems the admission, never yields an
-  authentication result Base accepts and never establishes a Root Session. Its worst effect is
+- AUTH-19: APP/ORG sign-in and APP sign-up: a Visa → Auth admission reference (`entry_ref`) or an
+  Auth → Visa result reference presented from any browser other than the one that started the flow
+  never attaches a ceremony that Visa confirms, never redeems the admission, never yields an
+  authentication result Visa accepts and never establishes an OP Root Session. Its worst effect is
   denying the legitimate attempt while the reference lives (an accepted residual risk; the user
   restarts). Re-verify with foreign-browser refusal tests at attach, confirmation, redemption and
   result receipt whenever the sign-in or sign-up relay components change. Two same-browser first
   admissions made without an existing `auth_sid` may leave more than one admitted ceremony; the last
   delivered `auth_sid` selects the only reachable target. A request for another admitted target
   returns 409 without changing either attempt or issuing authentication cookies or DBSC headers. See
-  [Base/Auth authority](../../adr/base-auth-ceremony-and-seven-rp-boundary.md).
+  [Auth/Visa authority](../architecture/base-auth-seven-rp-boundary.md).
 
 - AUTH-20: APP email and telephone sign-up entry requires explicit policy consent (`"1"` or JSON
   `true`); telephone entry also requires explicit MFA-use consent. Missing, null, empty, unchecked
@@ -119,18 +122,17 @@ surface-specific. These are durable requirements, not current verification resul
   outage degradation still refuses missing/empty tokens, failed challenges and missing secrets; only
   explicitly upstream-unavailable results may pass under the incident flag. See
   [Turnstile](../security/turnstile.md).
-- AUTH-23: APP email sign-in resend requires confirmed admission, original browser/surface
-  binding and an unexpired authenticated state. Cross-browser, expired and retargeted states cannot
+- AUTH-23: APP email sign-in resend requires confirmed admission, original browser/surface binding
+  and an unexpired authenticated state. Cross-browser, expired and retargeted states cannot
   dispatch; destination cooldown and verification budgets remain effective. This bound continuation
   needs no fresh CAPTCHA. See
   [resend exception](../security/turnstile.md#email-sign-in-resend-exception).
-- AUTH-24: APP unbound email candidates cannot select an actor or receive login/recovery OTP,
-  even if their email status says VERIFIED. Rejected attempts preserve the candidate and issue no
-  login credentials. See
-  [binding contract](../security/identity-resolution-and-credential-binding.md).
-- AUTH-25: APP security-lock recovery requires the existing verified effective email OTP proof
-  and an eligible account lock. Recovery authority is scoped to lock recovery and does not itself
-  issue a login session or reset a password. See
+- AUTH-24: APP unbound email candidates cannot select an actor or receive login/recovery OTP, even
+  if their email status says VERIFIED. Rejected attempts preserve the candidate and issue no login
+  credentials. See [binding contract](../security/identity-resolution-and-credential-binding.md).
+- AUTH-25: APP security-lock recovery requires the existing verified effective email OTP proof and
+  an eligible account lock. Recovery authority is scoped to lock recovery and does not itself issue
+  a login session or reset a password. See
   [recovery scope](../security/credential-gateway.md#current-security-lock-recovery-scope).
 
 - AUTH-26: First-party Auth/Preference access and OIDC token verification applies the fixed
@@ -146,17 +148,22 @@ surface-specific. These are durable requirements, not current verification resul
   requests. Challenge cookies use fixed-length selected-Operator binding or a non-authenticating
   sentinel. Missing, disabled, wrong-owner and invalid-signature Passkey assertions share the
   generic credential refusal and verification response floor.
-- AUTH-29: APP withdrawal and security-lock recovery keep real/dummy session payload lengths
-  equal, cover complete OTP issuance with the response floor, and never authenticate dummy state.
+- AUTH-29: APP withdrawal and security-lock recovery keep real/dummy session payload lengths equal,
+  cover complete OTP issuance with the response floor, and never authenticate dummy state.
 - AUTH-30: Closed Org invitation provisioning refuses every invitation state before code lookup,
   preserves existing records and retains the common surface rate limit. See
   [nondisclosure decisions](../../adr/credential-response-nondisclosure.md).
 
-- AUTH-31: APP/ORG authorization-code coordination preserves the request validator's protocol
-  error classification: an unsupported response type is `unsupported_response_type`, an inactive
-  resource is `access_denied`, and a disallowed scope is `invalid_scope`. Refused requests return no
-  success redirect; missing required parameters remain `invalid_request`. See
+- AUTH-31: APP/ORG authorization-code coordination preserves the request validator's protocol error
+  classification: an unsupported response type is `unsupported_response_type`, an inactive resource
+  is `access_denied`, and a disallowed scope is `invalid_scope`. Refused requests return no success
+  redirect; missing required parameters remain `invalid_request`. See
   [authorization request profile](../../adr/oidc-authorization-request-profile.md).
+
+  Repeated recognized authorization parameters are refused from the raw query and POST form,
+  including encoded names and cross-transport repeats. Repeated client_id/redirect_uri and unsafe
+  targets stay local; otherwise invalid_request returns to the registered redirect before
+  allocation.
 
 - AUTH-32: APP Google/Apple callbacks resolve the verified issuer/subject under the admitted intent.
   Unknown subjects continue only Sign Up; registered subjects continue only Sign In; unusable or
@@ -183,10 +190,9 @@ surface-specific. These are durable requirements, not current verification resul
   [authorization request profile](../../adr/oidc-authorization-request-profile.md) and
   [continuation protocol](../../adr/sign-in-path-continuation-protocol.md).
 
-- AUTH-35: Global Base/Auth/Visa/Tech/Edit browser HTML canonicalizes missing region on GET/HEAD
-  before rendering, retaining origin, path and valid supplied context. Explicit `jp`/`us` remain
-  selected; Base Home/Dashboard retain their final authentication outcomes. Visa roots issue no
-  cookies and protocol endpoints retain their existing transport exemptions. See
+- AUTH-35: Auth/Visa APP/ORG browser HTML canonicalizes missing region on GET/HEAD before rendering,
+  retaining origin, path and valid supplied context. Explicit `jp`/`us` remain selected. Visa roots
+  issue no cookies and protocol endpoints retain their existing transport exemptions. See
   [request context](../architecture/preference.md#request-context-parameters).
 
 - AUTH-36: APP email and telephone sign-up issuance and resend retain the newly committed OTP
@@ -196,10 +202,10 @@ surface-specific. These are durable requirements, not current verification resul
 - AUTH-37: APP Email and Telephone sign-up OTP resend and verification do not turn an unregistered
   internal result into a routine invalid-code response; an unsupported result fails explicitly.
 - AUTH-38: APP Google/Apple social L1/L2 guidance is shown only after the provider identity and
-  callback state/nonce match the admitted entry. The HTTP 400 page starts a fresh Base `/sign`
-  request using normalized `ri` only, clears prior Auth continuity and reuses no callback state or
-  evidence. Unverified callbacks, blocked/released/unfinished identities and other provider errors
-  keep the generic refusal; OTP entry never discloses social registration status.
+  callback state/nonce match the admitted entry. The HTTP 400 page starts a fresh Auth sign-in entry
+  using normalized `ri` only, clears prior Auth continuity and reuses no callback state or evidence.
+  Unverified callbacks, blocked/released/unfinished identities and other provider errors keep the
+  generic refusal; OTP entry never discloses social registration status.
 - AUTH-39: APP/ORG OIDC Sign In and APP OIDC Sign Up refuse a clean first-entry page reload with
   HTTP 409 after the admitted ceremony has progressed through authentication evidence, Email OTP
   issuance, or an APP sign-up Flow. APP Email refuses a return to the earlier address page after OTP
@@ -218,22 +224,17 @@ surface-specific. These are durable requirements, not current verification resul
   and both provider entry paths; separate stale signed-cookie generation races remain under review.
   See `two.md` §10.7 and `one.md` R-AU-49.
 - AUTH-41: When APP/ORG Sign In is unavailable, the entry Sentry returns 503 before curfew handling
-  can cancel an attached, Base-confirmed and redeemed admission. Immediately before, at and after
+  can cancel an attached, Visa-confirmed and redeemed admission. Immediately before, at and after
   the stored curfew, the binding, admitted ceremony, OIDC transaction, sign-in/sign-up flows and
   browser cookies remain unchanged. With Sign In available, curfew cancellation retains its existing
   behavior. See
   [`acceptance_wu29_sign_entry_sentry_blocked_test.rb`](../../test/integration/acceptance_wu29_sign_entry_sentry_blocked_test.rb)
   and [`admission_curfew_test.rb`](../../test/integration/admission_curfew_test.rb).
-- AUTH-42: Base app/org, Palm app and Warp app/org roots render for signed-out visitors and refuse a
-  valid signed-in RP session with 403, no redirect and `private, no-store`; invalid or expired
-  sessions are treated as signed out. Their successful OIDC callbacks use their own Dashboard when
-  no validated `target_link_uri` is present, while a validated target wins. Core app/org keep their
-  root usable in both states and use `/` as their callback landing because they have no Rails
-  Dashboard and share screens with TanStack Start. Base and Palm signed-out Dashboard requests
-  redirect to `/sign` with the Dashboard target; Warp retains its 404. See
-  [Home and Dashboard boundary](../../adr/home-dashboard-authentication-boundary.md).
+- The former AUTH-42 Base/Core/Warp/Palm RP root and Dashboard requirements were retired with those
+  local Access surfaces. External RP owners retain responsibility for their own root, callback, and
+  session behavior.
 
 Sources:
 [authentication contract](../../.agents/harnesses/rules/generic/authentication-boundaries.mdc),
-[Base/Auth authority](../../adr/base-auth-ceremony-and-seven-rp-boundary.md). Broader scenarios:
+[Auth/Visa authority](../architecture/base-auth-seven-rp-boundary.md). Broader scenarios:
 [identity authority regression checklist](../qa/identity-authority-regression-checklist.md).

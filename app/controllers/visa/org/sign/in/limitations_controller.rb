@@ -6,7 +6,7 @@ module Visa
       module In
         class LimitationsController < ::Visa::Org::AuthorityController
           include ::SurfaceInertiaPage
-          include ::BaseSignInLimitations
+          include ::VisaSignInLimitations
 
           AUTHENTICATION_MODE = :open
           declare_authentication_mode! :open
@@ -28,10 +28,6 @@ module Visa
           def limitation_component = "visa/org/sign/in/limitations/show"
 
           def limitation_path(params = {}) = visa_org_sign_in_limitation_path(**params)
-
-          def base_sign_entry_path(**params) = base_org_sign_show_path(**params)
-
-          def local_login_success_path = base_org_dashboard_path(ri: params[:ri])
         end
       end
     end

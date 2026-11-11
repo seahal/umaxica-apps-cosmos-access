@@ -11,7 +11,7 @@ class Auth::App::Api::V0::Preferences::CookieControllerTest < ActionDispatch::In
   # include PreferenceJwtHelper
 
   setup do
-    @host = JitIdHostEnv.service_url || "auth.app.localhost"
+    @host = "auth.app.localhost"
     host! @host
   end
 
@@ -24,7 +24,7 @@ class Auth::App::Api::V0::Preferences::CookieControllerTest < ActionDispatch::In
     assert response.parsed_body.fetch("show_banner")
   end
 
-  test "GET ignores Preference state on the read-only Auth host" do
+  test "GET ignores Preference state on Auth" do
     token = encode_preference_jwt(
       preferences: SecurityJwtPreferenceTokenCodec::ANONYMOUS_PREFERENCE_VALUES.transform_values(&:first),
       host: @host,
@@ -43,16 +43,6 @@ class Auth::App::Api::V0::Preferences::CookieControllerTest < ActionDispatch::In
     assert_nil response.headers["Set-Cookie"]
   end
 
-  test "PATCH cannot write preference consent on the read-only Auth host" do
-    cookies.delete(PreferenceCookieName.anonymous_jwt)
-
-    assert_no_difference -> { AppPreference.count } do
-      patch auth_app_api_v0_preferences_cookie_path, params: { consented: true }, as: :json
-    end
-
-    assert_response :forbidden
-    assert_no_preference_state_cookies
-  end
   private
 
   def encode_preference_jwt(preferences:, host:, public_id:, preference_type: "AppPreference")
@@ -260,7 +250,7 @@ class Auth::App::Api::V0::Preferences::CookieControllerTest
   end
 
   def seed_social_auth_session(provider:, intent: "login", user: nil, entry: nil, ri: "jp", rt: nil, referer: nil)
-    host = configured_host(:sign_service)
+    host = configured_host(:auth_service)
     host!(host) if respond_to?(:host!)
     normalized_provider = SocialIdentifiable.normalize_provider(provider)
     continue_path =

@@ -1,116 +1,34 @@
-# Acme, Sign, Core, Base, And Palm Architecture
+# Access Surface Ownership
 
-This document maps the historical Acme / Sign / Core / Base / Port vocabulary onto the current Rails
-implementation. The historical component model came from `adr/acme-sign-core-base-port-boundary.md`.
-Later ADRs superseded its authority claims, client names, and Palm role. When this document and an
-accepted ADR disagree, the ADR is authoritative. Current owners:
+Current implementation scope, 2026-11-10: this repository serves only the Auth and Visa application
+surfaces and its operator tools.
 
-- `adr/base-auth-ceremony-and-seven-rp-boundary.md`: Base authority, Auth ceremony, RP model
-- `adr/tech-and-palm-browser-rp-participation.md`: Palm and Tech as browser RPs
-- `adr/first-party-sign-out-shared-database-without-backchannel-logout.md` and
-  `adr/first-party-sign-out-op-commit-and-backchannel-logout-for-separated-rp-stores.md`: sign-out
-- `adr/core-browser-jwt-cookie-transport-and-nextjs-zero-cookie-boundary.md`: Core browser
-  credentials
-- `app/values/auth_boundary_authority_map.rb`: the canonical client ID and RP face map in code
+| Owner             | Local surface                                        | Responsibility                                                                                              |
+| ----------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Auth              | APP, ORG                                             | Credential ceremonies, provider callbacks, and the surfaces' own browser preference controls                |
+| Visa              | APP, ORG                                             | OpenID Provider and Authorization Server, including discovery, JWKS, OAuth/OIDC, logout, and DBSC endpoints |
+| Access operations | Mission, Flipper, Blazer, PgHero, Coverband, Swagger | Repository-local monitoring and operator tools                                                              |
 
-## Vocabulary Mapping
+This repository has no Base, Core, Warp, Palm, Edit, Tech, Press, News, Help, Info, Docs, or GUID
+browser route/controller surface. External relying-party registrations remain available through
+Visa. Their callbacks, local sessions, and browser interfaces belong to their own repositories; a
+registered client does not imply a local Rails controller or host here.
 
-| Historical name | Current implementation                                              | Rails namespace / routes         |
-| --------------- | ------------------------------------------------------------------- | -------------------------------- |
-| Acme            | Conceptual authority vocabulary; physically implemented by **Base** | `base` (`config/routes/base.rb`) |
-| Sign            | **Auth**, a credential and authentication ceremony service only     | `auth` (`config/routes/auth.rb`) |
-| Core            | Core Rails BFF and first-party browser RP per face                  | `core` (`config/routes/core.rb`) |
-| Base            | Base IdP / AS, control plane, and its own self-RP per face          | `base` (`config/routes/base.rb`) |
-| Port / Palm     | **Palm**, a first-party browser RP (no native or bearer API role)   | `palm` (`config/routes/palm.rb`) |
+Auth owns credential-ceremony continuity. It does not issue a general login session or act as the
+OpenID Provider. Visa remains the only local OpenID Provider and owns the APP and ORG authority
+flows. Each surface keeps its own host, credentials, routes, controllers, views, and state.
 
-Warp, Edit, and Tech are also first-party browser RPs, but the historical model has no name for
-them.
+Models, migrations, and database connections associated with removed surfaces remain in this
+repository pending the separate model/database inventory and follow-up decision. Their presence does
+not establish an active route, controller, or writer.
 
-## Authority And Ceremony
+## Historical decisions
 
-- Base is the only physical OpenID Provider and Authorization Server. It serves
-  `/.well-known/openid-configuration`, `/.well-known/jwks.json`, `/oauth/authorize`, `/oauth/token`,
-  `/oauth/userinfo`, `/oauth/revoke`, and `/oidc/logout` on each
-  of its app, com, and org hosts.
-- Auth is not an issuer and not an RP. It runs the credential ceremonies (sign-in, sign-up, passkey,
-  social federation) and hands the result back to Base through an opaque, short-lived handoff. Auth
-  has no `/oidc/callback`, `/oidc/authorization`, or back-channel logout route.
-- Auth keeps only ceremony-local browser sessions bound to `__Host-auth_sid`. Those sessions do not
-  prove a Base login.
+The following accepted decisions explain earlier surface layouts. They remain provenance and do not
+describe the current local route inventory:
 
-## First-Party Browser RPs
-
-Every first-party RP is a confidential client that uses the authorization code flow with PKCE S256,
-`state`, `nonce`, and `private_key_jwt`. The current client IDs in `AuthBoundaryAuthorityMap` are:
-
-| Surface | Client IDs                                                  | Actor                       |
-| ------- | ----------------------------------------------------------- | --------------------------- |
-| Core    | `core-app-jp`, `core-org-jp` (+ approved `-us` faces)       | client / operator           |
-| Warp    | `warp-app-jp`, `warp-org-jp` (+ approved `-us` faces)       | client / operator           |
-| Base    | `base-app-ww`, `base-org-ww` (self-RP)                     | client / operator           |
-| Edit    | `edit-org-ww`                                               | operator                    |
-| Palm    | `palm-app-jp`                                               | client                      |
-| Tech    | `tech-org-ww` (requires `tech.access`)                      | operator                    |
-
-Each RP host exposes the same route contract:
-
-- `GET /sign` renders a neutral entry page; the CSRF-protected `POST /sign` starts the flow. The RP
-  does not choose sign-in or sign-up; Auth owns that choice.
-- `GET /oidc/callback` is the exact registered `redirect_uri`.
-- `/sign/out/completion?ri=jp|us` is the registered post-logout return URI.
-- `POST /oidc/closures` receives back-channel logout for a separated RP cell.
-
-`sign-rp` and `base-rails-rp` are deprecated shared registrations. `side-rails-rp`, `app-ios-rp`,
-`app-android-rp`, and the `palm-api` audience are retired. Do not add new registrations from those
-names.
-
-The `docs`, `news`, and `help` surfaces are content surfaces, not OIDC RPs.
-
-## Session Hierarchy
-
-Identity → Base Browser Session (`ClientToken` / `OperatorToken`) → RP Session per
-registered client. RP surfaces share no cookies or sessions with each other or with Base. Each RP
-cell has its own session store (`config/database.yml` `rp_*` connections), keyed by client ID.
-
-## Sign-Out
-
-Sign-out commits at the OP. Until a client is activated with its own separated session store,
-`adr/first-party-sign-out-shared-database-without-backchannel-logout.md` applies: one transaction
-revokes the parent and the RP session rows, and no back-channel logout is used. For a separated RP
-cell, the OP commit establishes sign-out, and a worker outside the request delivers a Back-Channel
-Logout Token afterwards. Delivery never decides whether sign-out succeeded.
-
-## Core Browser Credential Transport
-
-`CoreBrowserCredentialContract` and `CoreBrowserApiBoundary` implement the Core browser credential
-contract, gated by `CORE_BROWSER_JWT_COOKIE_ENABLED`:
-
-| Cookie                                                  | Purpose          | Path | SameSite | Secure | HttpOnly |
-| ------------------------------------------------------- | ---------------- | ---- | -------- | ------ | -------- |
-| `__Host-auth_access` (secure context) / `auth_access`   | Access JWT       | `/`  | `Strict` | `true` | `true`   |
-| `__Host-auth_refresh` (secure context) / `auth_refresh` | Opaque refresh   | `/`  | `Strict` | `true` | `true`   |
-| `_umaxica_session`                                      | OIDC transaction | `/`  | `Lax`    | `true` | `true`   |
-
-- The access JWT has audience `core-browser` and a TTL of 10 minutes, capped by the session's
-  absolute expiry. Rails Core accepts it only from cookie transport on `/api/v0/*`, and CSRF
-  verification is required for unsafe methods.
-- No cookie sets `Domain`. Cloudflare strips the `Cookie` header before requests reach the Next.js
-  origin, and strips `Set-Cookie` from Next.js and Warp responses. JavaScript never reads access or
-  refresh credentials.
-- The `__Host-` prefix follows `JitSessionCookieConfig.force_secure?`, not only
-  `Rails.env.production?`.
-
-## Token Boundary
-
-ID Tokens let RPs verify the login result. Access Tokens authorize API access. APIs must not use an
-ID Token for authorization. Audience and transport are bound: `core-browser` is accepted only from
-cookie transport. The shared person key across surfaces is the Base issuer plus `sub`.
-
-## Related
-
-- `adr/acme-sign-core-base-port-boundary.md` (historical)
-- `adr/base-auth-ceremony-and-seven-rp-boundary.md`
-- `adr/tech-and-palm-browser-rp-participation.md`
-- `adr/core-browser-jwt-cookie-transport-and-nextjs-zero-cookie-boundary.md`
-- `docs/security/cookie-domain-scope.md`
-- `docs/security/downstream-token-authority.md`
+- [`adr/acme-sign-core-base-port-boundary.md`](../../adr/acme-sign-core-base-port-boundary.md)
+- [`adr/base-auth-ceremony-and-seven-rp-boundary.md`](../../adr/base-auth-ceremony-and-seven-rp-boundary.md)
+- [`adr/visa-op-host.md`](../../adr/visa-op-host.md)
+- [`adr/tech-and-palm-browser-rp-participation.md`](../../adr/tech-and-palm-browser-rp-participation.md)
+- [`adr/core-browser-jwt-cookie-transport-and-nextjs-zero-cookie-boundary.md`](../../adr/core-browser-jwt-cookie-transport-and-nextjs-zero-cookie-boundary.md)

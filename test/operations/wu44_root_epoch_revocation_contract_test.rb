@@ -33,17 +33,17 @@ class Wu44RootEpochRevocationContractTest < ActiveSupport::TestCase
     assert_predicate other_root.reload, :currently_usable?
     browser_token = jwt_access_token_for(
       user,
-      host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
+      host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
       session_public_id: other_root.public_id,
       resource_type: "client",
     )
     browser_result = AuthenticationCurrentResourceResolver.new(
       access_token: browser_token,
-      request_host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
+      request_host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
       resource_type: "client",
       resource_class: Client,
       token_class: ClientToken,
-      jwt_issuer_id: "surface:BASE_APP",
+      jwt_issuer_id: "surface:AUTH_APP",
     ).call
 
     assert_predicate browser_result, :success?
@@ -91,17 +91,17 @@ class Wu44RootEpochRevocationContractTest < ActiveSupport::TestCase
     assert_equal epoch, user.reload.authentication_epoch
     browser_token = jwt_access_token_for(
       user,
-      host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
+      host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
       session_public_id: other_root.public_id,
       resource_type: "client",
     )
     browser_result = AuthenticationCurrentResourceResolver.new(
       access_token: browser_token,
-      request_host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
+      request_host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
       resource_type: "client",
       resource_class: Client,
       token_class: ClientToken,
-      jwt_issuer_id: "surface:BASE_APP",
+      jwt_issuer_id: "surface:AUTH_APP",
     ).call
 
     assert_predicate browser_result, :success?
@@ -143,17 +143,17 @@ class Wu44RootEpochRevocationContractTest < ActiveSupport::TestCase
     assert_equal epoch, user.reload.authentication_epoch
     browser_token = jwt_access_token_for(
       user,
-      host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
+      host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
       session_public_id: other_root.public_id,
       resource_type: "client",
     )
     browser_result = AuthenticationCurrentResourceResolver.new(
       access_token: browser_token,
-      request_host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
+      request_host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
       resource_type: "client",
       resource_class: Client,
       token_class: ClientToken,
-      jwt_issuer_id: "surface:BASE_APP",
+      jwt_issuer_id: "surface:AUTH_APP",
     ).call
 
     assert_predicate browser_result, :success?

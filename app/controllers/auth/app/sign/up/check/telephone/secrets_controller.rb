@@ -23,14 +23,14 @@ class Auth::App::Sign::Up::Check::Telephone::SecretsController < Auth::App::Appl
       **sign_up_flow_binding_params, ri: current_region_identifier,
                                      pt: signed_pt_param,
     )
-    render inertia: "base/app/secret_issuances/show", props: {
-      title: t("base.app.secrets.title"),
+    render inertia: "auth/app/sign/up/check/telephone/secrets/show", props: {
+      title: t("sign.app.registration.checkpoint.show.secrets.title"),
       state: state.to_s,
       presentation: path,
       confirmation: path,
       authenticity_token: form_authenticity_token,
-      present_label: t("base.app.secrets.present"),
-      confirm_label: t("base.app.secrets.confirm"),
+      present_label: t("sign.app.registration.checkpoint.show.secrets.present"),
+      confirm_label: t("sign.app.registration.checkpoint.show.secrets.confirm"),
       cancel_label: t("actions.cancel"),
       continue_label: t("actions.continue"),
       continue_href: nil,
@@ -42,7 +42,7 @@ class Auth::App::Sign::Up::Check::Telephone::SecretsController < Auth::App::Appl
         ri: current_region_identifier, pt: signed_pt_param,
       ) : nil,
       reattempt_of: payload_failed? ? @issuance.public_id : nil,
-      reattempt_label: t("base.app.secrets.reattempt"),
+      reattempt_label: t("sign.app.registration.checkpoint.show.secrets.reattempt"),
     }
   end
 
@@ -62,7 +62,7 @@ class Auth::App::Sign::Up::Check::Telephone::SecretsController < Auth::App::Appl
                                      pt: signed_pt_param,
     )
     response.headers["Referrer-Policy"] = "strict-origin"
-    render "base/app/secret_presentations/create", layout: false, locals: {
+    render "auth/app/sign/up/check/telephone/secrets/create", layout: false, locals: {
       confirmation_url: path, cancel_url: path, checkpoint_version: @sign_up_ticket.checkpoint_version,
     }
   rescue ClientSecretPresentationIssuer::AlreadyPresented
@@ -78,7 +78,7 @@ class Auth::App::Sign::Up::Check::Telephone::SecretsController < Auth::App::Appl
       flow: @sign_up_ticket, nonce: browser_nonce, issuance: @issuance,
       purge_after: ClientSecretLifetimesValue.purge_delay,
     )
-    render plain: t("base.app.secrets.payload_unavailable"), status: :gone
+    render plain: t("sign.app.registration.checkpoint.show.secrets.payload_unavailable"), status: :gone
   end
 
   def update
@@ -142,13 +142,13 @@ class Auth::App::Sign::Up::Check::Telephone::SecretsController < Auth::App::Appl
   end
 
   def distribution_notice
-    return t("base.app.secrets.distribution_omitted") if @issuance.planned_count.zero?
+    return t("sign.app.registration.checkpoint.show.secrets.distribution_omitted") if @issuance.planned_count.zero?
     return unless @issuance.planned_count == 1
 
     if @issuance.confirmed_at
-      t("base.app.secrets.distribution_one_confirmed")
+      t("sign.app.registration.checkpoint.show.secrets.distribution_one_confirmed")
     else
-      t("base.app.secrets.distribution_one_present")
+      t("sign.app.registration.checkpoint.show.secrets.distribution_one_present")
     end
   end
 

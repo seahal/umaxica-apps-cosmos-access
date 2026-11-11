@@ -44,7 +44,7 @@ module AuthOidcResultHandoff
     complete_auth_ceremony_session!
 
     redirect_to(
-      oidc_result_base_completion_url(
+      visa_oidc_result_url(
         result_ref: issuance.reference,
         transaction_ref: issuance.transaction.transaction_id,
         ri: params[:ri],
@@ -97,7 +97,7 @@ module AuthOidcResultHandoff
     raise NotImplementedError, "#{self.class} must define #oidc_result_handoff_surface"
   end
 
-  def oidc_result_base_completion_url(**)
-    raise NotImplementedError, "#{self.class} must define #oidc_result_base_completion_url"
+  def visa_oidc_result_url(**)
+    raise NotImplementedError, "#{self.class} must define #visa_oidc_result_url"
   end
 end

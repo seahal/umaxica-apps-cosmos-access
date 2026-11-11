@@ -6,31 +6,35 @@
 > authority (this resolves the Phase 1.5 `M1` question). The "regional-ready `principal`" role
 > described below is **retired**: regional-ready application data belongs in the Regional
 > repository's own new application database, not in a `*_principal` connection key here. The
-> sections below are retained as the current-state placement model; read them with the ownership
-> decision as the authority.
+> sections below preserve the accepted model/storage placement map. After the surface reset, current
+> Access routes are Auth APP/ORG and Visa APP/ORG plus the operator tools; this map does not assert
+> that every retained model or database has a current non-model writer. See the deferred
+> model/database report for usage classification.
 
 ## Purpose
 
 This document separates current storage naming from target authority placement.
 
-Business-time reads for state decisions use the writer connection of the model that owns the
-state. `ApplicationRecord.database_now` issues an uncached `SELECT clock_timestamp()` through
-that model's writing pool. A caller obtains the value after any required row lock and passes the
-same instant through the decision unit; Rails `created_at`/`updated_at` and a replica clock are
-not substitutes for a domain event time. This helper does not change Rails' record timestamp
-metadata or establish a cross-database global clock.
+Business-time reads for state decisions use the writer connection of the model that owns the state.
+`ApplicationRecord.database_now` issues an uncached `SELECT clock_timestamp()` through that model's
+writing pool. A caller obtains the value after any required row lock and passes the same instant
+through the decision unit; Rails `created_at`/`updated_at` and a replica clock are not substitutes
+for a domain event time. This helper does not change Rails' record timestamp metadata or establish a
+cross-database global clock.
 
 ## Scope
 
-It describes the intended authority placement for the current global surfaces and their database
-boundaries. `auth`, `base`, and `info` are global surfaces in this phase.
+It describes the intended authority placement for persisted identity models and their database
+boundaries. Current local credential routes belong to Auth APP/ORG; Visa owns local OIDC and session
+authority. External RP sessions and callbacks belong to their own repositories.
 
-## Current adopted authority contract
+## Persisted model authority map
 
-The current authority contract is surface-local and concrete. `app_zenith`, `com_zenith`, and
-`org_zenith` remain independent global authority databases for the `app`, `com`, and `org` trust
-boundaries. `Client`, `Visitor`, and `Operator` are the runtime principals. `Persona` and
-`Organization` are Ruby interface concerns only; they are not shared Active Record models or tables.
+The accepted model map is surface-local and concrete. `app_zenith`, `com_zenith`, and `org_zenith`
+record distinct `app`, `com`, and `org` data boundaries. The COM routes and writers were retired;
+whether its persisted models remain used is a separate report item. `Client`, `Visitor`, and
+`Operator` name the model principals in this map. `Persona` and `Organization` are Ruby interface
+concerns only; they are not shared Active Record models or tables.
 
 The adopted concrete resource mapping is:
 

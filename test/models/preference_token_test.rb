@@ -8,7 +8,7 @@ class PreferenceTokenModelTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
   setup do
-    @host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    @host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     @issued_at = Time.current.change(usec: 0)
     @public_id = PublicId.generate
     @jti = SecureRandom.uuid
@@ -63,7 +63,7 @@ class PreferenceTokenModelTest < ActiveSupport::TestCase
               token, host: ENV.fetch("PUBLIC_CORE_SERVICE_URL"), jwt_issuer_id: "preference_app",
             )
             assert_nil PreferenceToken.decode(
-              token, host: ENV.fetch("PUBLIC_BASE_STAFF_URL"), jwt_issuer_id: "preference_org",
+              token, host: ENV.fetch("PUBLIC_AUTH_STAFF_URL"), jwt_issuer_id: "preference_org",
             )
             assert_equal @preferences, PreferenceToken.extract_preferences(decoded)
             assert_equal @public_id, PreferenceToken.extract_public_id(decoded)

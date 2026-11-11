@@ -1,10 +1,10 @@
 # Redirect Targets
 
-> **Partially superseded by Identity Authority inversion:** Redirect vocabulary in this document
-> remains useful, but redirects are navigation only. They are not credential ceremony results and
-> must not carry authentication, account, token, or step-up freshness results. `acme/www` is the
-> Session, Token, Account, Preference, Authorization, and downstream-token Authority. `sign/id` is
-> ceremony-only.
+> Redirect vocabulary in this document remains useful, but redirects are navigation only. They are
+> not credential ceremony results and must not carry authentication, account, token, or step-up
+> freshness results. Auth owns credential ceremonies; Visa owns local session, token and OIDC
+> authority. Registered external relying parties own their callbacks, browser sessions and product
+> routes in their own repositories.
 
 Redirect targets are split into three separate lanes. These names are public contract names and
 controller/service code should use them consistently.
@@ -27,21 +27,21 @@ required Rails navigation policy, not a claim that all existing callers enforce 
 
 Rails MUST classify the final destination against the initiating surface before selecting a gateway:
 
-| Initiating surface and final destination | Required route |
-| --- | --- |
-| Same origin (scheme, host and effective port) | Validated local path; direct navigation is permitted. |
-| Different subdomains of the same registered application domain, such as `www.umaxica.app` to `auth.umaxica.app` | Jump through `https://jump.umaxica.net`; an approved directed edge is also required. |
-| Different TLDs, such as `www.umaxica.app` to `www.umaxica.com` | Away through `https://away.umaxica.net`, including when both sites are first-party. |
-| Any other external website | Away through `https://away.umaxica.net`, subject to explicit destination authorization. |
+| Initiating surface and final destination                                                                        | Required route                                                                          |
+| --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Same origin (scheme, host and effective port)                                                                   | Validated local path; direct navigation is permitted.                                   |
+| Different subdomains of the same registered application domain, such as `www.umaxica.app` to `auth.umaxica.app` | Jump through `https://jump.umaxica.net`; an approved directed edge is also required.    |
+| Different TLDs, such as `auth.umaxica.app` to `auth.umaxica.org`                                                | Away through `https://away.umaxica.net`, including when both sites are first-party.     |
+| Any other external website                                                                                      | Away through `https://away.umaxica.net`, subject to explicit destination authorization. |
 
-Subdomain changes remain separate trust boundaries even when both hosts are owned by Umaxica.
-The current `CommonRedirect` surface redirect checks scheme, host and effective port before
-converting an absolute URL to a local path. Other absolute destinations enter its existing Jump
-path; this does not implement the pending Away gateway selection described above.
-Sharing only a TLD is insufficient to qualify for Jump: `umaxica.app` and `example.app` are separate
-domains. Classification MUST use normalized, explicitly registered application domains and exact
-origin matching, rather than substring tests or a guessed last-two-label domain. Scheme or port
-changes outside the approved HTTPS origin registry MUST be rejected.
+Subdomain changes remain separate trust boundaries even when both hosts are owned by Umaxica. The
+current `CommonRedirect` surface redirect checks scheme, host and effective port before converting
+an absolute URL to a local path. Other absolute destinations enter its existing Jump path; this does
+not implement the pending Away gateway selection described above. Sharing only a TLD is insufficient
+to qualify for Jump: `umaxica.app` and `example.app` are separate domains. Classification MUST use
+normalized, explicitly registered application domains and exact origin matching, rather than
+substring tests or a guessed last-two-label domain. Scheme or port changes outside the approved
+HTTPS origin registry MUST be rejected.
 
 The classifier uses the final destination, not the gateway's own `.net` domain. Sending a
 same-domain handoff to Jump therefore does not recursively classify the gateway hop as an Away
@@ -53,12 +53,12 @@ suffix lookalikes, and caller-supplied gateway URLs. Destination paths, queries 
 remain independently validated; an allowlisted gateway does not make its destination trusted.
 
 Rails `allow_other_host` controls `redirect_to`, not URL generation or `link_to`, and is a boolean
-bypass of the same-host check rather than a host allowlist. `allow_other_host: true` MUST be confined
-to the common facade after exact gateway-origin validation. Cross-origin navigation emitted by
-Rails through links, redirect responses or browser navigation targets MUST use the selected gateway;
-generating an absolute URL with a Rails helper does not exempt it from this policy. Protocol fields
-such as a registered OIDC `redirect_uri` continue to identify the final receiver; they MUST NOT be
-rewritten to name a gateway.
+bypass of the same-host check rather than a host allowlist. `allow_other_host: true` MUST be
+confined to the common facade after exact gateway-origin validation. Cross-origin navigation emitted
+by Rails through links, redirect responses or browser navigation targets MUST use the selected
+gateway; generating an absolute URL with a Rails helper does not exempt it from this policy.
+Protocol fields such as a registered OIDC `redirect_uri` continue to identify the final receiver;
+they MUST NOT be rewritten to name a gateway.
 
 The selected gateway MUST authorize its final destination independently. Same-domain Jump still
 requires the approved source/destination graph; cross-TLD Away does not grant cross-surface session,
@@ -88,9 +88,9 @@ revision changes no Rails, Jump or Away runtime behavior.
 
 Allowed examples:
 
-- `/dashboard`
-- `/dashboard?tab=security`
-- `/settings/security`
+- `/sign/in`
+- `/sign/up`
+- `/settings`
 - `/sign/out/complete?x=1`
 
 Rejected `pt` values produce a `Redirects::TargetResult` with `failure_reason` and, when a value was
@@ -195,7 +195,7 @@ bin/audit_redirects
 ```
 
 The audit reports direct parameter redirects, direct `allow_other_host: true`, legacy `rt` /
-`return_to` reads, and old safe-return helper names. These reports do not establish that the required
-gateway policy is implemented. Existing direct
-`allow_other_host: true` callers remain implementation gaps; enforcement tests for the revised
-Jump/Away policy are pending with the runtime work.
+`return_to` reads, and old safe-return helper names. These reports do not establish that the
+required gateway policy is implemented. Existing direct `allow_other_host: true` callers remain
+implementation gaps; enforcement tests for the revised Jump/Away policy are pending with the runtime
+work.

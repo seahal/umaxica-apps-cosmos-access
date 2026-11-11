@@ -139,37 +139,25 @@ module Auth
       end
 
       # Relative like the other route stubs here, so the harness never needs a Jump issuer.
-      def base_app_welcome_url(host:, protocol:, **attrs)
+      def auth_app_welcome_url(host:, protocol:, **attrs)
         _ = [host, protocol]
         query = attrs.compact.to_query
         "/welcome#{"?#{query}" if query.present?}"
       end
 
       # Relative like the other route stubs here, so the harness never needs a Jump issuer.
-      def base_app_dashboard_url(host:, protocol:, **attrs)
+      def auth_app_dashboard_url(host:, protocol:, **attrs)
         _ = [host, protocol]
         query = attrs.compact.to_query
         "/dashboard#{"?#{query}" if query.present?}"
       end
 
-      def auth_app_root_path(ri: nil, pt: nil)
-        path = "/dashboard"
-        query = []
-        query << "ri=#{ri}" if ri.present?
-        query << "pt=#{pt}" if pt.present?
-        query.any? ? "#{path}?#{query.join("&")}" : path
-      end
-
-      def sign_app_welcome_path(_id = "post_auth", ri: nil, pt: nil)
+      def auth_app_welcome_path(_id = "post_auth", ri: nil, pt: nil)
         path = "/welcome"
         query = []
         query << "ri=#{ri}" if ri.present?
         query << "pt=#{pt}" if pt.present?
         query.any? ? "#{path}?#{query.join("&")}" : path
-      end
-
-      def auth_app_settings_path(ri: nil)
-        ri.present? ? "/settings?ri=#{ri}" : "/settings"
       end
 
       def auth_app_sign_in_check_path(ri: nil, pt: nil, fb: nil)
@@ -271,55 +259,12 @@ module Auth
       assert_equal %w(client operator), AuthenticationBase::VALID_ACTOR_TYPES
     end
 
-    test "checkpoint continuation uses db-backed sign-in cycle when locator is present" do
-      user = create_db_sequence_client
-      token = ClientToken.create!(authentication_epoch: 0, user: user)
-      cycle = db_sign_in_flow(user, token, status_name: "CHECKPOINT_PENDING")
-      harness = db_sequence_harness(user, token)
-      SignInCycleLocator.new(harness.session, surface: :app, actor: user, token: token).issue!(cycle, nonce: "nonce")
+    test "welcome continuation fails explicitly without a relying-party return" do
+      harness = HeaderKeyHarness.new
 
-      harness.send(:continue_checkpoint_sequence_without_content!)
+      error = assert_raises(ActionController::BadRequest) { harness.sign_in_welcome_path }
 
-      assert_predicate cycle.reload, :sign_in_selector_pending?
-      redirected = URI.parse(harness.redirected.first)
-
-      assert_equal "/welcome", redirected.path
-      assert_equal "/after",
-                   harness.path_from_signed_pt(Rack::Utils.parse_query(redirected.query).fetch("pt"))
-      assert_equal 5, harness.session[:app_sign_in_welcome]["remaining"]
-    end
-
-    test "checkpoint continuation advances db-backed cycle while request is readonly" do
-      user = create_db_sequence_client
-      token = ClientToken.create!(authentication_epoch: 0, user: user)
-      cycle = db_sign_in_flow(user, token, status_name: "CHECKPOINT_PENDING")
-      harness = db_sequence_harness(user, token)
-      SignInCycleLocator.new(harness.session, surface: :app, actor: user, token: token).issue!(cycle, nonce: "nonce")
-
-      ActiveRecord::Base.connected_to(role: :reading, prevent_writes: true) do
-        harness.send(:continue_checkpoint_sequence_without_content!)
-      end
-
-      assert_predicate cycle.reload, :sign_in_selector_pending?
-      assert_equal "/welcome", URI.parse(harness.redirected.first).path
-    end
-
-    test "checkpoint continuation can carry dashboard as pt" do
-      user = create_db_sequence_client
-      token = ClientToken.create!(authentication_epoch: 0, user: user)
-      cycle = db_sign_in_flow(user, token, status_name: "CHECKPOINT_PENDING")
-      cycle.update!(return_to: "/?ri=jp")
-      harness = db_sequence_harness(user, token)
-      SignInCycleLocator.new(harness.session, surface: :app, actor: user, token: token).issue!(cycle, nonce: "nonce")
-
-      harness.send(:continue_checkpoint_sequence_without_content!)
-
-      assert_predicate cycle.reload, :sign_in_selector_pending?
-      redirected = URI.parse(harness.redirected.first)
-
-      assert_equal "/welcome", redirected.path
-      assert_equal "/?ri=jp",
-                   harness.path_from_signed_pt(Rack::Utils.parse_query(redirected.query).fetch("pt"))
+      assert_equal "No relying-party welcome return is available", error.message
     end
 
     test "checkpoint continuation keeps blocking db-backed cycle at checkpoint" do
@@ -351,29 +296,6 @@ module Auth
       assert_equal :signed_return, decision.kind
       assert_equal before, cycle.reload.attributes
       assert_equal root_before, token.reload.attributes
-    end
-
-    test "selector continuation redirects without issuing or binding a Root session" do
-      user = create_db_sequence_client
-      token = ClientToken.create!(authentication_epoch: 0, user: user)
-      cycle = ClientSignInFlow.create!(
-        principal_id: user.id,
-        state_id: ClientSignInFlow.state_id_for("SELECTOR_PENDING"),
-        return_to: "/after",
-        nonce_digest: ClientSignInFlow.digest_nonce("nonce"),
-        issued_at: Time.current,
-        expires_at: 15.minutes.from_now,
-      )
-      harness = db_sequence_harness(user, token)
-      SignInCycleLocator.new(harness.session, surface: :app, actor: user, token: token).issue!(cycle, nonce: "nonce")
-      harness.send(:issue_welcome_gate_and_path, pt: "/after", sequence_id: cycle.public_id)
-
-      harness.send(:continue_dashboard_sequence_without_content!)
-
-      assert_equal "/selector", URI.parse(harness.redirected.first).path
-      assert_nil cycle.reload.token_id
-      assert_predicate cycle, :sign_in_selector_pending?
-      assert_equal "/after", cycle.return_to
     end
 
     test "dashboard continuation falls back when persisted return path points to dashboard" do
@@ -423,22 +345,6 @@ module Auth
       assert_equal "/after",
                    harness.path_from_signed_pt(Rack::Utils.parse_query(redirected.query).fetch("pt"))
       assert_predicate cycle.reload, :sign_in_checkpoint_pending?
-    end
-
-    test "checkpoint continuation requires checkpoint policy before advancing" do
-      user = create_db_sequence_client
-      token = ClientToken.create!(authentication_epoch: 0, user: user)
-      cycle = db_sign_in_flow(user, token, status_name: "CHECKPOINT_PENDING")
-      harness = db_sequence_harness(user, token)
-      harness.allowed_policy = { show_checkpoint?: false }
-      SignInCycleLocator.new(harness.session, surface: :app, actor: user, token: token).issue!(cycle, nonce: "nonce")
-      harness.send(:issue_welcome_gate_and_path, pt: cycle.return_to, sequence_id: cycle.public_id)
-
-      assert_not harness.send(:continue_checkpoint_sequence_without_content!)
-
-      assert_equal({ plain: I18n.t("errors.messages.not_authorized"), status: :bad_request }, harness.rendered)
-      assert_predicate cycle.reload, :sign_in_checkpoint_pending?
-      assert_equal "/after", cycle.return_to
     end
 
     test "db-backed sequence rejects wrong participant without advancing" do
@@ -631,32 +537,9 @@ end
 
 # DAMP local route helper aliases for former shared test support.
 class Auth::BaseTest
-  SURFACE_ROUTE_PREFIX_MAP = {
-    "sign_app_" => "auth_app_",
-    "sign_org_" => "auth_org_",
-    "acme_app_" => "base_app_",
-    "acme_org_" => "base_org_",
-  }.freeze unless const_defined?(:SURFACE_ROUTE_PREFIX_MAP, false)
 
   private
 
-  def method_missing(name, ...)
-    aliased_name = aliased_surface_route_helper_name(name)
-    return public_send(aliased_name, ...) if aliased_name && respond_to?(aliased_name, true)
 
-    super
-  end
 
-  def respond_to_missing?(name, include_private = false)
-    aliased_name = aliased_surface_route_helper_name(name)
-    (aliased_name && respond_to?(aliased_name, include_private)) || super
-  end
-
-  def aliased_surface_route_helper_name(name)
-    helper_name = name.to_s
-    self.class::SURFACE_ROUTE_PREFIX_MAP.each do |source_prefix, target_prefix|
-      return helper_name.sub(source_prefix, target_prefix).to_sym if helper_name.start_with?(source_prefix)
-    end
-    nil
-  end
 end

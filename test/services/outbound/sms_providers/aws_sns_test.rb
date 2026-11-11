@@ -130,8 +130,10 @@ module Outbound
       end
 
       def build_provider(client = OpenStruct.new)
-        ::Aws::SNS::Client.stub(:new, client) do
-          OutboundSmsProvidersAwsSns.new
+        Rails.app.stub(:creds, FakeCreds.new) do
+          ::Aws::SNS::Client.stub(:new, client) do
+            OutboundSmsProvidersAwsSns.new
+          end
         end
       end
     end

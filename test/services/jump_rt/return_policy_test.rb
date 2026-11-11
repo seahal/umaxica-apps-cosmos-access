@@ -211,12 +211,15 @@ class JumpRtReturnPolicyTest < ActiveSupport::TestCase
         destination = edge.fetch(:destination_namespace)
         next unless issuer.start_with?("VISA_") || destination.start_with?("VISA_")
 
-        [issuer, JumpRtSurface.issuer_origin(issuer), destination, JumpRtSurface.issuer_origin(destination),
+        [issuer, registered_origin(issuer), destination, registered_origin(destination),
          edge.fetch(:purpose).tr("_", " "),]
       end
 
     assert_equal expected.sort, rows.map { |row| row.map(&:strip) }.sort
     expected.each do |namespace, source, _destination, destination_origin, _purpose|
+      assert JumpRtReturnPolicy.allowed_source?(destination_origin: destination_origin, source: source)
+      next unless JumpRtSurface::ISSUER_NAMESPACES.include?(namespace)
+
       token = JumpRtIssuer.call(namespace: namespace, url: "#{destination_origin}/", dst: "internal")
       issuer = JitSecurityJwtRegistry.surface(namespace)
       payload, = JWT.decode(
@@ -249,8 +252,15 @@ class JumpRtReturnPolicyTest < ActiveSupport::TestCase
     end.each do |edge|
       issuer = edge.fetch(:issuer_namespace)
       destination = edge.fetch(:destination_namespace)
-      issuer_origin = JumpRtSurface.issuer_origin(issuer)
-      destination_origin = JumpRtSurface.issuer_origin(destination)
+      issuer_origin = registered_origin(issuer)
+      destination_origin = registered_origin(destination)
+
+      assert JumpRtReturnPolicy.allowed_source?(
+        destination_origin: destination_origin,
+        source: issuer_origin,
+      ), "#{issuer} -> #{destination} (#{edge.fetch(:purpose)})"
+      next unless JumpRtSurface::ISSUER_NAMESPACES.include?(issuer)
+
       token = JumpRtIssuer.call(
         namespace: issuer, url: "https://jump-contract.example/oauth/authorize",
         dst: "internal",
@@ -259,10 +269,6 @@ class JumpRtReturnPolicyTest < ActiveSupport::TestCase
 
       assert_equal issuer_origin, payload.fetch("iss")
       assert_equal "https://jump-contract.example/oauth/authorize", payload.fetch("url")
-      assert JumpRtReturnPolicy.allowed_source?(
-        destination_origin: destination_origin,
-        source: issuer_origin,
-      ), "#{issuer} -> #{destination} (#{edge.fetch(:purpose)})"
     end
   end
 
@@ -287,6 +293,12 @@ class JumpRtReturnPolicyTest < ActiveSupport::TestCase
         source: "https://log.umaxica.#{tld}",
       ), tld
     end
+  end
+
+  private
+
+  def registered_origin(namespace)
+    JumpRtSurface.return_origin(namespace)
   end
 
   def with_env(values)

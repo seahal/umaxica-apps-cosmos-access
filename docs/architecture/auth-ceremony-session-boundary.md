@@ -4,7 +4,7 @@ Auth uses actor-specific `ClientAuthCeremonySession` and `OperatorAuthCeremonySe
 matching ticket DB. Each row has a NOT NULL `status_id` FK to its realm-local status reference; the
 status is the current lifecycle authority, while admission, authentication, terminal, and SID
 timestamps remain immutable event facts. COM authentication and its Visitor ceremony sessions have
-been retired.
+been retired; only APP and ORG Auth ceremony routes remain in Access.
 
 - Cookie `__Host-auth_sid` holds only a high-entropy random identifier.
 - The database stores `sid_digest` (SHA-256), expiry, lifecycle status and event facts. An admitted
@@ -17,18 +17,18 @@ been retired.
   admitted, rotated, completed, cancelled, or revived. Admission and terminal transitions lock the
   concrete row, and the database enforces one authorization transaction reference per actor-specific
   ticket database.
-- Transition writers read the OP Base database clock after acquiring the ceremony row lock and write
-  the state reference and event timestamp in the same transaction. Callers cannot supply a
-  transition timestamp.
+- Transition writers read the owning Visa authority database clock after acquiring the ceremony row
+  lock and write the state reference and event timestamp in the same transaction. Callers cannot
+  supply a transition timestamp.
 - Auth ceremony admission is never reconstructed from Rails-session intent, challenge, or admission
   keys. An APP social login attempt carries its initiating admitted ceremony row ID in Rails session
   only to correlate that provider callback: before consuming OAuth state, the callback requires the
   current host-only `auth_sid` to resolve to the same active ceremony. A mismatch is a no-write 409;
   the OAuth state remains unconsumed so the matching browser can continue. This correlation value
   cannot create admission, select an actor, or replace the current cookie-to-row lookup.
-- The row must not carry identity, AAL, Base Browser Session, RP Session, role, or policy fields.
-  Base admission remains authoritative via opaque handoff/result codes in
-  `Valkey::AuthState::OpaqueAdmissionStore` (digest keys and CAS). The Base-to-Auth browser entry
+- The row must not carry identity, AAL, Visa session, external RP session, role, or policy fields.
+  Visa admission remains authoritative via opaque handoff/result codes in
+  `Valkey::AuthState::OpaqueAdmissionStore` (digest keys and CAS). The Visa-to-Auth browser entry
   carries a short-lived non-secret reference in the initial GET. After browser binding confirmation,
   the current Auth entry GET consumes the admission through the reference index and rotates local
   continuity; the coordinator caps the continuation at 10 seconds. The index points to the
@@ -36,9 +36,9 @@ been retired.
   with `Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document` before processing an admission
   reference; HEAD and requests without that pair are refused. A previously attached binding also
   requires the current host-only `auth_sid` to resolve to its exact active Auth continuity row
-  before Auth redirects to Base/Visa confirmation or redeems the reference. A mismatch returns the
-  shared 409 phase refusal before mutation; the final response boundary strips session/Auth cookies
-  and DBSC headers. The same check protects direct `/ceremony_bindings` requests.
+  before Auth redirects to Visa confirmation or redeems the reference. A mismatch returns the shared
+  409 phase refusal before mutation; the final response boundary strips session/Auth cookies and
+  DBSC headers. The same check protects direct `/ceremony_bindings` requests.
 - Auth-state Valkey clients use a 250ms connect, read, and write timeout with zero reconnect
   attempts. The adapter issues one command attempt and does not add an application retry. The three
   socket budgets provide a configured 750ms upper bound for a Valkey operation while a PostgreSQL

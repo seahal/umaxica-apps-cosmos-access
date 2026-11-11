@@ -2,7 +2,7 @@
 //
 // Both are protected mutations, so they are native POST forms carrying the authenticity token, not
 // links; they keep the look of a text link and ask for no confirmation. The server sends a form
-// only when the action is available on this page, and Auth then hands the request to Base.
+// only when the action is available on this page, and the owning Auth controller handles it.
 export type EntryExitFormProps = {
   label: string;
   action: string;

@@ -16,11 +16,6 @@ class RpBaseOrgSession < RpBaseOrgRecord
           foreign_key: :rp_session_id,
           inverse_of: :rp_session,
           dependent: :destroy
-  has_many :step_up_states,
-           class_name: "RpBaseOrgStepUpState",
-           foreign_key: :rp_session_id,
-           inverse_of: :rp_session,
-           dependent: :restrict_with_error
 
   # The partial index counts every unrevoked row, including an expired one.
   validates :op_session_binding_id,

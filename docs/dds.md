@@ -1,30 +1,26 @@
 # Detailed Design Specification (DDS)
 
-> Current implementation (2026-10-04): parts of this document describe an earlier shape of the
-> application. The `Sign` and `Top` namespaces,
-> `app/controllers/sign/app/registration/emails_controller.rb`, `UserIdentityEmail`,
-> `ServiceSiteContact`, and `src/pages/app/inquiry/before_submit.js` are not in the current code.
-> Current controllers live under `Auth`, `Base`, `Core`, `Warp`, `Palm`, `Edit`, `Guid`, and the
-> content surfaces `Docs`, `Help`, `Info`, and `News`, one route file each in `config/routes/`. Use
-> `README.md` ("Routing") and `docs/architecture/` for the current topology.
+> **Historical design snapshot (2026-10-04).** This document predates the 2026-11-10 Access surface
+> reset and describes removed local routes, controllers, and tests. Current product routes are Auth
+> APP/ORG and Visa APP/ORG; operator tools are Mission, Flipper, Blazer, PgHero, Coverband, and
+> Swagger. Do not use this DDS as a current route or ownership contract.
 
-## Current OIDC host boundary (2026-10-24)
+## OIDC host boundary at this snapshot (2026-10-24)
 
-The current OIDC authority is the Visa surface, with one host per realm: `visa.umaxica.app` and
-`visa.umaxica.org`. Visa owns discovery, JWKS, authorization, token, UserInfo, revocation,
-end-session logout, sign-out result, and the OP-side sign-in limitation routes.
+At this snapshot, the OIDC authority was the Visa surface, with one host per realm:
+`visa.umaxica.app` and `visa.umaxica.org`. Visa owns discovery, JWKS, authorization, token,
+UserInfo, revocation, end-session logout, sign-out result, and the OP-side sign-in limitation
+routes.
 
-Base remains the browser relying party and identity/session-management surface on app and org. The
-`www.umaxica.com` Base surface remains public for Preference and has no RP session or credential
-routes. Base owns RP callbacks, RP cookies, dashboards, identity, verification, and RP-initiated
-logout on app/org. Visa and Base use host-only cookies and do not share a Rails session. Cross-host
-browser navigation uses the signed Jump return contract; it is not a host-name alias or a
-compatibility route.
+This snapshot described Base as the browser relying party and identity/session-management surface on
+app and org. Those local Base routes and the `www.umaxica.com` Preference surface are retired.
+Current Access local routes are Auth APP/ORG and Visa APP/ORG, plus the operator tools. External
+relying parties own their callbacks, browser sessions and product surfaces in their own
+repositories.
 
-Visa signs protocol and access credentials with `VISA_APP` and `VISA_ORG` JWT namespaces. Base
-retains `BASE_APP` and `BASE_ORG` for its own browser-RP/Jump responsibilities. The Rails-side edge
-catalog is recorded in `docs/operations/jump-rt-visa-edges.md`; the separate Edge/Jump deployment is
-not changed by this repository.
+The key and host ownership described here is historical. The Rails-side edge catalog is recorded in
+`docs/operations/jump-rt-visa-edges.md`; the separate Edge/Jump deployment is not changed by this
+repository.
 
 ## Project: Umaxica Apps Cosmos Access
 

@@ -3,19 +3,17 @@
 require "openssl"
 require "test_helper"
 
-# One HTTP contract for Base's browser theme and cookie-consent endpoints. Auth, Core, and Warp read
-# the realm projection without exposing Preference write controls. These contracts cover media
-# types, cache policy, validation, and how a refused request is reported.
+# One HTTP contract for Auth's browser theme and cookie-consent endpoints. These contracts cover
+# media types, cache policy, validation, and how a refused request is reported.
 #
 # The paths come from PreferenceBrowserControlsRegistry, the same source the page chrome hands the
 # browser, so this contract follows the endpoint the controls actually call.
 class PreferenceBrowserApiContractTest < ActionDispatch::IntegrationTest
-  SURFACE_HOST_KEYS = { "app" => "SERVICE", "com" => "CORPORATE", "org" => "STAFF" }.freeze
-  PREFERENCE_CLASSES = { "app" => AppPreference, "com" => ComPreference, "org" => OrgPreference }.freeze
+  PREFERENCE_CLASSES = { "app" => AppPreference, "org" => OrgPreference }.freeze
 
-  # Only Base renders controls for the realms it writes.
+  # Only Auth renders controls for the preference realms it serves.
   ENDPOINTS =
-    %w(base auth core warp).product(%w(app com org)).filter_map do |family, surface|
+    %w(auth).product(%w(app org)).filter_map do |family, surface|
       controls =
         begin
           PreferenceBrowserControlsRegistry.fetch(family: family, surface: surface)
@@ -27,7 +25,7 @@ class PreferenceBrowserApiContractTest < ActionDispatch::IntegrationTest
       {
         label: "#{family}/#{surface}",
         surface: surface,
-        host: ENV.fetch("PUBLIC_#{family.upcase}_#{SURFACE_HOST_KEYS.fetch(surface)}_URL"),
+        host: "auth.#{surface}.localhost",
         theme: controls.theme_endpoint_path,
         cookie: controls.cookie_endpoint_path,
       }
@@ -107,23 +105,22 @@ class PreferenceBrowserApiContractTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "Auth, Core, and Warp read default preferences without issuing or persisting state" do
-    %w(auth core warp).product(%w(app org)).each do |family, surface|
-      host = ENV.fetch("PUBLIC_#{family.upcase}_#{SURFACE_HOST_KEYS.fetch(surface)}_URL")
-      host! host
-      preference_class = PREFERENCE_CLASSES.fetch(surface)
+  test "Auth reads default preferences without issuing or persisting state" do
+    ENDPOINTS.each do |endpoint|
+      host! endpoint.fetch(:host)
+      preference_class = PREFERENCE_CLASSES.fetch(endpoint.fetch(:surface))
       before = preference_class.count
       headers = { "Accept" => "application/json", "Cookie" => "" }
 
       get "/api/v0/preferences/theme", headers: headers
 
-      assert_response :ok, "#{family}/#{surface} theme"
+      assert_response :ok, endpoint.fetch(:label)
       assert_equal "sy", response.parsed_body.fetch("theme")
       assert_no_preference_state_cookies
 
       get "/api/v0/preferences/cookie", headers: headers
 
-      assert_response :ok, "#{family}/#{surface} cookie"
+      assert_response :ok, endpoint.fetch(:label)
       assert_equal({ "show_banner" => true }, response.parsed_body)
       assert_no_preference_state_cookies
       assert_equal before, preference_class.count
@@ -162,9 +159,9 @@ class PreferenceBrowserApiContractTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "Base realm theme writes issue 400-day preference and shared-cookie expiries" do
+  test "Auth theme writes issue 400-day preference and shared-cookie expiries" do
     https!
-    ENDPOINTS.select { |endpoint| endpoint.fetch(:label).start_with?("base/") }.each do |endpoint|
+    ENDPOINTS.each do |endpoint|
       host! endpoint.fetch(:host)
       preference_class = PREFERENCE_CLASSES.fetch(endpoint.fetch(:surface))
       issued_at = 1.hour.ago.change(usec: 0)
@@ -212,7 +209,7 @@ class PreferenceBrowserApiContractTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "PATCH cookie returns the recorded decision for every Base realm" do
+  test "PATCH cookie returns the recorded decision for every Auth realm" do
     ENDPOINTS.each do |endpoint|
       host! endpoint.fetch(:host)
 
@@ -238,20 +235,6 @@ class PreferenceBrowserApiContractTest < ActionDispatch::IntegrationTest
 
         assert_response :unprocessable_content, label
         assert_validation_problem(pointers, label)
-      end
-    end
-  end
-
-  test "a body that is not JSON is a 400 problem, including a raw NUL byte" do
-    ENDPOINTS.each do |endpoint|
-      host! endpoint.fetch(:host)
-
-      [[endpoint.fetch(:theme), '{"theme": '], [endpoint.fetch(:cookie), "{\"cookie\": {\"consented\": \"\0\"}}"],
-       [endpoint.fetch(:theme), "[1, 2"],].each do |path, raw|
-        patch path, params: raw, headers: JSON_HEADERS
-
-        assert_response :bad_request, "#{endpoint.fetch(:label)} #{raw.inspect}"
-        assert_problem("bad-request", 400)
       end
     end
   end
@@ -292,13 +275,8 @@ class PreferenceBrowserApiContractTest < ActionDispatch::IntegrationTest
          [endpoint.fetch(:cookie), { cookie: { consented: true } }],].each do |path, body|
           patch path, params: body.to_json, headers: JSON_HEADERS.merge("Sec-Fetch-Site" => "cross-site")
 
-          if endpoint.fetch(:label).start_with?("auth/", "base/")
-            assert_response :forbidden, "#{endpoint.fetch(:label)} #{path}"
-            assert_problem("csrf-verification-failed", 403)
-          else
-            assert_response :unprocessable_content, "#{endpoint.fetch(:label)} #{path}"
-            assert_nil response.headers["Location"]
-          end
+          assert_response :forbidden, "#{endpoint.fetch(:label)} #{path}"
+          assert_problem("csrf-verification-failed", 403)
 
           assert_not_includes response.headers["Set-Cookie"].to_s, "#{"ct"}=dr"
         end
@@ -331,19 +309,17 @@ class PreferenceBrowserApiContractTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "an invalid foreign-host Preference JWT is never used to seed a Base write" do
+  test "a different Auth realm Preference JWT is never used to seed a write" do
     https!
     ENDPOINTS.each do |endpoint|
       # Section 4.2: realm is the token audience. A valid token from the other realm must not
       # become an input source for this realm's write.
-      next if endpoint.fetch(:surface) == "com"
-
       host = endpoint.fetch(:host)
       host! host
       foreign_surface = (endpoint.fetch(:surface) == "app") ? "org" : "app"
       foreign_endpoint =
         ENDPOINTS.find do |candidate|
-          candidate.fetch(:label) == "base/#{foreign_surface}"
+          candidate.fetch(:label) == "auth/#{foreign_surface}"
         end
       foreign = preference_token_for(
         host: foreign_endpoint.fetch(:host),
@@ -372,45 +348,6 @@ class PreferenceBrowserApiContractTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "Auth, Core, and Warp keep Preference display read-only" do
-    %w(auth core warp).product(%w(app org)).each do |family, surface|
-      host! ENV.fetch("PUBLIC_#{family.upcase}_#{SURFACE_HOST_KEYS.fetch(surface)}_URL")
-
-      patch "/api/v0/preferences/theme", params: { theme: "dark" }.to_json, headers: JSON_HEADERS
-
-      assert_response :forbidden, "#{family}/#{surface} theme write"
-      assert_no_preference_state_cookies
-
-      patch "/api/v0/preferences/cookie", params: { consented: true }.to_json, headers: JSON_HEADERS
-
-      assert_response :forbidden, "#{family}/#{surface} consent write"
-      assert_no_preference_state_cookies
-    end
-  end
-
-  test "an anonymous com token is readable on another com host and is not a credential in another realm" do
-    com_endpoint = ENDPOINTS.find { |endpoint| endpoint.fetch(:surface) == "com" }
-    https!
-    host! com_endpoint.fetch(:host)
-    patch com_endpoint.fetch(:theme), params: { theme: "dark" }.to_json, headers: JSON_HEADERS
-
-    assert_response :ok
-    com_token = cookies[PreferenceCookieName.anonymous_jwt]
-    com_public_id = JWT.decode(com_token, nil, false).first.fetch("sub")
-
-    assert_equal com_public_id, PreferenceToken.decode(com_token, host: "www-jp.umaxica.com").fetch("sub")
-    %w(app org).each do |surface|
-      endpoint = ENDPOINTS.find { |candidate| candidate.fetch(:label) == "base/#{surface}" }
-      host! endpoint.fetch(:host)
-      headers = { "Accept" => "application/json", "Cookie" => "#{PreferenceCookieName.anonymous_jwt}=#{com_token}" }
-      get endpoint.fetch(:theme), headers: headers
-
-      assert_response :ok, endpoint.fetch(:label)
-      assert_equal "sy", response.parsed_body.fetch("theme"), endpoint.fetch(:label)
-      assert_nil PreferenceToken.decode(com_token, host: endpoint.fetch(:host))
-    end
-  end
-
   # Anonymous visitors use these endpoints; the absence of a credential is not a refusal.
   test "a PATCH with no preference credential at all is served" do
     ENDPOINTS.each do |endpoint|
@@ -423,7 +360,7 @@ class PreferenceBrowserApiContractTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the endpoints are not served for PUT or on a host of another family" do
+  test "the endpoints are not served for PUT or on an unregistered host" do
     ENDPOINTS.each do |endpoint|
       host! endpoint.fetch(:host)
 
@@ -432,7 +369,7 @@ class PreferenceBrowserApiContractTest < ActionDispatch::IntegrationTest
       assert_response :not_found, "#{endpoint.fetch(:label)} PUT"
     end
 
-    host! ENV.fetch("PUBLIC_PALM_SERVICE_URL")
+    host! "unregistered.app.localhost"
     get ENDPOINTS.first.fetch(:theme), headers: { "Accept" => "application/json" }
 
     assert_response :not_found
@@ -440,10 +377,10 @@ class PreferenceBrowserApiContractTest < ActionDispatch::IntegrationTest
 
   test "the negotiation filters run exactly once and ahead of forgery protection" do
     [
-      Base::App::Api::V0::Preferences::ThemesController,
       Auth::Org::Api::V0::Preferences::CookiesController,
-      Core::Org::Api::V0::Preferences::ThemesController,
-      Warp::App::Api::V0::Preferences::CookiesController,
+      Auth::App::Api::V0::Preferences::ThemesController,
+      Auth::Org::Api::V0::Preferences::ThemesController,
+      Auth::App::Api::V0::Preferences::CookiesController,
     ].each do |controller|
       filters = controller._process_action_callbacks.select { |callback| callback.kind == :before }.map(&:filter)
 

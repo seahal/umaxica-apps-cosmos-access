@@ -23,7 +23,6 @@ module Security
       DIRECT_READ_ALLOWLIST = [
         REGISTRY_PATH,
         "config/initializers/flipper.rb",
-        "config/routes/base.rb",
         "db/seeds.rb",
       ].freeze
 

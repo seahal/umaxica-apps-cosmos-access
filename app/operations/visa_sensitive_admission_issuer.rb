@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Visa derives the identity and fresh Step-Up event from the authenticated Base Access JWT,
+# Visa derives the identity and fresh Step-Up event from the authenticated Auth Access JWT,
 # then creates the OIDC context, Auth admission and O-9 row under the actor-first owner boundary.
 class VisaSensitiveAdmissionIssuer
   Issuance = Data.define(:admission, :authorization_url, :auth_entry_ref)

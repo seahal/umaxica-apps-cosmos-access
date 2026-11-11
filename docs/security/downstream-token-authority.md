@@ -6,21 +6,19 @@
 > to `acme/www`, `core`, and `line` as downstream-token consumers are historical where they conflict
 > with the Acme / Sign / Core / Base / Palm boundary.
 
-> **Current Rails-contract supersession (2026-09-23):** The later Base/Auth decision supersedes the
-> physical Acme authority wording above. The current sole physical OIDC IdP/Authorization Server is
-> Visa; Auth is ceremony-only and Base is a browser RP. The Acme vocabulary below is historical and
-> must not be used to introduce an additional issuer, shared browser session, or retired RP
-> registration.
+> **Historical contract (2026-09-23):** The former Base/Auth transition described Visa as the sole
+> local OIDC authority and Base as a local browser RP. The 2026-11-10 surface reset removed the
+> local Base RP routes. Preserve this notice as history; it does not define current Access routes.
 
-> **Participation update (2026-10-13):** Palm is now a first-party browser RP using the `palm-app`
-> audience; its former native bearer API is retired. Tech is an operator browser RP using
-> `tech-org`. The accepted contract and local implementation status are recorded in
-> `adr/tech-and-palm-browser-rp-participation.md`.
+> **Historical participation update (2026-10-13):** Palm and Tech were recorded as local browser
+> RPs. The 2026-11-10 surface reset removed their local routes; their external registrations and
+> persisted history are not deleted by this document change.
 
-> **Current OIDC boundary (2026-10-24):** Visa is the Rails OIDC authority on `visa.umaxica.*`; Base
-> is the browser RP on `www.umaxica.*`. Visa-issued authority and downstream tokens use the Visa
-> issuer/key namespace. Base-issued browser RP credentials remain local to the RP and must not be
-> treated as Visa authority tokens. See `adr/visa-op-host.md`.
+> **Current OIDC boundary (2026-11-10):** Visa APP/ORG is the sole local OIDC authority and issues
+> authority/downstream tokens under its own issuer and key namespace. Auth APP/ORG provides
+> credential ceremonies. External relying parties own their local callbacks, browser sessions, and
+> RP credentials; Visa's approved external client registrations remain available. See
+> `adr/visa-op-host.md` and `docs/architecture/base-auth-seven-rp-boundary.md`.
 
 ## Authority
 

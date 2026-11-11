@@ -9,7 +9,7 @@ module Visa
         include ::RateLimit
         include ::FqdnAvailabilityGate
         include ::DefaultNoStore
-        include BaseOauthEndpoint
+        include OidcOpEndpoint
         include BaseOauthTokenEndpoint
 
         AUTHENTICATION_MODE = :open

@@ -2,9 +2,12 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require_relative "../support/oidc_auth_admission_test_helper"
 # require "helpers/global_test_support"
 
 class SocialAuthProviderBoundaryTest < ActionDispatch::IntegrationTest
+  include OidcAuthAdmissionTestHelper
+
   fixtures :client_statuses
 
   setup do
@@ -44,72 +47,7 @@ class SocialAuthProviderBoundaryTest < ActionDispatch::IntegrationTest
         flow0_rt = nil
         flow0_referer = nil
         unless flow0_intent.to_s == "link"
-          @base_browser = open_session
-          flow0_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-          flow0_auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-          @base_browser.host!(flow0_base_host)
-          @base_browser.https!
-          @base_browser.get("/sign", params: { ri: flow0_ri, pt: "/dashboard?ri=#{flow0_ri}" })
-          flow0_form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-          flow0_fields =
-            flow0_form.css("input[name]").to_h { |flow0_input|
-              [
-                flow0_input["name"],
-                flow0_input["value"],
-              ]
-            }
-          @base_browser.post(
-            flow0_form["action"], params: flow0_fields, headers: {
-              "Origin" => "https://#{flow0_base_host}", "Sec-Fetch-Site" => "same-origin",
-            },
-          )
-          JitSecurityJwtRegistry.surface("BASE_APP")
-          # The Base sign entry hands the browser to the Visa OP authorize endpoint, which
-          # relays an unauthenticated browser to the Auth sign-in entry. The Auth admission
-          # then runs its ceremony-binding confirmation on Visa and redeems the reference,
-          # so the chain must be followed until Auth renders the sign-in page itself.
-          flow0_admission_browser = @base_browser
-          12.times do |flow0_admission_index|
-            raise RuntimeError,
-                  "Social admission stopped before a redirect" unless flow0_admission_browser.response.redirect?
-
-            flow0_target = URI.parse(flow0_admission_browser.response.location)
-            # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-            3.times do
-              break unless flow0_target.host == "jump.umaxica.net"
-
-              flow0_unwrapped = URI.parse(jump_rt_url_from_location_for_test(flow0_target.to_s))
-              break if flow0_unwrapped.to_s == flow0_target.to_s
-
-              flow0_target = flow0_unwrapped
-            end
-            if flow0_admission_index.zero?
-              unless flow0_target.host == visa_host_for_test_base_host(flow0_base_host)
-                raise RuntimeError, "Base authorization host mismatch"
-              end
-            elsif flow0_admission_index == 1
-              raise RuntimeError, "Auth admission host mismatch" unless flow0_target.host == flow0_auth_host
-            end
-            flow0_next_browser =
-              if flow0_target.host.nil?
-                flow0_admission_browser
-              elsif flow0_target.host == flow0_auth_host
-                self
-              else
-                @base_browser
-              end
-            flow0_next_browser.host!(flow0_target.host) if flow0_target.host
-            flow0_next_browser.https!
-            flow0_next_browser.get(
-              flow0_target.request_uri, headers: {
-                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
-              },
-            )
-            flow0_admission_browser = flow0_next_browser
-            break if flow0_next_browser == self && !response.redirect?
-          end
-
-          assert_equal [flow0_auth_host, 200], [request.host, response.status]
+          bootstrap_auth_sign_in_admission!
         end
         flow0_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
         host!(flow0_host)
@@ -151,7 +89,7 @@ class SocialAuthProviderBoundaryTest < ActionDispatch::IntegrationTest
           flow0_headers = flow0_headers.merge(flow0_user_headers)
         end
         if flow0_entry.to_s == "sign_up" && flow0_intent.to_s != "link"
-          switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+          admit_browser_to_sign_up!(integration_session)
           host!(flow0_host)
         end
         post(flow0_continue_path, headers: flow0_headers)
@@ -192,72 +130,7 @@ class SocialAuthProviderBoundaryTest < ActionDispatch::IntegrationTest
         flow1_rt = nil
         flow1_referer = nil
         unless flow1_intent.to_s == "link"
-          @base_browser = open_session
-          flow1_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-          flow1_auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-          @base_browser.host!(flow1_base_host)
-          @base_browser.https!
-          @base_browser.get("/sign", params: { ri: flow1_ri, pt: "/dashboard?ri=#{flow1_ri}" })
-          flow1_form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-          flow1_fields =
-            flow1_form.css("input[name]").to_h { |flow1_input|
-              [
-                flow1_input["name"],
-                flow1_input["value"],
-              ]
-            }
-          @base_browser.post(
-            flow1_form["action"], params: flow1_fields, headers: {
-              "Origin" => "https://#{flow1_base_host}", "Sec-Fetch-Site" => "same-origin",
-            },
-          )
-          JitSecurityJwtRegistry.surface("BASE_APP")
-          # The Base sign entry hands the browser to the Visa OP authorize endpoint, which
-          # relays an unauthenticated browser to the Auth sign-in entry. The Auth admission
-          # then runs its ceremony-binding confirmation on Visa and redeems the reference,
-          # so the chain must be followed until Auth renders the sign-in page itself.
-          flow1_admission_browser = @base_browser
-          12.times do |flow1_admission_index|
-            raise RuntimeError,
-                  "Social admission stopped before a redirect" unless flow1_admission_browser.response.redirect?
-
-            flow1_target = URI.parse(flow1_admission_browser.response.location)
-            # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-            3.times do
-              break unless flow1_target.host == "jump.umaxica.net"
-
-              flow1_unwrapped = URI.parse(jump_rt_url_from_location_for_test(flow1_target.to_s))
-              break if flow1_unwrapped.to_s == flow1_target.to_s
-
-              flow1_target = flow1_unwrapped
-            end
-            if flow1_admission_index.zero?
-              unless flow1_target.host == visa_host_for_test_base_host(flow1_base_host)
-                raise RuntimeError, "Base authorization host mismatch"
-              end
-            elsif flow1_admission_index == 1
-              raise RuntimeError, "Auth admission host mismatch" unless flow1_target.host == flow1_auth_host
-            end
-            flow1_next_browser =
-              if flow1_target.host.nil?
-                flow1_admission_browser
-              elsif flow1_target.host == flow1_auth_host
-                self
-              else
-                @base_browser
-              end
-            flow1_next_browser.host!(flow1_target.host) if flow1_target.host
-            flow1_next_browser.https!
-            flow1_next_browser.get(
-              flow1_target.request_uri, headers: {
-                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
-              },
-            )
-            flow1_admission_browser = flow1_next_browser
-            break if flow1_next_browser == self && !response.redirect?
-          end
-
-          assert_equal [flow1_auth_host, 200], [request.host, response.status]
+          bootstrap_auth_sign_in_admission!
         end
         flow1_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
         host!(flow1_host)
@@ -299,7 +172,7 @@ class SocialAuthProviderBoundaryTest < ActionDispatch::IntegrationTest
           flow1_headers = flow1_headers.merge(flow1_user_headers)
         end
         if flow1_entry.to_s == "sign_up" && flow1_intent.to_s != "link"
-          switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+          admit_browser_to_sign_up!(integration_session)
           host!(flow1_host)
         end
         post(flow1_continue_path, headers: flow1_headers)
@@ -345,72 +218,7 @@ class SocialAuthProviderBoundaryTest < ActionDispatch::IntegrationTest
         flow2_rt = nil
         flow2_referer = nil
         unless flow2_intent.to_s == "link"
-          @base_browser = open_session
-          flow2_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-          flow2_auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-          @base_browser.host!(flow2_base_host)
-          @base_browser.https!
-          @base_browser.get("/sign", params: { ri: flow2_ri, pt: "/dashboard?ri=#{flow2_ri}" })
-          flow2_form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-          flow2_fields =
-            flow2_form.css("input[name]").to_h { |flow2_input|
-              [
-                flow2_input["name"],
-                flow2_input["value"],
-              ]
-            }
-          @base_browser.post(
-            flow2_form["action"], params: flow2_fields, headers: {
-              "Origin" => "https://#{flow2_base_host}", "Sec-Fetch-Site" => "same-origin",
-            },
-          )
-          JitSecurityJwtRegistry.surface("BASE_APP")
-          # The Base sign entry hands the browser to the Visa OP authorize endpoint, which
-          # relays an unauthenticated browser to the Auth sign-in entry. The Auth admission
-          # then runs its ceremony-binding confirmation on Visa and redeems the reference,
-          # so the chain must be followed until Auth renders the sign-in page itself.
-          flow2_admission_browser = @base_browser
-          12.times do |flow2_admission_index|
-            raise RuntimeError,
-                  "Social admission stopped before a redirect" unless flow2_admission_browser.response.redirect?
-
-            flow2_target = URI.parse(flow2_admission_browser.response.location)
-            # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-            3.times do
-              break unless flow2_target.host == "jump.umaxica.net"
-
-              flow2_unwrapped = URI.parse(jump_rt_url_from_location_for_test(flow2_target.to_s))
-              break if flow2_unwrapped.to_s == flow2_target.to_s
-
-              flow2_target = flow2_unwrapped
-            end
-            if flow2_admission_index.zero?
-              unless flow2_target.host == visa_host_for_test_base_host(flow2_base_host)
-                raise RuntimeError, "Base authorization host mismatch"
-              end
-            elsif flow2_admission_index == 1
-              raise RuntimeError, "Auth admission host mismatch" unless flow2_target.host == flow2_auth_host
-            end
-            flow2_next_browser =
-              if flow2_target.host.nil?
-                flow2_admission_browser
-              elsif flow2_target.host == flow2_auth_host
-                self
-              else
-                @base_browser
-              end
-            flow2_next_browser.host!(flow2_target.host) if flow2_target.host
-            flow2_next_browser.https!
-            flow2_next_browser.get(
-              flow2_target.request_uri, headers: {
-                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
-              },
-            )
-            flow2_admission_browser = flow2_next_browser
-            break if flow2_next_browser == self && !response.redirect?
-          end
-
-          assert_equal [flow2_auth_host, 200], [request.host, response.status]
+          bootstrap_auth_sign_in_admission!
         end
         flow2_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
         host!(flow2_host)
@@ -452,7 +260,7 @@ class SocialAuthProviderBoundaryTest < ActionDispatch::IntegrationTest
           flow2_headers = flow2_headers.merge(flow2_user_headers)
         end
         if flow2_entry.to_s == "sign_up" && flow2_intent.to_s != "link"
-          switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+          admit_browser_to_sign_up!(integration_session)
           host!(flow2_host)
         end
         post(flow2_continue_path, headers: flow2_headers)
@@ -465,7 +273,7 @@ class SocialAuthProviderBoundaryTest < ActionDispatch::IntegrationTest
           headers: social_callback_headers(@host)
     end
 
-    assert_response :redirect
+    assert_response :bad_request
   end
 
   test "apple callback accepts provider nonce owned by omniauth strategy" do
@@ -495,72 +303,7 @@ class SocialAuthProviderBoundaryTest < ActionDispatch::IntegrationTest
         flow3_rt = nil
         flow3_referer = nil
         unless flow3_intent.to_s == "link"
-          @base_browser = open_session
-          flow3_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-          flow3_auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-          @base_browser.host!(flow3_base_host)
-          @base_browser.https!
-          @base_browser.get("/sign", params: { ri: flow3_ri, pt: "/dashboard?ri=#{flow3_ri}" })
-          flow3_form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-          flow3_fields =
-            flow3_form.css("input[name]").to_h { |flow3_input|
-              [
-                flow3_input["name"],
-                flow3_input["value"],
-              ]
-            }
-          @base_browser.post(
-            flow3_form["action"], params: flow3_fields, headers: {
-              "Origin" => "https://#{flow3_base_host}", "Sec-Fetch-Site" => "same-origin",
-            },
-          )
-          JitSecurityJwtRegistry.surface("BASE_APP")
-          # The Base sign entry hands the browser to the Visa OP authorize endpoint, which
-          # relays an unauthenticated browser to the Auth sign-in entry. The Auth admission
-          # then runs its ceremony-binding confirmation on Visa and redeems the reference,
-          # so the chain must be followed until Auth renders the sign-in page itself.
-          flow3_admission_browser = @base_browser
-          12.times do |flow3_admission_index|
-            raise RuntimeError,
-                  "Social admission stopped before a redirect" unless flow3_admission_browser.response.redirect?
-
-            flow3_target = URI.parse(flow3_admission_browser.response.location)
-            # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-            3.times do
-              break unless flow3_target.host == "jump.umaxica.net"
-
-              flow3_unwrapped = URI.parse(jump_rt_url_from_location_for_test(flow3_target.to_s))
-              break if flow3_unwrapped.to_s == flow3_target.to_s
-
-              flow3_target = flow3_unwrapped
-            end
-            if flow3_admission_index.zero?
-              unless flow3_target.host == visa_host_for_test_base_host(flow3_base_host)
-                raise RuntimeError, "Base authorization host mismatch"
-              end
-            elsif flow3_admission_index == 1
-              raise RuntimeError, "Auth admission host mismatch" unless flow3_target.host == flow3_auth_host
-            end
-            flow3_next_browser =
-              if flow3_target.host.nil?
-                flow3_admission_browser
-              elsif flow3_target.host == flow3_auth_host
-                self
-              else
-                @base_browser
-              end
-            flow3_next_browser.host!(flow3_target.host) if flow3_target.host
-            flow3_next_browser.https!
-            flow3_next_browser.get(
-              flow3_target.request_uri, headers: {
-                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
-              },
-            )
-            flow3_admission_browser = flow3_next_browser
-            break if flow3_next_browser == self && !response.redirect?
-          end
-
-          assert_equal [flow3_auth_host, 200], [request.host, response.status]
+          bootstrap_auth_sign_in_admission!
         end
         flow3_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
         host!(flow3_host)
@@ -602,7 +345,7 @@ class SocialAuthProviderBoundaryTest < ActionDispatch::IntegrationTest
           flow3_headers = flow3_headers.merge(flow3_user_headers)
         end
         if flow3_entry.to_s == "sign_up" && flow3_intent.to_s != "link"
-          switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+          admit_browser_to_sign_up!(integration_session)
           host!(flow3_host)
         end
         post(flow3_continue_path, headers: flow3_headers)

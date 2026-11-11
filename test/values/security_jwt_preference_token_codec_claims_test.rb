@@ -20,7 +20,7 @@ class SecurityJwtPreferenceTokenCodecClaimsTest < ActiveSupport::TestCase
   }.freeze
 
   test "a genuine app realm token carries only the current closed claims" do
-    host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     public_id = PublicId.generate
     token = PreferenceToken.encode(
       PREFERENCES, host: host, preference_type: "AppPreference", public_id: public_id,
@@ -41,7 +41,7 @@ class SecurityJwtPreferenceTokenCodecClaimsTest < ActiveSupport::TestCase
   end
 
   test "legacy app and org claim shapes have no reader" do
-    host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     token = PreferenceToken.encode(
       PREFERENCES, host: host, preference_type: "AppPreference", public_id: "app-row-id",
                    jti: "app-generation", jwt_issuer_id: "preference_app", issued_at: Time.current,
@@ -63,7 +63,7 @@ class SecurityJwtPreferenceTokenCodecClaimsTest < ActiveSupport::TestCase
   end
 
   test "a token signed by another realm key is reported as a signature failure" do
-    host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     token = PreferenceToken.encode(
       PREFERENCES, host: host, preference_type: "AppPreference", public_id: "app-row-id",
                    jti: "app-generation", jwt_issuer_id: "preference_app", issued_at: Time.current,
@@ -82,7 +82,7 @@ class SecurityJwtPreferenceTokenCodecClaimsTest < ActiveSupport::TestCase
   end
 
   test "unsupported preference models and snapshots are refused without logging their values" do
-    host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     errors = []
     invalid_preferences = PREFERENCES.merge("unknown_option" => "private-preference-value")
 
@@ -107,11 +107,11 @@ class SecurityJwtPreferenceTokenCodecClaimsTest < ActiveSupport::TestCase
     end
   end
 
-  test "preference snapshots encode and decode for the COM and ORG realms" do
+  test "preference snapshots encode and decode for the app and org realms" do
     hosts = Rails.configuration.x.boot_config.fetch(:hosts)
     [
-      ["ComPreference", hosts.base_corporate.host, "preference_com", "com"],
-      ["OrgPreference", hosts.base_staff.host, "preference_org", "org"],
+      ["AppPreference", hosts.auth_service.host, "preference_app", "app"],
+      ["OrgPreference", hosts.auth_staff.host, "preference_org", "org"],
     ].each do |preference_type, host, issuer_id, realm|
       token = SecurityJwtPreferenceTokenCodec.encode(
         PREFERENCES, host: host, preference_type: preference_type, public_id: "#{realm}-row",
@@ -146,7 +146,7 @@ class SecurityJwtPreferenceTokenCodecClaimsTest < ActiveSupport::TestCase
   end
 
   test "wrong realm issuers and ambiguous or oversized tokens are rejected" do
-    host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     token = SecurityJwtPreferenceTokenCodec.encode(
       PREFERENCES, host: host, preference_type: "AppPreference", public_id: "app-row",
                    jti: "generation", jwt_issuer_id: "preference_app", issued_at: Time.current,
@@ -186,7 +186,7 @@ class SecurityJwtPreferenceTokenCodecClaimsTest < ActiveSupport::TestCase
   end
 
   test "audience mismatches can be returned or raised through the public decoder" do
-    host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     token = SecurityJwtPreferenceTokenCodec.encode(
       PREFERENCES, host: host, preference_type: "AppPreference", public_id: "app-row",
                    jti: "generation", jwt_issuer_id: "preference_app", issued_at: Time.current,
@@ -203,7 +203,7 @@ class SecurityJwtPreferenceTokenCodecClaimsTest < ActiveSupport::TestCase
   end
 
   test "expired tokens and unknown key identifiers are rejected with classified anomaly events" do
-    host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     expired = SecurityJwtPreferenceTokenCodec.encode(
       PREFERENCES, host: host, preference_type: "AppPreference", public_id: "app-row",
                    jti: "expired-generation", jwt_issuer_id: "preference_app",
@@ -223,7 +223,7 @@ class SecurityJwtPreferenceTokenCodecClaimsTest < ActiveSupport::TestCase
     JitSecurityJwtAnomalyReporter.stub(:report_preference, ->(**event) { reasons << event.fetch(:reason) }) do
       assert_nil SecurityJwtPreferenceTokenCodec.decode(expired, host: host)
       assert_nil SecurityJwtPreferenceTokenCodec.decode(unknown_kid, host: host)
-      assert_nil SecurityJwtPreferenceTokenCodec.decode(valid, host: host, jwt_issuer_id: "preference_com")
+      assert_nil SecurityJwtPreferenceTokenCodec.decode(valid, host: host, jwt_issuer_id: "preference_org")
     end
 
     assert_includes reasons, "EXPIRED"
@@ -231,7 +231,7 @@ class SecurityJwtPreferenceTokenCodecClaimsTest < ActiveSupport::TestCase
   end
 
   test "missing required claims and future time claims are rejected with anomaly reasons" do
-    host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     token = SecurityJwtPreferenceTokenCodec.encode(
       PREFERENCES, host: host, preference_type: "AppPreference", public_id: "app-row",
                    jti: "claims-generation", jwt_issuer_id: "preference_app", issued_at: Time.current,

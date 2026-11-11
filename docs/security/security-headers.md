@@ -8,19 +8,19 @@ A+ grade on both:
 - Mozilla / MDN HTTP Observatory: `https://developer.mozilla.org/en-US/observatory`
 - SecurityHeaders.com: `https://securityheaders.com/`
 
-This target applies to the production public hosts, including `www.umaxica.app`, and to future
+This target applies to the retained Auth APP/ORG and Visa APP/ORG browser hosts, and to future
 changes that affect CSP, Permissions-Policy, cookie transport, SRI-sensitive external scripts, CORP,
 COEP, COOP, HSTS, Referrer-Policy, X-Content-Type-Options, frame protections, or related browser
-security headers.
+security headers. Operator tools have their own access and host configuration.
 
 ## Implementation Notes
 
 - CSP is configured in `config/initializers/content_security_policy.rb`.
 - Development CSP allows `ws:` / `wss:` in `connect-src` so Vite dev-server HMR can open its
   websocket.
-- `form-action` stays same-origin except for the Google and Apple OAuth endpoints used by app social
-  sign-in/sign-up and the configured acme app/com/org hosts used by sign-issued ceremony completion
-  forms. Browsers enforce `form-action` across those OAuth and ceremony-post navigations.
+- `form-action` stays same-origin except for the Google and Apple OAuth endpoints used by Auth APP
+  social sign-in/sign-up and the configured Auth/Visa origins used by the browser-bound OIDC
+  continuation. Browsers enforce `form-action` across those provider and ceremony-post navigations.
 - Permissions-Policy, Cross-Origin-Embedder-Policy, Cross-Origin-Opener-Policy, and
   Cross-Origin-Resource-Policy are configured in `config/initializers/permissions_policy.rb`.
 - Session cookie transport is configured through `config/initializers/session_store.rb` and

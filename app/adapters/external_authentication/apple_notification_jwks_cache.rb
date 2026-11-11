@@ -4,6 +4,7 @@
 require "json"
 
 module ExternalAuthentication
+  # TODO: AUDIT external access: fetches Apple's JWKS.
   class AppleNotificationJwksCache
     class FetchError < StandardError; end
 

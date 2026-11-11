@@ -22,7 +22,7 @@ class ClientSecretAuditDeliveryJobTest < ActiveSupport::TestCase
     grant = OpAppGrant.create!(
       authentication_epoch: token.authentication_epoch, client_token: token, oidc_client_id: oidc_client.client_id,
       oidc_scope: "openid profile", oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16),
-      oidc_auth_time: Time.at(evidence_now.to_i).utc, oidc_acr: StepUpEvidenceResolver::STEP_UP_ACR,
+      oidc_auth_time: Time.at(evidence_now.to_i).utc, oidc_acr: StepUpEvidenceVerifier::STEP_UP_ACR,
       oidc_amr: JSON.generate(["passkey"]), refresh_token_expires_at: evidence_now + 1.hour,
     )
     grant.issue_refresh_token!(now: evidence_now)
@@ -446,7 +446,7 @@ class ClientSecretAuditCommittedLifecycleTest < ActiveSupport::TestCase
     grant = OpAppGrant.create!(
       authentication_epoch: token.authentication_epoch, client_token: token, oidc_client_id: oidc_client.client_id,
       oidc_scope: "openid profile", oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16),
-      oidc_auth_time: Time.at(evidence_now.to_i).utc, oidc_acr: StepUpEvidenceResolver::STEP_UP_ACR,
+      oidc_auth_time: Time.at(evidence_now.to_i).utc, oidc_acr: StepUpEvidenceVerifier::STEP_UP_ACR,
       oidc_amr: JSON.generate(["passkey"]), refresh_token_expires_at: evidence_now + 1.hour,
     )
     grant.issue_refresh_token!(now: evidence_now)

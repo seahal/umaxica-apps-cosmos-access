@@ -471,14 +471,14 @@ module Auth
           )
         end
 
-        def handle_link_intent(_provider_name)
+        def handle_link_intent(provider_name)
           Rails.logger.debug(
             JitLogEvent.format(
               "sign.social.omniauth.link_intent",
               message: "Redirecting to settings",
             ),
           )
-          redirect_to(auth_app_settings_path)
+          redirect_to(social_auth_provider_settings_path(provider_name))
         end
 
         def handle_login_intent(user, provider_name, _existing_account, pt: nil)
@@ -530,7 +530,7 @@ module Auth
         end
 
         def social_auth_success_redirect_path
-          auth_app_settings_path
+          auth_app_sign_in_path(ri: params[:ri].presence || current_social_auth_ri)
         end
 
         # Reduces the attacker-controlled `message` parameter to one of the

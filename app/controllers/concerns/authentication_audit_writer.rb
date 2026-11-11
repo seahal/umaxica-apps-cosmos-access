@@ -283,17 +283,6 @@ class AuthenticationAuditWriter
         "UPDATE_PREFERENCE_LANGUAGE" => AppPreferenceChronicleEvent::UPDATE_PREFERENCE_LANGUAGE,
         "CREATE_NEW_PREFERENCE_TOKEN" => AppPreferenceChronicleEvent::CREATE_NEW_PREFERENCE_TOKEN,
       }
-    when "ComPreferenceChronicle"
-      {
-        "CREATE_NEW_PREFERENCE_TOKEN" => ComPreferenceChronicleEvent::CREATE_NEW_PREFERENCE_TOKEN,
-        "REFRESH_TOKEN_ROTATED" => ComPreferenceChronicleEvent::REFRESH_TOKEN_ROTATED,
-        "UPDATE_PREFERENCE_COOKIE" => ComPreferenceChronicleEvent::UPDATE_PREFERENCE_COOKIE,
-        "UPDATE_PREFERENCE_LANGUAGE" => ComPreferenceChronicleEvent::UPDATE_PREFERENCE_LANGUAGE,
-        "UPDATE_PREFERENCE_TIMEZONE" => ComPreferenceChronicleEvent::UPDATE_PREFERENCE_TIMEZONE,
-        "RESET_BY_USER_DECISION" => ComPreferenceChronicleEvent::RESET_BY_USER_DECISION,
-        "UPDATE_PREFERENCE_REGION" => ComPreferenceChronicleEvent::UPDATE_PREFERENCE_REGION,
-        "UPDATE_PREFERENCE_THEME" => ComPreferenceChronicleEvent::UPDATE_PREFERENCE_THEME,
-      }
     when "OrgPreferenceChronicle"
       {
         "CREATE_NEW_PREFERENCE_TOKEN" => OrgPreferenceChronicleEvent::CREATE_NEW_PREFERENCE_TOKEN,

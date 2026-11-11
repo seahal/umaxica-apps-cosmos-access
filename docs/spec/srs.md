@@ -5,6 +5,10 @@
 > account, preference, authorization, and downstream-token authority. `sign/id` is ceremony-only. Do
 > not use this document to reintroduce sign-side token lifecycle, sessions, preference, dashboard,
 > account lifecycle, logout, or step-up freshness.
+>
+> **Surface scope update:** Access serves only the local `app` and `org` surfaces. The local `com`
+> user-facing surface was retired by `specs/access-surface-hard-reset/spec.md`. Retained legacy
+> `Com` data models do not authorize a `com` route, controller, or UI.
 
 ## 1. Purpose
 
@@ -15,7 +19,8 @@ single Rails app with surface and repository boundaries, not Rails Engine bounda
 
 - `app` owns end-user product and account flows.
 - `org` owns staff and organization workflows.
-- `com` owns public and corporate workflows.
+- The former local public/corporate `com` surface is retired; external OIDC client registrations
+  remain configuration for other repositories and are not local surfaces.
 - Identity provider and relying-party behavior are implemented inside this Rails app.
 - Regional content delivery belongs to the separate regional repository.
 - Models stay centralized in `app/models`.
@@ -28,7 +33,6 @@ single Rails app with surface and repository boundaries, not Rails Engine bounda
 | ------- | ---------------------------------- |
 | `app`   | End-user product and account flows |
 | `org`   | Staff and organization workflows   |
-| `com`   | Public and corporate workflows     |
 
 ## 4. Functional Requirements
 
@@ -36,7 +40,6 @@ single Rails app with surface and repository boundaries, not Rails Engine bounda
 - Sign flows must support registration, authentication, passkeys, and token lifecycle.
 - Surface flows must support preferences and safe cross-surface navigation where explicitly allowed.
 - Staff and organization flows must enforce the established authorization pipeline.
-- Public and corporate flows must preserve guest/public access rules.
 - Database ownership must match the accepted `surface_role` connection model.
 - Security-sensitive writes must continue to use encryption, audit logging, and structured errors.
 
@@ -62,4 +65,6 @@ single Rails app with surface and repository boundaries, not Rails Engine bounda
 - Route tests must confirm that each surface resolves only its intended hosts.
 - Model and database tests must confirm that base records use the assigned database group.
 - Security tests must confirm that auth, redirect, CSRF, verification, and audit rules still hold.
-- Integration tests must confirm that `app`, `org`, and `com` behavior remains separated.
+- Integration tests must confirm that Auth and Visa `app` and `org` behavior remains separated.
+- Model tests for retained legacy identity data describe persistence only, not a served `com`
+  surface.

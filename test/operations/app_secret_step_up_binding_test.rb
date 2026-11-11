@@ -47,13 +47,6 @@ class AppSecretStepUpBindingTest < ActiveSupport::TestCase
       oidc_auth_time: now - 1.hour, refresh_token_expires_at: now + 1.hour,
     )
     grant.issue_refresh_token!(expires_at: now + 1.hour, now:)
-    rp_enrollment = RpCallbackCommitter.call(
-      cell: RpCellBinding.for_client(client.client_id), issuer: OidcIssuer.for_client(client),
-      subject: OidcSubject.for(actor, resource_type: "client"), sid: grant.public_id,
-      absolute_expires_at: now + 1.hour,
-    )
-    raise ArgumentError, "APP RP session setup failed: #{rp_enrollment.outcome}" unless rp_enrollment.success?
-
     verifier = SecureRandom.urlsafe_base64(32)
     params = {
       response_type: "code",
@@ -74,8 +67,6 @@ class AppSecretStepUpBindingTest < ActiveSupport::TestCase
     ticket = issuance.ticket.reload
 
     assert_equal :issued, issuance.outcome
-    assert_equal grant.public_id, rp_enrollment.session.op_session_binding.sid
-    assert_nil rp_enrollment.session.revoked_at
     assert_equal OidcAuthorizeRequestResolver::STEP_UP_ACR, issuance.context.requested_acr
     assert_equal OidcAuthorizeRequestResolver::STEP_UP_SCOPE, ticket.required_scope
     assert_equal "step_up", ticket.purpose
@@ -230,13 +221,6 @@ class AppSecretStepUpBindingTest < ActiveSupport::TestCase
       oidc_auth_time: now - 1.hour, refresh_token_expires_at: now + 1.hour,
     )
     grant.issue_refresh_token!(expires_at: now + 1.hour, now:)
-    rp_enrollment = RpCallbackCommitter.call(
-      cell: RpCellBinding.for_client(client.client_id), issuer: OidcIssuer.for_client(client),
-      subject: OidcSubject.for(actor, resource_type: "operator"), sid: grant.public_id,
-      absolute_expires_at: now + 1.hour,
-    )
-    raise ArgumentError, "ORG RP session setup failed: #{rp_enrollment.outcome}" unless rp_enrollment.success?
-
     verifier = SecureRandom.urlsafe_base64(32)
     params = {
       response_type: "code",
@@ -257,8 +241,6 @@ class AppSecretStepUpBindingTest < ActiveSupport::TestCase
     ticket = issuance.ticket.reload
 
     assert_equal :issued, issuance.outcome
-    assert_equal grant.public_id, rp_enrollment.session.op_session_binding.sid
-    assert_nil rp_enrollment.session.revoked_at
     assert_equal OidcAuthorizeRequestResolver::STEP_UP_ACR, issuance.context.requested_acr
     assert_equal OidcAuthorizeRequestResolver::STEP_UP_SCOPE, ticket.required_scope
     assert_equal "step_up", ticket.purpose

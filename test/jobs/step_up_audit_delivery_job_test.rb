@@ -46,7 +46,7 @@ class StepUpAuditDeliveryJobTest < ActiveSupport::TestCase
     end
 
     events = []
-    assert_enqueued_jobs 4, only: StepUpAuditDeliveryJob do
+    assert_enqueued_jobs 2, only: StepUpAuditDeliveryJob do
       StepUpAuditOutboxSourcesRegistry::SOURCES.reject { |key, _| key.start_with?("o9_") }.each do |source_key, source|
         model, realm, _attempt_class, pending_id, _delivered_id = source
         event = nil
@@ -265,7 +265,7 @@ class StepUpAuditDeliveryJobTest < ActiveSupport::TestCase
     assert_equal ["failed", "event_identity_conflict"], [attempt.outcome, attempt.failure_code]
   end
 
-  test "delivery covers every OP and RP source and rejects invalid bounds or source keys" do
+  test "delivery covers every active step-up audit source and rejects invalid bounds or source keys" do
     events =
       StepUpAuditOutboxSourcesRegistry::SOURCES.reject { |key, _|
         key.start_with?("o9_")

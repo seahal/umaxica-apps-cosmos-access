@@ -3,6 +3,9 @@
 This document records the security rules for what an Inertia page leaves in the browser: the history
 entries that hold page props, and the props themselves. `adr/inertia-rails-thin-adapter.md` makes
 history encryption mandatory and leaves history clearing and page-prop content to this document.
+Current local scope is Auth APP/ORG and Visa APP/ORG. Former Base, Core, Warp, Palm, Edit, Tech, and
+other RP rows are retired from the Access route inventory. External RP clients own their own page
+history and completion pages. Retained model history does not establish an active local controller.
 
 ## Why history needs clearing
 
@@ -18,16 +21,11 @@ restore the signed-in page from history. Only `clearHistory: true` on a rendered
 Every response that ends or changes the browser's authenticated state, and every one-time display of
 a secret, must end on a page that clears history:
 
-| Event                                                                                  | Mechanism                                                                               | Owner                                                                                                                 |
-| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Root login establishment                                                               | `session[:inertia_clear_history]` after a successful `log_in`                           | `AuthenticationBase#log_in`                                                                                           |
-| Detached stale credentials, ended sessions                                             | `reset_session_and_clear_inertia_history!`                                              | `AuthenticationLogoutable`, `AuthenticationBase`                                                                      |
-| Visa OP logout (completion and failures after the authority COMMIT)                    | `clear_history: true` on the Inertia result page                                        | `visa/{app,com,org}/oidc/logouts_controller.rb`                                                                       |
-| Base RP sign-out (completion, cleanup incomplete, indeterminate)                       | `clear_history: true` on the Inertia result page                                        | `BaseSignOutDestination`                                                                                              |
-| Warp, Palm and Auth sign-out pages                                                     | Session flag and redirect to root (Warp); `clear_history: true` (`SignOutInertiaPages`) | Surface sign-out controllers                                                                                          |
-| Non-Inertia completion pages (Core, Edit, Tech, Palm completion)                       | `Clear-Site-Data: "cache", "storage"`                                                   | `SignOutClearSiteData`                                                                                                |
-| Withdrawal deactivation, ceremony session end and termination                          | `session[:inertia_clear_history]` before the redirect                                   | `BrowserRpAuthentication#clear_browser_rp_cookies!`, `WithdrawalCeremonyAuthentication`, `BaseSettingsWithdrawalFlow` |
-| One-time secret display, Step-Up completion and cancellation, session-limit resolution | `session[:inertia_clear_history]`                                                       | The owning controllers and concerns                                                                                   |
+| Event                                                      | Mechanism                                              | Owner                              |
+| ---------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------- |
+| Visa APP/ORG OP logout completion and post-commit failures | `clear_history: true` on the Inertia result page       | Visa logout controllers            |
+| Auth APP/ORG ceremony end or one-time secret display       | Clear history on the terminal or one-time display page | The owning Auth controller         |
+| Any retained Auth/Visa session-state change                | Clear history on the final page after the state change | The owning Auth or Visa controller |
 
 Ordinary navigation must not clear history; doing so would break Back for every page.
 
@@ -66,16 +64,9 @@ in every other environment.
 
 ## Verification
 
-- `test/integration/sign_out_inertia_history_clear_test.rb`: Warp, Palm and failed Base origin
-  cleanup on each realm.
-- `test/integration/oidc_rp_logout_registered_rp_matrix_test.rb`: Base cleanup-incomplete and
-  indeterminate pages for every registered Browser RP.
-- `test/controllers/base/{app,com,org}/sign_outs_controller_test.rb` and
-  `test/controllers/concerns/authenticated_response_cache_policy_test.rb`: Base sign-out and
-  ordinary navigation.
-- `test/controllers/base/{app,com}/identity/withdrawals_controller_test.rb` and
-  `test/integration/withdrawal_ceremony_session_test.rb`: withdrawal events.
-- `test/lib/runtime_role_route_ownership_test.rb`: DevTools routes are unreachable outside
-  development.
+Verify Visa APP/ORG OP logout and Auth APP/ORG one-time display/ceremony terminal pages using the
+retained surface tests. External RP completion pages and their session history must be verified by
+their owning repositories. Retired Base/RP test paths are not current Access verification targets.
 
-A full audit of page props is open in `plans/backlog/2026-10-20-inertia-props-exposure-audit.md`.
+A full audit of page props remains follow-up work; it must target retained Auth/Visa pages and
+exclude removed RP surfaces.

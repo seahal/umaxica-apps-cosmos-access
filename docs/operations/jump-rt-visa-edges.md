@@ -1,36 +1,40 @@
 # Visa Jump RT edge handoff
 
-This document is the Rails-side handoff for the Visa OP host split. The Edge/Jump service is a
-separate system and is not changed or integration-tested by this repository.
+This document records the Visa-to-Auth edges and retained external relying-party issuer and return
+edges used by the separate Edge/Jump system. Access owns only its Auth and Visa APP/ORG surfaces;
+the Edge/Jump service and external RP callback surfaces are not changed or integration-tested by
+this repository. Rows naming Base, Core, Warp, or Palm describe preserved external client
+registrations and their origins, not local Rails routes or controllers.
 
 Each row names a directed edge. `iss` is the origin of the issuer namespace and is also the origin
 whose `VISA_*` or existing surface JWKS endpoint must be used. The signed `url` is on the
 destination origin. The JWT `aud` remains the configured Jump audience (`https://jump.umaxica.net`);
 it is not the destination origin.
 
-The retired corporate authentication realm has no Visa Jump issuer or return edges. Public Base,
-Warp, Info, Help, Docs, and News corporate surfaces remain separate from this authentication graph.
+Only APP and ORG Auth/Visa edges are local to Access. Any external RP issuer or destination shown
+below remains an OIDC/Jump registration concern; its callback and browser routes belong to the
+external RP owner.
 
-| Issuer namespace | Issuer origin | Destination namespace | Destination origin | Purpose |
-|---|---|---|---|---|
-| `AUTH_APP` | `https://auth.umaxica.app` | `VISA_APP` | `https://visa.umaxica.app` | authentication result |
-| `AUTH_ORG` | `https://auth.umaxica.org` | `VISA_ORG` | `https://visa.umaxica.org` | authentication result |
-| `VISA_APP` | `https://visa.umaxica.app` | `AUTH_APP` | `https://auth.umaxica.app` | authentication ceremony |
-| `VISA_ORG` | `https://visa.umaxica.org` | `AUTH_ORG` | `https://auth.umaxica.org` | authentication ceremony |
-| `BASE_APP` | `https://www.umaxica.app` | `VISA_APP` | `https://visa.umaxica.app` | authorization start |
-| `BASE_ORG` | `https://www.umaxica.org` | `VISA_ORG` | `https://visa.umaxica.org` | authorization start |
-| `CORE_APP` | `https://jp.umaxica.app` | `VISA_APP` | `https://visa.umaxica.app` | authorization start |
-| `CORE_ORG` | `https://jp.umaxica.org` | `VISA_ORG` | `https://visa.umaxica.org` | authorization start |
-| `WARP_APP` | `https://www-jp.umaxica.app` | `VISA_APP` | `https://visa.umaxica.app` | authorization start |
-| `WARP_ORG` | `https://www-jp.umaxica.org` | `VISA_ORG` | `https://visa.umaxica.org` | authorization start |
-| `PALM_APP` | `https://palm-jp.umaxica.app` | `VISA_APP` | `https://visa.umaxica.app` | authorization start |
-| `VISA_APP` | `https://visa.umaxica.app` | `BASE_APP` | `https://www.umaxica.app` | authorization response |
-| `VISA_ORG` | `https://visa.umaxica.org` | `BASE_ORG` | `https://www.umaxica.org` | authorization response |
-| `VISA_APP` | `https://visa.umaxica.app` | `CORE_APP` | `https://jp.umaxica.app` | authorization response |
-| `VISA_ORG` | `https://visa.umaxica.org` | `CORE_ORG` | `https://jp.umaxica.org` | authorization response |
-| `VISA_APP` | `https://visa.umaxica.app` | `WARP_APP` | `https://www-jp.umaxica.app` | authorization response |
-| `VISA_ORG` | `https://visa.umaxica.org` | `WARP_ORG` | `https://www-jp.umaxica.org` | authorization response |
-| `VISA_APP` | `https://visa.umaxica.app` | `PALM_APP` | `https://palm-jp.umaxica.app` | authorization response |
+| Issuer namespace | Issuer origin                 | Destination namespace | Destination origin            | Purpose                 |
+| ---------------- | ----------------------------- | --------------------- | ----------------------------- | ----------------------- |
+| `AUTH_APP`       | `https://auth.umaxica.app`    | `VISA_APP`            | `https://visa.umaxica.app`    | authentication result   |
+| `AUTH_ORG`       | `https://auth.umaxica.org`    | `VISA_ORG`            | `https://visa.umaxica.org`    | authentication result   |
+| `VISA_APP`       | `https://visa.umaxica.app`    | `AUTH_APP`            | `https://auth.umaxica.app`    | authentication ceremony |
+| `VISA_ORG`       | `https://visa.umaxica.org`    | `AUTH_ORG`            | `https://auth.umaxica.org`    | authentication ceremony |
+| `BASE_APP`       | `https://www.umaxica.app`     | `VISA_APP`            | `https://visa.umaxica.app`    | authorization start     |
+| `BASE_ORG`       | `https://www.umaxica.org`     | `VISA_ORG`            | `https://visa.umaxica.org`    | authorization start     |
+| `CORE_APP`       | `https://jp.umaxica.app`      | `VISA_APP`            | `https://visa.umaxica.app`    | authorization start     |
+| `CORE_ORG`       | `https://jp.umaxica.org`      | `VISA_ORG`            | `https://visa.umaxica.org`    | authorization start     |
+| `WARP_APP`       | `https://www-jp.umaxica.app`  | `VISA_APP`            | `https://visa.umaxica.app`    | authorization start     |
+| `WARP_ORG`       | `https://www-jp.umaxica.org`  | `VISA_ORG`            | `https://visa.umaxica.org`    | authorization start     |
+| `PALM_APP`       | `https://palm-jp.umaxica.app` | `VISA_APP`            | `https://visa.umaxica.app`    | authorization start     |
+| `VISA_APP`       | `https://visa.umaxica.app`    | `BASE_APP`            | `https://www.umaxica.app`     | authorization response  |
+| `VISA_ORG`       | `https://visa.umaxica.org`    | `BASE_ORG`            | `https://www.umaxica.org`     | authorization response  |
+| `VISA_APP`       | `https://visa.umaxica.app`    | `CORE_APP`            | `https://jp.umaxica.app`      | authorization response  |
+| `VISA_ORG`       | `https://visa.umaxica.org`    | `CORE_ORG`            | `https://jp.umaxica.org`      | authorization response  |
+| `VISA_APP`       | `https://visa.umaxica.app`    | `WARP_APP`            | `https://www-jp.umaxica.app`  | authorization response  |
+| `VISA_ORG`       | `https://visa.umaxica.org`    | `WARP_ORG`            | `https://www-jp.umaxica.org`  | authorization response  |
+| `VISA_APP`       | `https://visa.umaxica.app`    | `PALM_APP`            | `https://palm-jp.umaxica.app` | authorization response  |
 
 The corresponding JWKS endpoints are:
 

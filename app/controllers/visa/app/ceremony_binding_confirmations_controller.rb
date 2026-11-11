@@ -4,7 +4,7 @@
 module Visa
   module App
     class CeremonyBindingConfirmationsController < ::Visa::App::AuthorityController
-      include ::BaseCeremonyBindingConfirmation
+      include ::VisaCeremonyBindingConfirmation
 
       REJECT_FRAMED_CONFIRMATION = true
       AUTHENTICATION_MODE = :open
@@ -14,7 +14,7 @@ module Visa
         public
 
         def ceremony_binding_allowed_purposes
-          AuthAdmissionBinding::PARENT_PURPOSES.fetch(:authorization_transaction)
+          AuthAdmissionBinding::PARENT_PURPOSES.values.flatten
         end
       end
 

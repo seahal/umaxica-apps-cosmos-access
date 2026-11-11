@@ -18,9 +18,8 @@ module Email::App
 
     def create
       @pass_code = OutboundSensitivePayload.decrypt_email_otp(params[:encrypted_hotp_token])
-      @verification_token = verification_token_from_params
+      reject_plaintext_verification_token!
       @public_id = params[:public_id]
-      @verification_url = verification_url
 
       message = mail(
         to: params[:email_address],
@@ -143,13 +142,10 @@ module Email::App
       )
     end
 
-    def verification_token_from_params
-      if params.key?(:verification_token) || params.key?("verification_token")
-        raise ArgumentError, "plaintext verification tokens are unsupported"
-      end
-      return if params[:encrypted_verification_token].blank?
+    def reject_plaintext_verification_token!
+      return unless params.key?(:verification_token) || params.key?("verification_token")
 
-      OutboundSensitivePayload.decrypt_email_verification_token(params[:encrypted_verification_token])
+      raise ArgumentError, "plaintext verification tokens are unsupported"
     end
 
     def otp_subject
@@ -158,15 +154,6 @@ module Email::App
       return I18n.t(subject_key) if subject_key
 
       I18n.t("mail.email.app.otp_mailer.create.subject")
-    end
-
-    def verification_url
-      return if @verification_token.blank? || @public_id.blank?
-
-      Rails.application.routes.url_helpers.edit_base_app_identity_emails_registration_url(
-        token: @verification_token,
-        host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
-      )
     end
   end
 end

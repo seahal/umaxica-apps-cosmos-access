@@ -13,6 +13,8 @@ class OidcAuthorizeRequestResolver < ApplicationService
     end
   end
 
+  class DuplicateParameters < RequestError; end
+
   class InvalidScope < RequestError
     def initialize(message) = super(message, error: "invalid_scope")
   end
@@ -24,6 +26,11 @@ class OidcAuthorizeRequestResolver < ApplicationService
   # Unsupported or combined `prompt` values: a direct HTTP 400 from the OP, never redirected
   # (Prompt Create 1.0 4.1, D-148).
   class UnsupportedPrompt < ArgumentError; end
+
+  PARAMETER_NAMES = %w(
+    response_type client_id redirect_uri state code_challenge code_challenge_method
+    scope nonce prompt max_age claims acr_values
+  ).freeze
 
   SUPPORTED_PROMPTS = %w(login none create).freeze
   PROMPTS_BY_RESOURCE_TYPE = {
@@ -78,22 +85,31 @@ class OidcAuthorizeRequestResolver < ApplicationService
     end
   end
 
-  def initialize(params:, resource:, resource_type: nil)
+  def initialize(params:, resource:, resource_type: nil, duplicate_parameters: [])
     super()
     @params = params
     @resource = resource
     @given_resource_type = resource_type
+    @duplicate_parameters = duplicate_parameters
   end
 
   # Order matters (D-147): only after `client_id` and `redirect_uri` are valid may an error be
   # redirected to the RP.
   def call
+    if duplicate_parameters.intersect?(%w(client_id redirect_uri))
+      raise ArgumentError, "authorization target parameters must be unique"
+    end
+
     raise ArgumentError, "client_id is required" if client_id.blank?
 
     client = find_client!
     raise ArgumentError, "redirect_uri is required" if redirect_uri.blank?
 
     validate_redirect_uri!
+    if duplicate_parameters.intersect?(PARAMETER_NAMES)
+      raise DuplicateParameters, "authorization parameters must be unique"
+    end
+
     validate_response_type!
     raise RequestError, "scope must include openid" unless scope_includes_openid?
 
@@ -111,7 +127,7 @@ class OidcAuthorizeRequestResolver < ApplicationService
 
   private
 
-  attr_reader :params, :resource, :given_resource_type
+  attr_reader :params, :resource, :given_resource_type, :duplicate_parameters
 
   def validate_response_type!
     raise RequestError, "response_type is required" if params[:response_type].blank?

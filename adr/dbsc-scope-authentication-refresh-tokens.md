@@ -4,6 +4,11 @@
 
 Accepted (2026-11-05, owner decision).
 
+Amended 2026-11-10 (owner): DBSC will be implemented to completion within this scope. A Windows
+environment with a TPM has been prepared for testing it; completion is scheduled after the Cosmos
+cross-repository connection works. Verification experiments and accepted risks:
+`docs/backlog/2026-11-10-dbsc-verification-experiments.md`.
+
 ## Context
 
 Device Bound Session Credentials (DBSC) bind a browser session to a key held by the device (for

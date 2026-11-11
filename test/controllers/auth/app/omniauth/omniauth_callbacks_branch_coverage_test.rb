@@ -14,9 +14,9 @@ class AuthAppOmniauthCallbacksBranchCoverageTest < ActiveSupport::TestCase
     c.define_singleton_method(:params) { ActionController::Parameters.new(message: "invalid_credentials", strategy: "google") }
     c.define_singleton_method(:logged_in?) { true }
     c.define_singleton_method(:redirect_to) { |path| redirects << path }
-    c.define_singleton_method(:social_auth_success_redirect_path) { "/settings" }
+    c.define_singleton_method(:social_auth_success_redirect_path) { "/sign/oidc/handoff" }
     c.failure
 
-    assert_equal ["/settings"], redirects
+    assert_equal ["/sign/oidc/handoff"], redirects
   end
 end

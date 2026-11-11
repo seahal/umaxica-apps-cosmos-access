@@ -87,9 +87,9 @@ class ContactEmailSignupSourceAuditTest < ActionDispatch::IntegrationTest
   end
 
   [
-    [:app, "PUBLIC_BASE_SERVICE_URL", "PUBLIC_AUTH_SERVICE_URL", ClientSignUpFlow, ClientEmail,
+    [:app, "PUBLIC_AUTH_SERVICE_URL", ClientSignUpFlow, ClientEmail,
      ClientContactAuditOutbox, :client_email,],
-  ].each do |surface, base_host_key, auth_host_key, flow_class, contact_class, outbox, scope|
+  ].each do |surface, auth_host_key, flow_class, contact_class, outbox, scope|
     %i(complete otp_ticket_failure_retry otp_guardrail_failure_retry otp_checkpoint_failure_retry
        otp_requirement_failure_retry expired_before_locked_decision suspended_owner ticket_failure_retry
        ticket_failure_duplicate_intent ticket_failure_released_binding
@@ -98,36 +98,10 @@ class ContactEmailSignupSourceAuditTest < ActionDispatch::IntegrationTest
       # rubocop:disable Minitest/MultipleAssertions
       test "#{surface} anonymous email signup #{outcome} preserves its Source boundary" do
         browser = open_session
-        base_host = ENV.fetch(base_host_key)
         auth_host = ENV.fetch(auth_host_key)
-        browser.host!(base_host)
-        browser.https!
-        browser.get("/sign", params: { ri: "jp" })
-        csrf = browser.response.parsed_body.at_css('input[name="authenticity_token"]')["value"]
-        browser.post(
-          "/sign", params: { ri: "jp", authenticity_token: csrf }, headers: {
-            "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin",
-          },
-        )
-        12.times do
-          break unless browser.response.redirect?
-
-          target = URI.parse(browser.response.location)
-          unless [base_host, visa_host_for_test_base_host(base_host), auth_host].include?(target.host)
-            target = URI.parse(jump_rt_url_from_location_for_test(target.to_s))
-          end
-
-          assert_includes [base_host, visa_host_for_test_base_host(base_host), auth_host], target.host
-          browser.host!(target.host)
-          browser.get(
-            target.request_uri, headers: {
-              "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document", "Sec-Fetch-Site" => "cross-site",
-            },
-          )
-        end
+        admit_browser_to_sign_up!(browser, surface: surface.to_s)
 
         assert_equal [200, auth_host], [browser.response.status, browser.host]
-        switch_browser_to_sign_up!(browser, surface: surface.to_s)
         browser.get("/sign/up/email/new", params: { ri: "jp" })
 
         assert_equal 200, browser.response.status

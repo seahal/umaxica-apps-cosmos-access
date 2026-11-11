@@ -54,6 +54,9 @@ class DpopProofVerifier
     Result.new(valid: false, error: error)
   end
 
+  # NOTE: The proof key intentionally comes from the `jwk` header (RFC 9449 proof of possession).
+  # It proves possession only and is never trusted as an identity key; `jku`, `x5u` and `x5c` are
+  # never used to locate a key.
   def decode_and_authenticate_header
     return invalid("missing_proof") if @proof_jwt.blank?
 

@@ -16,16 +16,10 @@ class SignUpPhaseRegressionAppTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
   include SignInFlowCleanup
   include SignUpJourneyCleanup
-  include DatabaseSelectorPrimary
 
   REFUSAL_BODY = "この画面は古くなっています。最初からやり直してください。"
 
   setup do
-    # The expiry case travels the clock past the DatabaseSelector's read-your-writes delay, which
-    # would route its GETs to the replica. The test environment's replica is a static copy rather
-    # than a lagged writer, so those reads could not see the flow and OTP this case just
-    # committed; keep this file's requests on the primary instead.
-    keep_reads_on_primary!
     sign_up_journey_watermarks!
     @host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     ClientSignUpFlowStatus::DEFAULTS.each { |id| ClientSignUpFlowStatus.find_or_create_by!(id: id) }
@@ -47,11 +41,7 @@ class SignUpPhaseRegressionAppTest < ActionDispatch::IntegrationTest
   teardown do
     TurnstileVerifierStub.challenge_enabled = false
     TurnstileVerifierStub.challenge_response = nil
-    begin
-      delete_sign_up_journey_rows!
-    ensure
-      restore_database_selector_delay!
-    end
+    delete_sign_up_journey_rows!
   end
 
   test "reloading the current otp phase with its flow binding renders it again without changing the flow" do

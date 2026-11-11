@@ -8,29 +8,6 @@ require "test_helper"
 class BranchCoverageBatch38ThresholdPushTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
-  class SettingsRedirectProbeController < ApplicationController
-    include SignSettingsAuthorityRedirect
-  end
-
-  test "SignSettingsAuthorityRedirect actions all redirect through acme settings" do
-    controller = SettingsRedirectProbeController.new
-    request = ActionDispatch::TestRequest.create("GET" => "/settings/secret_credentials?ri=jp")
-    controller.set_request!(request)
-    controller.set_response!(ActionDispatch::TestResponse.new)
-
-    redirected = []
-    controller.define_singleton_method(:redirect_to_acme_authority!) do |path, query: nil|
-      redirected << [path, query]
-    end
-
-    %i(show index edit update destroy).each do |action|
-      controller.public_send(action)
-    end
-
-    assert_equal 5, redirected.size
-    assert(redirected.all? { |path, _| path.to_s.include?("secret_credentials") || path == request.path })
-  end
-
   test "JitSecurityJwtJtiGenerator encoded_length remainder arms" do
     assert_equal 2, JitSecurityJwtJtiGenerator.encoded_length(1)
     assert_equal 3, JitSecurityJwtJtiGenerator.encoded_length(2)

@@ -12,7 +12,20 @@ class AuthSignUpCheckpointCancellationTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
   include OidcAuthAdmissionTestHelper
 
+  self.fixture_table_names = []
+  uses_transaction(
+    "test_app_email_OTP_checkpoint_reissues_the_passcode_on_resend",
+    "test_app_email_OTP_checkpoint_cancels_the_sign-up_ceremony_on_delete",
+    "test_app_telephone_OTP_checkpoint_cancels_the_sign-up_ceremony_on_delete",
+    "test_app_telephone_passkey_checkpoint_cancels_the_sign-up_ceremony_on_delete",
+  )
+
   setup do
+    @initial_client_ids = Client.pluck(:id)
+    @initial_signup_ids = ClientSignUpFlow.pluck(:id)
+    @initial_binding_ids = ClientAuthAdmissionBinding.pluck(:id)
+    @initial_ceremony_ids = ClientAuthCeremonySession.pluck(:id)
+    @initial_parent_ids = ClientOidcAuthorizationTransaction.pluck(:id)
     @previous_forgery_protection = ActionController::Base.allow_forgery_protection
     ActionController::Base.allow_forgery_protection = true
     @previous_turnstile = [TurnstileVerifierStub.enabled, TurnstileVerifierStub.response]
@@ -23,12 +36,37 @@ class AuthSignUpCheckpointCancellationTest < ActionDispatch::IntegrationTest
     TurnstileVerifierStub.challenge_enabled = true
     TurnstileVerifierStub.challenge_response = { "success" => true }
 
-    surface = "app"
-    bootstrap_auth_sign_in_admission!(surface: surface)
-    switch_browser_to_sign_up!(integration_session, surface:, base_browser: @base_browser)
+    bootstrap_auth_sign_up_admission!(surface: "app")
   end
 
   teardown do
+    owners = Client.where.not(id: @initial_client_ids).to_a
+    owner_ids = owners.map(&:id)
+    flows = ClientSignUpFlow.where.not(id: @initial_signup_ids).to_a
+    session_refs =
+      flows.map do |flow|
+        Digest::SHA256.hexdigest(JSON.generate(["email_sign_up", flow.public_id, flow.nonce_digest]))
+      end
+    ClientEmailCeremonyTransaction.where(session_ref: session_refs).delete_all
+    telephone_refs = ClientTelephone.where(user_id: owner_ids).pluck(:public_id)
+    ClientTelephoneCeremonyTransaction.where(telephone_candidate_ref: telephone_refs).delete_all
+    ClientSignUpFlow.where(id: flows.map(&:id)).delete_all
+
+    bindings = ClientAuthAdmissionBinding.where.not(id: @initial_binding_ids).to_a
+    parent_ids = (bindings.map(&:authorization_transaction_id).compact - @initial_parent_ids).uniq
+    ceremony_ids = bindings.flat_map do |binding|
+      [binding.auth_ceremony_session_id, binding.admitted_auth_ceremony_session_id]
+    end.compact.uniq
+    ClientAuthAdmissionBinding.where(id: bindings.map(&:id)).delete_all
+    ClientAuthCeremonySession.where(id: ceremony_ids - @initial_ceremony_ids).delete_all
+    ClientOidcAuthorizationTransaction.where(id: parent_ids).delete_all
+    ClientContactAuditOutbox.where(owner_ref: owners.map(&:public_id)).delete_all
+    ClientEmail.where(user_id: owner_ids).delete_all
+    ClientTelephone.where(user_id: owner_ids).delete_all
+    ClientAccount.where(user_id: owner_ids).delete_all
+    ClientAuthorityLock.where(client_id: owner_ids).delete_all
+    Client.where(id: owner_ids).delete_all
+  ensure
     ActionController::Base.allow_forgery_protection = @previous_forgery_protection
     TurnstileVerifierStub.enabled, TurnstileVerifierStub.response = @previous_turnstile
     TurnstileVerifierStub.challenge_enabled = false
@@ -49,6 +87,8 @@ class AuthSignUpCheckpointCancellationTest < ActionDispatch::IntegrationTest
            user_email: { raw_address: "checkpoint_resend_app@example.com", confirm_policy: "1" },
            "cf-turnstile-response": "test",
          }, headers: headers
+
+    assert_response :redirect
     registered = ClientEmail.order(:created_at).last
     first_sent_at = registered.otp_last_sent_at
     original_target = URI.parse(response.location)
@@ -83,6 +123,7 @@ class AuthSignUpCheckpointCancellationTest < ActionDispatch::IntegrationTest
            "cf-turnstile-response": "test",
          }, headers: headers
 
+    assert_response :redirect
     original_binding = Rack::Utils.parse_query(URI.parse(response.location).query).fetch("fb")
     delete auth_app_sign_up_check_email_otp_url(ri: "jp", host: host, fb: original_binding), headers: headers
 
@@ -105,6 +146,7 @@ class AuthSignUpCheckpointCancellationTest < ActionDispatch::IntegrationTest
            "cf-turnstile-response": "test",
          }, headers: headers
 
+    assert_response :redirect
     original_binding = Rack::Utils.parse_query(URI.parse(response.location).query).fetch("fb")
     delete auth_app_sign_up_check_telephone_otp_url(ri: "jp", host: host, fb: original_binding), headers: headers
 
@@ -126,6 +168,8 @@ class AuthSignUpCheckpointCancellationTest < ActionDispatch::IntegrationTest
            user_telephone: { raw_number: "+819012340111", confirm_policy: "1", confirm_using_mfa: "1" },
            "cf-turnstile-response": "test",
          }, headers: headers
+
+    assert_response :redirect
     registration = session[:user_telephone_registration] || {}
     telephone = ClientTelephone.find_by!(public_id: registration[:public_id] || registration["public_id"])
     original_binding = Rack::Utils.parse_query(URI.parse(response.location).query).fetch("fb")

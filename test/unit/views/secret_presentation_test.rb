@@ -6,8 +6,8 @@ class SecretPresentationTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
   test "one-time reveal retains escaped values, the native storage acknowledgement and both document form contracts" do
-    html = Base::App::SecretPresentationsController.renderer.render(
-      template: "base/app/secret_presentations/create", layout: false,
+    html = Auth::App::Sign::Up::Check::Telephone::SecretsController.renderer.render(
+      template: "auth/app/sign/up/check/telephone/secrets/create", layout: false,
       assigns: { issuance: Struct.new(:origin, :planned_count).new("synthetic", 1),
                  values: ["synthetic<script>value</script>"], },
       locals: { confirmation_url: "/synthetic/confirm",

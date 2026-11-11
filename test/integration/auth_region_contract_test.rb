@@ -44,21 +44,6 @@ class AuthRegionContractTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the Base root link to the neutral sign entry carries the region" do
-    %w(jp us).each do |region|
-      host! ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-      get base_app_root_path, params: { ri: region }
-
-      assert_response :success
-
-      sign_in_href = inertia_props.dig("sign_in", "href")
-      query = Rack::Utils.parse_nested_query(URI.parse(sign_in_href).query)
-
-      assert_equal region, query["ri"],
-                   "the neutral sign link dropped the #{region} region: #{sign_in_href}"
-    end
-  end
-
   # A bare hit on an entry page is refused (E01): Auth is ceremony-only and requires a Base-issued
   # admission code. Redeeming a real one is the only way to reach the rendered page this test needs
   # to scan.
@@ -128,8 +113,8 @@ class AuthRegionContractTest < ActionDispatch::IntegrationTest
                     begin
                       fv5043 = fv5039
                       {
-                        ENV.fetch("PUBLIC_BASE_SERVICE_URL") => "app",
-                        ENV.fetch("PUBLIC_BASE_STAFF_URL") => "org",
+                        ENV.fetch("PUBLIC_AUTH_SERVICE_URL") => "app",
+                        ENV.fetch("PUBLIC_AUTH_STAFF_URL") => "org",
                         ENV.fetch("PUBLIC_VISA_SERVICE_URL") => "app",
                         ENV.fetch("PUBLIC_VISA_STAFF_URL") => "org",
                       }.fetch(fv5043)

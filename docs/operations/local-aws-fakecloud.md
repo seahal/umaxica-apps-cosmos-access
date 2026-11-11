@@ -1,11 +1,12 @@
 # Local AWS Emulation with fakecloud
 
-> **S3 is verified at runtime; everything else is not.** On 2026-09-14 the health endpoint,
-> `object_storage:prepare`, and `object_storage:smoke` were executed from the `core` container
-> against `fakecloud:4566` and all succeeded — see
-> `evidence/2026-09-14-fakecloud-s3-runtime-verification.md`. **Every Terraform command remains
-> unrun**, as does MSK and the `staging-development` environment. Read
-> `docs/operations/fakecloud-migration-verification.md` for the outstanding checklist.
+> Access has removed its application-level object-storage integration. S3 setup below describes the
+> former runtime and remains only as FakeCloud infrastructure context; it does not verify current
+> Access behavior.
+
+> The former S3 SDK path was verified on 2026-09-14 against FakeCloud. That result is historical and
+> does not verify the current Access application; see the retained verification record. Terraform
+> commands and the MSK data plane remain unverified.
 
 The decisions this document implements — Terraform over OpenTofu, Podman-hosted FakeCloud staging
 instead of an AWS account, the module/environment split, and the `DEPLOYMENT_TIER` contract — are
@@ -29,11 +30,11 @@ standing development infrastructure rather than a special mode.
 > `kafka` is listed, and the MSK data plane still does not function here, for the reason given
 > below.
 
-| Surface                              | State                                                                                                                                                                                         |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S3                                   | Fully usable, and **verified at runtime on 2026-09-14** for the AWS SDK path (PUT/HEAD/GET/DELETE on both boundary buckets). The AWS CLI and Terraform AWS provider paths remain unexercised. |
-| MSK control plane                    | Usable. `CreateCluster`, `DescribeCluster`, `GetBootstrapBrokers`, `DeleteCluster` all respond with real AWS response shapes.                                                                 |
-| MSK data plane (a real Kafka broker) | **Not available here.** See below.                                                                                                                                                            |
+| Surface                              | State                                                                                                                         |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| S3                                   | Emulator service available; Access no longer has an application object-storage integration.                                   |
+| MSK control plane                    | Usable. `CreateCluster`, `DescribeCluster`, `GetBootstrapBrokers`, `DeleteCluster` all respond with real AWS response shapes. |
+| MSK data plane (a real Kafka broker) | **Not available here.** See below.                                                                                            |
 
 ### Why There Is No Kafka Broker
 
@@ -65,10 +66,10 @@ is deferred; it is also not currently needed, because the repository contains no
 
 There are two, and they are not interchangeable.
 
-| Caller                                              | Endpoint                                                                                                                       |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| The Rails `core` container                          | `http://fakecloud:4566` — the Compose service name on the `backend` network. This is what `OBJECT_STORAGE_ENDPOINT` is set to. |
-| The developer's host (Terraform, `aws` CLI, `curl`) | `http://localhost:4566` — the loopback publication in `compose.yaml`.                                                          |
+| Caller                                              | Endpoint                                                              |
+| --------------------------------------------------- | --------------------------------------------------------------------- |
+| The Access Rails application                        | No S3 client or object-storage endpoint is configured.                |
+| The developer's host (Terraform, `aws` CLI, `curl`) | `http://localhost:4566` — the loopback publication in `compose.yaml`. |
 
 The host publication is loopback-only (`127.0.0.1:${FAKECLOUD_HOST_PORT:-4566}:4566`), matching the
 standing rule in `development-host-port-exposure.md`. Override the host port with
@@ -88,36 +89,8 @@ into `compose.yaml` or `terraform/environments/development` is obvious on sight,
 behind a generated `/run/secrets` file. `development_container_contract_test.rb` asserts these
 values stay literal and uninterpolated.
 
-Production-shaped deployments require an explicit `DEPLOYMENT_TIER`. The `staging` tier uses these
-S3-compatible variables so the production Rails configuration can run against fakecloud. The
-`production` tier takes no key from them, uses the AWS SDK default credential chain, and raises if
-`OBJECT_STORAGE_ENDPOINT` reaches the AWS S3 path. That is why the application keeps its own
-variable namespace instead of `AWS_ENDPOINT_URL_S3`: an `AWS_*` endpoint variable is consumed
-_implicitly_ by the SDK, which would silently redirect real production S3 traffic past that check.
-
-Development buckets are created idempotently with:
-
-```bash
-bin/rails object_storage:prepare
-bin/rails object_storage:verify
-```
-
-`prepare` creates the Avatar and publishing buckets named by `OBJECT_STORAGE_BUCKET_AVATAR` and
-`OBJECT_STORAGE_BUCKET_PUBLISHING`. `verify` checks FakeCloud health, those buckets, one Avatar
-upload, and one publishing upload.
-
-The complete storage matrix is:
-
-| Rails environment | Deployment tier | Storage                                         |
-| ----------------- | --------------- | ----------------------------------------------- |
-| `test`            | not read        | In-memory; no S3 network access                 |
-| `development`     | not read        | Configured S3-compatible endpoint               |
-| `production`      | `staging`       | Configured S3-compatible endpoint               |
-| `production`      | `production`    | AWS S3 through the platform credential provider |
-
-Missing or unrecognized `DEPLOYMENT_TIER` values fail when production storage configuration is
-resolved. There is no production default because accidentally interpreting staging as real
-production, or the reverse, changes where durable uploads are written.
+Access no longer selects S3 storage by deployment tier or reads object-storage configuration. Shared
+FakeCloud service setup remains separate from the Access Rails runtime.
 
 ### Migrating from RustFS
 
@@ -208,8 +181,8 @@ aws --endpoint-url http://localhost:4566 s3 cp s3://umaxica-avatar-development/p
 aws --endpoint-url http://localhost:4566 s3 rm s3://umaxica-avatar-development/probe
 ```
 
-`bin/rails object_storage:prepare` and `bin/rails object_storage:smoke` do the same round trip from
-inside `core` using the application's own configuration.
+The FakeCloud S3 endpoint can be inspected as infrastructure, but Access has no Rails task or
+application client that exercises it.
 
 ### Verifying MSK
 

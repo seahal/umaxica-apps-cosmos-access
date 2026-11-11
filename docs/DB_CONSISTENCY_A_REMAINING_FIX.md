@@ -1,3 +1,7 @@
+> **Historical migration report.** This records database corrections made before the 2026-11-10
+> surface reset. A domain or table name below does not establish a current route, writer, or model
+> deletion recommendation; see the hard-reset model/database usage report for current references.
+
 # DB Consistency Priority A Fixes - Remaining Issues Resolution
 
 ## Overview

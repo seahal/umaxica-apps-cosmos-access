@@ -3,21 +3,20 @@
 
 require "test_helper"
 
-# Auth policy roots start every response from `Cache-Control: no-store`
-# (adr/global-and-publishing-default-no-store-policy.md): rendered pages, redirects issued by
-# callbacks, and responses the FQDN availability gate ends before the action runs.
+# Auth-owned responses start from `Cache-Control: no-store` (adr/global-and-publishing-default-no-store-policy.md).
 class DefaultNoStoreAuthTest < ActionDispatch::IntegrationTest
-  test "Auth app ApplicationController root page is no-store" do
-    host!("auth.app.localhost")
+  test "Auth app root is an unowned 404 without a redirect" do
+    host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
 
     get("/", params: { ri: "jp" })
 
-    assert_response :success
-    assert_includes response.headers.fetch("Cache-Control"), "no-store"
+    assert_response :not_found
+    assert_equal({ "error" => "unknown_host" }, response.parsed_body)
+    assert_nil response.headers["Location"]
   end
 
   test "Auth app ApplicationController region redirect issued by a callback is no-store" do
-    host!("auth.app.localhost")
+    host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
 
     get("/sign/in")
 
@@ -27,7 +26,7 @@ class DefaultNoStoreAuthTest < ActionDispatch::IntegrationTest
 
   test "Auth app ApplicationController response halted by the availability gate is no-store" do
     Flipper.disable(FqdnAvailabilityRegistry.flag_name_for(:auth_service))
-    host!("auth.app.localhost")
+    host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
 
     get("/sign/in", params: { ri: "jp" })
 
@@ -35,17 +34,18 @@ class DefaultNoStoreAuthTest < ActionDispatch::IntegrationTest
     assert_equal "no-store", response.headers.fetch("Cache-Control")
   end
 
-  test "Auth org ApplicationController root page is no-store" do
-    host!("auth.org.localhost")
+  test "Auth org root is an unowned 404 without a redirect" do
+    host! ENV.fetch("PUBLIC_AUTH_STAFF_URL")
 
     get("/", params: { ri: "jp" })
 
-    assert_response :success
-    assert_includes response.headers.fetch("Cache-Control"), "no-store"
+    assert_response :not_found
+    assert_equal({ "error" => "unknown_host" }, response.parsed_body)
+    assert_nil response.headers["Location"]
   end
 
   test "Auth org ApplicationController region redirect issued by a callback is no-store" do
-    host!("auth.org.localhost")
+    host! ENV.fetch("PUBLIC_AUTH_STAFF_URL")
 
     get("/sign/in")
 
@@ -55,7 +55,7 @@ class DefaultNoStoreAuthTest < ActionDispatch::IntegrationTest
 
   test "Auth org ApplicationController response halted by the availability gate is no-store" do
     Flipper.disable(FqdnAvailabilityRegistry.flag_name_for(:auth_staff))
-    host!("auth.org.localhost")
+    host! ENV.fetch("PUBLIC_AUTH_STAFF_URL")
 
     get("/sign/in", params: { ri: "jp" })
 
@@ -64,7 +64,7 @@ class DefaultNoStoreAuthTest < ActionDispatch::IntegrationTest
   end
 
   test "Auth app BareController robots.txt is no-store" do
-    host!("auth.app.localhost")
+    host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
 
     get("/robots.txt")
 
@@ -73,7 +73,7 @@ class DefaultNoStoreAuthTest < ActionDispatch::IntegrationTest
   end
 
   test "Auth app BareController sitemap keeps its explicit public cache opt-in" do
-    host!("auth.app.localhost")
+    host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
 
     get("/sitemap.xml")
 
@@ -88,7 +88,7 @@ class DefaultNoStoreAuthTest < ActionDispatch::IntegrationTest
 
   test "Auth app BareController response halted by the availability gate is no-store" do
     Flipper.disable(FqdnAvailabilityRegistry.flag_name_for(:auth_service))
-    host!("auth.app.localhost")
+    host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
 
     get("/robots.txt")
 
@@ -97,7 +97,7 @@ class DefaultNoStoreAuthTest < ActionDispatch::IntegrationTest
   end
 
   test "Auth org BareController robots.txt is no-store" do
-    host!("auth.org.localhost")
+    host! ENV.fetch("PUBLIC_AUTH_STAFF_URL")
 
     get("/robots.txt")
 
@@ -106,7 +106,7 @@ class DefaultNoStoreAuthTest < ActionDispatch::IntegrationTest
   end
 
   test "Auth org BareController sitemap keeps its explicit public cache opt-in" do
-    host!("auth.org.localhost")
+    host! ENV.fetch("PUBLIC_AUTH_STAFF_URL")
 
     get("/sitemap.xml")
 
@@ -121,7 +121,7 @@ class DefaultNoStoreAuthTest < ActionDispatch::IntegrationTest
 
   test "Auth org BareController response halted by the availability gate is no-store" do
     Flipper.disable(FqdnAvailabilityRegistry.flag_name_for(:auth_staff))
-    host!("auth.org.localhost")
+    host! ENV.fetch("PUBLIC_AUTH_STAFF_URL")
 
     get("/robots.txt")
 

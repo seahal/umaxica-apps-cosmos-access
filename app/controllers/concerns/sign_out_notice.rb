@@ -103,11 +103,7 @@ module SignOutNotice
     # The session may already be revoked. Clearing the history of a session that survived only
     # costs a server round trip on Back, so the unknown outcome takes the signed-out side.
     session[:inertia_clear_history] = true
-    if respond_to?(:render_oidc_rp_logout_indeterminate, true)
-      render_oidc_rp_logout_indeterminate
-    else
-      render "auth/shared/sign_outs/indeterminate", status: :service_unavailable, layout: false
-    end
+    render_oidc_rp_logout_indeterminate
   end
 
   # REQ-008: completion wording states the global result only. It never states an end time, and an

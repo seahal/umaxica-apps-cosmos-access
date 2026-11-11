@@ -162,18 +162,6 @@ module Concerns
       end
     end
 
-    test "application controllers with OIDC include OidcSsoInitiator" do
-      CONTROLLER_FILES.each_value do |controller|
-        content = controller[:content]
-        controller_name = controller[:path_name]
-
-        if content.include?("oidc_client_id")
-          assert_includes content, "OidcSsoInitiator",
-                          "#{controller_name} with oidc_client_id should include OidcSsoInitiator"
-        end
-      end
-    end
-
     # Controllers that run the full authenticated request lifecycle are marked by
     # enforce_access_policy!. dev/net/palm bare bases do not run it and are excluded.
     def lifecycle_controllers

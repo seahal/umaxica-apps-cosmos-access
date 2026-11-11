@@ -4,11 +4,17 @@
 require "test_helper"
 # require "helpers/global_test_support"
 
-# Probe controller inheriting the lightest surface base so the surface-wide
-# default_web rate limit (declared on the base) is exercised end-to-end.
-class DefaultWebRateLimitProbeController < Base::Net::ApplicationController
-  def index
-    render plain: "ok"
+# Probe controller inheriting Visa's active authority so the surface-wide default web limit is
+# exercised through the retained OP surface.
+module Visa
+  module App
+    class DefaultWebRateLimitProbeController < AuthorityController
+      AUTHENTICATION_MODE = :guest
+
+      def index
+        render plain: "ok"
+      end
+    end
   end
 end
 
@@ -27,17 +33,19 @@ class DefaultWebRateLimitTest < ActionDispatch::IntegrationTest
   # the rate limiter and refuses an unregistered hostname with 503, so a synthetic Host would never
   # reach the limit this test is about.
 
-  test "surface base enforces the 300/min default web limit and renders the json 429" do
+  test "Visa App authority enforces the 300/min default web limit and renders the json 429" do
+    request_headers = { "Host" => ENV.fetch("PUBLIC_VISA_SERVICE_URL"), "Accept" => "application/json" }
+
     with_routing do |set|
-      set.draw { get "/default_web_probe", to: "default_web_rate_limit_probe#index" }
+      set.draw { get "/default_web_probe", to: "visa/app/default_web_rate_limit_probe#index" }
 
       300.times do
-        get "/default_web_probe", headers: { "Host" => "base.net.localhost", "Accept" => "application/json" }
+        get "/default_web_probe", headers: request_headers
 
         assert_response :success
       end
 
-      get "/default_web_probe", headers: { "Host" => "base.net.localhost", "Accept" => "application/json" }
+      get "/default_web_probe", headers: request_headers
 
       assert_response :too_many_requests
       assert_equal "60", response.headers["Retry-After"]
@@ -48,7 +56,7 @@ class DefaultWebRateLimitTest < ActionDispatch::IntegrationTest
 
       assert_equal "urn:umaxica:problem:rate-limited", body.fetch("type")
       assert_equal I18n.t("errors.rate_limit.exceeded"), body.fetch("detail")
-      assert_not_includes response.body, "base_net_default_web"
+      assert_not_includes response.body, "visa_app_authority_default_web"
     end
   end
 
@@ -57,7 +65,7 @@ class DefaultWebRateLimitTest < ActionDispatch::IntegrationTest
       Rails.root.glob("app/controllers/**/application_controller.rb")
         .select { |path| path.read.match?(/include ::RateLimit\b/) }
 
-    assert_operator bases.size, :>=, 11, "expected at least 11 RateLimit-including surface bases"
+    assert_equal 2, bases.size, "Auth owns the two retained ApplicationController roots"
 
     missing =
       bases.reject do |path|

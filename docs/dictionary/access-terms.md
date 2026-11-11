@@ -116,9 +116,12 @@ The end-user product surface.
 
 The staff and organization surface.
 
-### Com Surface
+### Com Surface (Retired)
 
-The public and corporate surface.
+The former public and corporate UI and routing surface. Access no longer serves it. `Com` may still
+identify retained legacy identity data pending the separate model and database review.
+
+- Status: `deprecated`.
 
 ### Regional Repository Boundary
 

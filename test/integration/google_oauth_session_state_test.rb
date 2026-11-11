@@ -14,7 +14,7 @@ class GoogleOauthSessionStateTest < ActionDispatch::IntegrationTest
     OmniAuth.config.test_mode = false
     @host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     @private_auth_host = ENV.fetch("PRIVATE_AUTH_SERVICE_URL")
-    bootstrap_auth_sign_in_admission!(surface: "app", region: "jp", target_link_uri: "/dashboard")
+    bootstrap_auth_sign_in_admission!(surface: "app", region: "jp")
   end
 
   teardown do

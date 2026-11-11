@@ -55,6 +55,8 @@ module RedirectsSignedTargetSupport
     expected_session_nonce = session_nonce.to_s
     return true if expected_session_nonce.blank?
 
+    # NOTICE: Session nonce compared with `==` after the signed target is verified, so a forged
+    # target cannot reach it. Move to secure_compare (docs/backlog/2026-11-10-core-security-review-followups.md, item 3).
     payload["session_nonce"].to_s == expected_session_nonce
   end
 

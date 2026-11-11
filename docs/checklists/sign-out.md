@@ -1,21 +1,23 @@
 # Sign-out
 
-These are acceptance requirements for the APP, COM and ORG OP/RP surfaces. They describe expected
-behavior, not evidence that a deployment has passed acceptance.
+These are acceptance requirements for the Visa APP/ORG OpenID Provider and its retained external RP
+registrations. Access implements the OP endpoints; each external RP owns its local logout callback,
+session cleanup, and completion routes. They describe expected behavior, not evidence that a
+deployment has passed acceptance.
 
 - SIGNOUT-1: A current-session OP logout stops the current Visa device session, every root row in
   its rotation lineage and every grant under that device. Each root has its own
   `rp_initiated_logout` stop of scope `root`; the principal epoch does not advance. Other devices,
   principals and realms stay independent.
-- SIGNOUT-2: An authenticated RP-cell `POST /sign/out` resolves its own session from the verified
-  local credential, captures only the Refresh Token with the same `sid`, commits local session
-  revocation before clearing its host-only credentials, resets its session and stores a one-use
-  notice bound to its surface and OIDC `state`. It then calls the fixed registered Visa `/revoke`
-  endpoint with the registered client authentication method, a two-second total budget and at most
-  one retry after a network failure. It sends no ID Token hint and does not mutate OP authority
-  directly. A failed remote revoke never restores the local session; any remaining Refresh Token is
-  bounded by its original expiry. A local revoke commit failure returns 503 before clearing or
-  reporting success.
+- SIGNOUT-2: An authenticated external RP-cell `POST /sign/out` resolves its own session from the
+  verified local credential, captures only the Refresh Token with the same `sid`, commits local
+  session revocation before clearing its host-only credentials, resets its session and stores a
+  one-use notice bound to its surface and OIDC `state`. It then calls the fixed registered Visa
+  `/revoke` endpoint with the registered client authentication method, a two-second total budget and
+  at most one retry after a network failure. It sends no ID Token hint and does not mutate OP
+  authority directly. A failed remote revoke never restores the local session; any remaining Refresh
+  Token is bounded by its original expiry. A local revoke commit failure returns 503 before clearing
+  or reporting success.
 - SIGNOUT-3: When an ID Token hint is supplied, Visa validates its signature, issuer, audience, type
   and not-before time and accepts an expired hint. The supplied `client_id` must match. A verified
   hint's `sid` must identify a grant for that client whose root belongs to the current Visa device

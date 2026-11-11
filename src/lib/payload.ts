@@ -43,20 +43,3 @@ export function readObject(payload: unknown, key: string): unknown {
   const value = propertyOf(payload, key);
   return typeof value === "object" && value !== null ? value : undefined;
 }
-
-/** The string-valued properties of a payload, for the nested scopes a form's data carries. */
-export function readRecord(payload: unknown): Record<string, string> {
-  const record: Record<string, string> = {};
-  if (typeof payload !== "object" || payload === null) {
-    return record;
-  }
-
-  for (const key of Object.keys(payload)) {
-    const value = propertyOf(payload, key);
-    if (typeof value === "string") {
-      record[key] = value;
-    }
-  }
-
-  return record;
-}

@@ -1,18 +1,17 @@
-# OIDC Discovery Profile (historical Acme vocabulary)
+# OIDC Discovery Profile
 
-> **Current-contract supersession (2026-10-24):** This profile predates the Visa OP / Base RP host
-> split. Its Acme issuer vocabulary and discovery descriptions are retained for protocol-history
-> context only. The active Rails OIDC authority is Visa, Auth is ceremony-only, and Base is the
-> browser RP. The current client/route contract is defined by `adr/visa-op-host.md`,
-> `app/values/oidc_issuer.rb`, and the live Visa/Base route registries. Do not use this document to
-> restore an Acme route family or a shared Base OP/RP host.
+> **Current scope (2026-11-10):** Visa APP and ORG are the local OpenID Provider and Authorization
+> Server surfaces. Auth APP and ORG provide credential ceremonies. External relying-party client
+> registrations remain in Visa, but their callbacks, sessions, and browser routes belong to their
+> own repositories. Do not infer local RP routes from a registered OIDC client.
 
-Visa (`https://visa.umaxica.app`, `.com`, `.org`) is the only IdP / Authorization Server. Sign /
-Core / Base / Palm are relying parties and hold no IdP authority. The historical sections below
-retain Acme names where they describe the former profile. This document records the intentional,
-non-default choices in Acme's published OIDC metadata so reviewers do not mistake them for gaps.
+Visa (`https://visa.umaxica.app` and `https://visa.umaxica.org`) is the only local IdP /
+Authorization Server. External registered clients hold no IdP authority. This document records the
+intentional, non-default choices in Visa's published OIDC metadata so reviewers do not mistake them
+for gaps. Older Acme vocabulary in cited decisions is retained as protocol history.
 
-Source of truth: `app/values/oidc_discovery_document.rb`, `app/values/oidc_issuer.rb`.
+Source of truth: `app/values/oidc_discovery_document.rb`, `app/values/oidc_issuer.rb`, and
+`app/values/oidc_client_registry.rb`.
 
 ## ES384-only is a private profile, not strict OIDC conformance
 
@@ -32,13 +31,12 @@ This is a deliberate private profile:
 
 - All ID Tokens and client assertions are EC P-384 / ES384.
 - JWKS publishes only EC P-384 keys (`kty=EC`, `crv=P-384`, `alg=ES384`, `use=sig`).
-- Relying parties in this system are first-party (Sign / Core / Base / Palm) and are configured for
-  ES384, so the broad-compatibility argument for `RS256` does not apply.
+- Retained external clients are configured for this private profile; their callback implementations
+  remain with the external RP owners.
 
-The logout completion URI is not part of discovery. Discovery continues to publish
-`end_session_endpoint` as `https://<visa-surface-host>/oidc/logout`; browser completion returns to
-the RP surface-local `/sign/out/complete`, or the Base RP completion route when the RP is a Base
-host.
+The logout completion URI is not part of discovery. Discovery publishes `end_session_endpoint` on
+the matching Visa APP or ORG host. Any registered RP completion URI is validated against that
+client's Visa registration and served by the external RP owner.
 
 If `RS256` is ever required, it must be implemented end to end (key rotation, JWKS publication, ID
 token signing selection, client-assertion verification, and tests) rather than advertised in
@@ -50,8 +48,8 @@ metadata alone.
 localization/preference hint, not an OIDC protocol parameter.
 
 - The discovery endpoint is served by a `BareController` and ignores `ri`.
-- `issuer` is always the corresponding `https://visa.umaxica.*` origin with no query or fragment,
-  regardless of `ri`.
+- `issuer` is always the corresponding APP or ORG Visa origin with no query or fragment, regardless
+  of `ri`.
 - Advertised endpoints (`authorization_endpoint`, `token_endpoint`, `userinfo_endpoint`, `jwks_uri`,
   `revocation_endpoint`, `end_session_endpoint`) never contain `ri`.
 - Key selection is by surface (host), orthogonal to `ri`.
@@ -80,8 +78,8 @@ staging, review, and other non-local environments must provide deployable key id
 
 ## Delivered reconciliation (2026-10-24)
 
-Visa is the active OIDC discovery, authorization, token, UserInfo and logout authority. The
-discovery document is generated from the registered allowlist and advertises only supported grant
-types and endpoints. UserInfo accepts Bearer credentials on GET or POST and applies scope-filtered
-claims. The old Acme vocabulary in the lower sections is historical; the current route and client
-registry are defined by the Visa OP ADR and live route tests.
+Visa is the active APP/ORG OIDC discovery, authorization, token, UserInfo and logout authority. The
+discovery document is generated from the retained client registry and advertises only supported
+grant types and endpoints. UserInfo accepts Bearer credentials on GET or POST and applies
+scope-filtered claims. External RP return destinations remain registered protocol data, not local
+Access routes.

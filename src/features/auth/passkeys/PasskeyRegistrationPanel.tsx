@@ -1,9 +1,6 @@
-// React port of `src/controllers/passkey_registration_controller.js`.
-//
-// Same three-step ceremony against the same endpoints: solve an invisible Turnstile token, POST it
+// Three-step passkey registration ceremony: solve an invisible Turnstile token, POST it
 // to the options endpoint, run `navigator.credentials.create`, and POST the attestation to the
-// verification endpoint. The attestation encoding keeps the `transports` field the Stimulus
-// controller sent, because the server stores it.
+// verification endpoint. The attestation encoding includes the `transports` field the server stores.
 import { useRef, useState } from "react";
 
 import Button from "@/components/ui/Button";

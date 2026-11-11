@@ -9,9 +9,8 @@ class Auth::App::UiFoundationTest < ActionDispatch::IntegrationTest
 
   setup do
     @user = create_verified_user_with_email(email_address: "ui-foundation-#{SecureRandom.hex(4)}@example.com")
-    @host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL", "auth.app.localhost")
-    @sign_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL", "auth.app.localhost")
-    @base_host = ENV.fetch("PRIVATE_BASE_SERVICE_URL", "www.app.localhost")
+    @host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+    @sign_host = @host
   end
 
   test "retired passkey settings route is absent from sign" do
@@ -35,13 +34,6 @@ class Auth::App::UiFoundationTest < ActionDispatch::IntegrationTest
     assert_raises(ActionController::RoutingError) do
       Rails.application.routes.recognize_path("https://#{@sign_host}/settings/sessions", method: :get)
     end
-  end
-
-  test "session management route exists on base identity" do
-    route = Rails.application.routes.recognize_path("https://#{@base_host}/sessions", method: :get)
-
-    assert_equal "base/app/identity/sessions", route.fetch(:controller)
-    assert_equal "index", route.fetch(:action)
   end
 
   test "TOTP registration route accepts theme params" do
@@ -242,7 +234,7 @@ class Auth::App::UiFoundationTest
   end
 
   def seed_social_auth_session(provider:, intent: "login", user: nil, entry: nil, ri: "jp", rt: nil, referer: nil)
-    host = configured_host(:sign_service)
+    host = configured_host(:auth_service)
     host!(host) if respond_to?(:host!)
     normalized_provider = SocialIdentifiable.normalize_provider(provider)
     continue_path =

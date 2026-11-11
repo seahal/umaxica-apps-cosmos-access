@@ -18,8 +18,7 @@ class AuthCredentialTimingProtectionContractTest < ActiveSupport::TestCase
   ].freeze
 
   test "Email authentication timing does not expose identifier-backed shared OTP policy" do
-    [Auth::App::Sign::In::EmailsController,
-     SignInOtpResender, EnforcementRecoveryCeremonyFlow, WithdrawalCeremonyReentry,].each do |boundary|
+    [Auth::App::Sign::In::EmailsController, SignInOtpResender].each do |boundary|
       assert_not_includes boundary.included_modules.map(&:name), "CommonOtp", boundary.name
     end
   end

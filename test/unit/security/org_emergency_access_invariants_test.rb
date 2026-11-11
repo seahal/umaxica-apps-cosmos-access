@@ -11,16 +11,13 @@ require "test_helper"
 # the WebAuthn verification code so a fix could land in one path and not the
 # other.
 class OrgEmergencyAccessInvariantsTest < ActiveSupport::TestCase
+  APP_HOST = "auth.app.localhost"
+  ORG_HOST = "auth.org.localhost"
+
   EMERGENCY_ROUTES = {
     "GET" => "/sign/in/emergency/passkey/new",
     "POST" => %w(/sign/in/emergency/passkey/options /sign/in/emergency/passkey/verification),
   }.freeze
-
-  def org_host = ENV.fetch("PUBLIC_AUTH_STAFF_URL", "auth.org.localhost")
-
-  def app_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL", "auth.app.localhost")
-
-  def com_host = ENV.fetch("PUBLIC_AUTH_CORPORATE_URL", "auth.com.localhost")
 
   def recognizes?(host, method, path)
     Rails.application.routes.recognize_path("https://#{host}#{path}", method: method)
@@ -30,46 +27,37 @@ class OrgEmergencyAccessInvariantsTest < ActiveSupport::TestCase
   end
 
   test "org publishes the emergency sign-in ceremony" do
-    assert recognizes?(org_host, "GET", "/sign/in/emergency/passkey/new")
-    assert recognizes?(org_host, "POST", "/sign/in/emergency/passkey/options")
-    assert recognizes?(org_host, "POST", "/sign/in/emergency/passkey/verification")
+    assert recognizes?(ORG_HOST, "GET", "/sign/in/emergency/passkey/new")
+    assert recognizes?(ORG_HOST, "POST", "/sign/in/emergency/passkey/options")
+    assert recognizes?(ORG_HOST, "POST", "/sign/in/emergency/passkey/verification")
   end
 
   test "app publishes no emergency sign-in ceremony" do
-    assert recognizes?(app_host, "GET", "/sign/in/passkey/new"),
-           "#{app_host} does not look like a live auth surface; the negative assertions would be vacuous"
+    assert recognizes?(APP_HOST, "GET", "/sign/in/passkey/new"),
+           "#{APP_HOST} does not look like a live auth surface; the negative assertions would be vacuous"
 
     EMERGENCY_ROUTES.each do |method, paths|
       Array(paths).each do |path|
-        assert_not recognizes?(app_host, method, path),
-                   "#{app_host} must not publish #{method} #{path}; Emergency Access is org only"
+        assert_not recognizes?(APP_HOST, method, path),
+                   "#{APP_HOST} must not publish #{method} #{path}; Emergency Access is org only"
       end
     end
   end
 
-  test "the retired corporate auth host publishes no sign-in ceremony" do
-    assert_not recognizes?(com_host, "GET", "/sign/in/passkey/new")
-
-    landing = Rails.application.routes.recognize_path("https://#{com_host}/", method: "GET")
-
-    assert_equal %w(unknown_hosts show), [landing[:controller], landing[:action]],
-                 "the corporate Auth host must fall through to the unknown-host handler"
-  end
-
   test "the emergency ceremony recognizes only its intended verbs" do
-    assert_not recognizes?(org_host, "POST", "/sign/in/emergency/passkey/new")
-    assert_not recognizes?(org_host, "GET", "/sign/in/emergency/passkey/options")
-    assert_not recognizes?(org_host, "GET", "/sign/in/emergency/passkey/verification")
-    assert_not recognizes?(org_host, "DELETE", "/sign/in/emergency/passkey/verification")
+    assert_not recognizes?(ORG_HOST, "POST", "/sign/in/emergency/passkey/new")
+    assert_not recognizes?(ORG_HOST, "GET", "/sign/in/emergency/passkey/options")
+    assert_not recognizes?(ORG_HOST, "GET", "/sign/in/emergency/passkey/verification")
+    assert_not recognizes?(ORG_HOST, "DELETE", "/sign/in/emergency/passkey/verification")
   end
 
   test "the normal org passkey flow is preserved and permanent secret sign-in is retired" do
-    assert recognizes?(org_host, "GET", "/sign/in")
-    assert recognizes?(org_host, "GET", "/sign/in/passkey/new")
-    assert recognizes?(org_host, "POST", "/sign/in/passkey/options")
-    assert recognizes?(org_host, "POST", "/sign/in/passkey/verification")
-    assert_not recognizes?(org_host, "GET", "/sign/in/secret/new")
-    assert_not recognizes?(org_host, "POST", "/sign/in/secret")
+    assert recognizes?(ORG_HOST, "GET", "/sign/in")
+    assert recognizes?(ORG_HOST, "GET", "/sign/in/passkey/new")
+    assert recognizes?(ORG_HOST, "POST", "/sign/in/passkey/options")
+    assert recognizes?(ORG_HOST, "POST", "/sign/in/passkey/verification")
+    assert_not recognizes?(ORG_HOST, "GET", "/sign/in/secret/new")
+    assert_not recognizes?(ORG_HOST, "POST", "/sign/in/secret")
   end
 
   # Emergency Access is a policy, not a protocol: it must not acquire its own
@@ -87,7 +75,7 @@ class OrgEmergencyAccessInvariantsTest < ActiveSupport::TestCase
 
     forbidden.each do |path|
       %w(GET POST DELETE).each do |method|
-        assert_not recognizes?(org_host, method, path), "#{method} #{path} must not exist"
+        assert_not recognizes?(ORG_HOST, method, path), "#{method} #{path} must not exist"
       end
     end
   end

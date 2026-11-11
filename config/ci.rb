@@ -17,7 +17,7 @@ CI.run do
        "test_rp_base_org_db,test_rp_core_org_db,test_rp_warp_org_db," \
        "test_rp_edit_org_db,test_rp_tech_org_db," \
        "test_org_signal_db,test_avatar_db,test_chronicle_db," \
-       "test_occurrence_db,test_queue_db,test_search_db,test_storage_db " \
+       "test_occurrence_db,test_queue_db,test_search_db " \
        "env RAILS_ENV=test bin/rails db:test:prepare"
 
   step "Style: JavaScript", "bun run check"

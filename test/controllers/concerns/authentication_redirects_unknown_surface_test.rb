@@ -3,8 +3,8 @@
 
 require "test_helper"
 
-# A controller outside the Auth, Sign, Acme, and Base namespaces has no sign-in surface. Asking it
-# for a sign-in destination is a programmer error and must fail, never resolve to Home "/" or to a
+# A controller outside the Auth and Visa namespaces has no sign-in surface. Asking it
+# for a sign-in destination must fail, never resolve to a root path or to a
 # guessed "/dashboard" or "/welcome" (no-silent-fallback).
 class AuthenticationRedirectsUnknownSurfaceTest < ActionController::TestCase
   self.fixture_table_names = []
@@ -22,23 +22,27 @@ class AuthenticationRedirectsUnknownSurfaceTest < ActionController::TestCase
     def welcome
       redirect_to(sign_in_welcome_path)
     end
+
+    def oidc_authentication_ceremony? = false
   end
 
   tests SignInCompletionsController
 
-  test "default sign-in destination fails for a controller without a sign-in surface" do
+  test "missing relying-party dashboard return fails explicitly" do
     with_surface_probe_routes do
-      error = assert_raises(AuthenticationRedirects::UnknownSignInSurfaceError) { get(:dashboard) }
+      error = assert_raises(ActionController::BadRequest) { get(:dashboard) }
 
-      assert_includes error.message, SignInCompletionsController.name
+      assert_equal "No relying-party dashboard return is available", error.message
     end
 
     assert_nil response.location
   end
 
-  test "welcome destination fails for a controller without a sign-in surface" do
+  test "missing relying-party welcome return fails explicitly" do
     with_surface_probe_routes do
-      assert_raises(AuthenticationRedirects::UnknownSignInSurfaceError) { get :welcome }
+      error = assert_raises(ActionController::BadRequest) { get(:welcome) }
+
+      assert_equal "No relying-party welcome return is available", error.message
     end
 
     assert_nil response.location

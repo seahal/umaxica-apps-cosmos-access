@@ -1,14 +1,9 @@
 # OAuth 2.0 Demonstrating Proof of Possession (DPoP)
 
-> **Partially superseded by the Acme / Sign / Core / Base / Palm boundary:** The DPoP vocabulary in
-> this document remains useful as retained implementation detail. It must not assign token authority
-> outside Acme, and it must not be treated as the default entry point for new Core, Base, or Palm
-> flows.
-
-> **Participation update (2026-10-13):** Palm is now a browser RP and its former native bearer API
-> is retired. Its Browser RP credentials use host-only cookies and the common session contract; this
-> does not add DPoP to the browser flow. Native-client DPoP policy remains subject to a separate
-> reviewed decision.
+Visa's APP/ORG OAuth token endpoints retain optional DPoP support for registered external clients.
+Those registrations do not create local Access RP callback or API surfaces. Auth owns credential
+ceremonies; Visa owns token issuance and verification. Former Base, Core, COM, Palm and Sign route
+examples below are historical and are not current Access endpoints.
 
 ## Specification
 
@@ -34,9 +29,9 @@ of the private key by signing a DPoP proof JWT on each request.
   operations.** These are low-frequency and security-critical, and call `Dpop::ProofValidator`
   directly with the default `record_jti: true`.
 - **The replay store is relational, not Redis.** `Dpop::JtiReplayGuard` writes through
-  `DpopProofStateable` to per-resource tables (`client_dpop_proof_states`,
-  `operator_dpop_proof_states`, `visitor_dpop_proof_states`) with a 300-second TTL on `expires_at`.
-  Expired rows are pruned by `DpopProofStatePurgeJob` (see Retention below).
+  `DpopProofStateable` to Client and Operator proof-state tables with a 300-second TTL on
+  `expires_at`. Historical Visitor rows are outside current route ownership. Expired rows are pruned
+  by `DpopProofStatePurgeJob` (see Retention below).
 - **This conforms to RFC 9449** where JTI checking is SHOULD, not MUST.
 - **Supported algorithms:** ES256 and ES384 only (no RSA).
 - **Adoption posture:** DPoP remains supported and maintained as optional proof-of-possession
@@ -48,21 +43,20 @@ of the private key by signing a DPoP proof JWT on each request.
 
 Server-side DPoP support lives in flat `dpop_*.rb` files under `app/lib/` and `app/services/`:
 
-| File                                            | Purpose                                               |
-| ----------------------------------------------- | ----------------------------------------------------- |
-| `app/lib/dpop_proof_verifier.rb`                | Core DPoP proof JWT validation (RFC 9449 Section 4.3) |
-| `app/services/dpop_request_verifier.rb`         | Per-request DPoP verification orchestrator            |
-| `app/services/dpop_jti_replay_guard.rb`         | RDB-backed JTI deduplication (stateful paths only)    |
-| `lib/jit_security_jwt_thumbprint_calculator.rb` | RFC 7638 JWK Thumbprint and `ath` computation         |
+| File                                            | Purpose                                            |
+| ----------------------------------------------- | -------------------------------------------------- |
+| `app/lib/dpop_proof_verifier.rb`                | DPoP proof JWT validation (RFC 9449 Section 4.3)   |
+| `app/services/dpop_request_verifier.rb`         | Per-request DPoP verification orchestrator         |
+| `app/services/dpop_jti_replay_guard.rb`         | RDB-backed JTI deduplication (stateful paths only) |
+| `lib/jit_security_jwt_thumbprint_calculator.rb` | RFC 7638 JWK Thumbprint and `ath` computation      |
 
-Token issuance controllers (`Sign::App::TokensController`, `Sign::Org::TokensController`,
-`Sign::Com::TokensController`) forward the `DPoP` proof header, request URI, and request method to
-`Oidc::TokenExchangeService`. When validation succeeds, the issued access token and persisted token
-row are both bound with `dpop_jkt`.
+Visa's APP and ORG OAuth token controllers forward the `DPoP` proof header, request URI, and request
+method to the token exchange coordinator. When validation succeeds, the issued access token and
+persisted token row are both bound with `dpop_jkt`.
 
-Primary login issuance also accepts an optional `DPoP` proof header. When present and valid,
-`Authentication::Base#log_in` stores the proof key thumbprint on the token row and embeds the same
-value in the issued JWT `cnf.jkt` claim.
+Visa token exchange accepts an optional `DPoP` proof header. When present and valid, token issuance
+stores the proof key thumbprint on the token row and embeds the same value in the issued JWT
+`cnf.jkt` claim.
 
 Resource enforcement runs through `Authentication::CurrentResourceResolver` for Authorization-header
 access. A token with `cnf.jkt` must be presented as `Authorization: DPoP <token>` with a matching
@@ -70,7 +64,7 @@ proof header. Presenting a DPoP-bound token as Bearer, omitting the proof, or se
 `ath` does not match the access token fails authentication and returns a fresh `DPoP-Nonce` header
 where the authentication pipeline can set one.
 
-Token tables (`user_tokens`, `staff_tokens`, `customer_tokens`) store:
+Client and Operator token records store:
 
 - `dpop_jkt` (string) — Base64url-encoded SHA-256 thumbprint of the client's public key
 
@@ -91,21 +85,21 @@ JWT access tokens include:
 ## Retention
 
 JTI replay rows and issued nonces are short-lived. Each row carries `expires_at`
-(`DpopProofStateable::TTL_SECONDS`, 300s). `DpopProofStatePurgeJob` deletes expired rows from
-`client_dpop_proof_states`, `operator_dpop_proof_states`, and `visitor_dpop_proof_states` in
-batches. It is scheduled from `config/recurring.yml` (`dpop_proof_state_purge`). These tables are
-**not** covered by `RetentionPurgeJob`, which is keyed on `purge_eligible_at`, not `expires_at`.
+(`DpopProofStateable::TTL_SECONDS`, 300s). `DpopProofStatePurgeJob` deletes expired rows from the
+Client and Operator proof-state tables in batches. It is scheduled from `config/recurring.yml`
+(`dpop_proof_state_purge`). These tables are **not** covered by `RetentionPurgeJob`, which is keyed
+on `purge_eligible_at`, not `expires_at`.
 
 ## Current Adoption Posture
 
-The current Acme / Sign / Core / Base / Palm boundary keeps DPoP available without making it a
-preferred entry point. Existing server-side interfaces, token claims, persisted `dpop_jkt` fields,
-proof-state tables, nonce/JTI services, cleanup jobs, and regression tests stay in place.
+The current Visa APP/ORG token endpoints keep DPoP available as an optional sender constraint for
+registered external clients. Existing server-side interfaces, token claims, persisted `dpop_jkt`
+fields, Client and Operator proof-state tables, nonce/JTI services, cleanup jobs, and verification
+coverage remain. DPoP does not add local RP or product API routes to Access.
 
-DPoP support being enabled does not by itself make a new flow approved to use it. Any future Core,
-Base, Palm, iOS, Android, or other client implementation that wants to rely on DPoP must first
-review the current implementation and threat model, then update the relevant ADR or plan with that
-decision.
+DPoP support being enabled does not by itself approve an external client to use it. A registered
+client that relies on DPoP must follow the Visa OIDC contract and its reviewed key-storage and
+replay requirements.
 
 ## Relationship to DBSC
 
@@ -121,23 +115,13 @@ DBSC is the active browser-session binding mechanism. DPoP remains available for
 Authorization-header token binding where an explicitly reviewed native or API flow chooses it. The
 retired Palm bearer API is not a current DPoP consumer.
 
-## VisitorAccount Token Strategy
+## External Client Use
 
-Each client type uses a different combination of token transport and proof-of-possession mechanism,
-based on its threat model:
-
-| VisitorAccount | Access Token                                   | Refresh Token                | Proof-of-Possession                       |
-| -------------- | ---------------------------------------------- | ---------------------------- | ----------------------------------------- |
-| Rails HTML     | HttpOnly cookie                                | HttpOnly cookie              | DBSC                                      |
-| Core browser   | HttpOnly cookie-carried JWT on Rails Core APIs | HttpOnly cookie              | DBSC where available                      |
-| iOS / Android  | Acme-issued bearer token                       | Secure storage (Keychain/KS) | None by default; DPoP opt-in outside Palm |
-
-**Notes:**
-
-- `device_id` is a device identifier used for session management and token family tracking. It is
-  not a proof-of-possession mechanism.
-- DBSC binds cookies to a device key pair (proof-of-possession at the transport layer).
-- DPoP binds bearer tokens to a client key pair (proof-of-possession at the application layer).
+Visa issues OIDC tokens to registered relying parties. The RP's application owns its callback,
+browser session and resource API. A client may use DPoP-bound access tokens when its registration
+and supported resource calls require sender constraint; Access does not serve the RP's API surface.
+`device_id` is a device identifier, not proof of possession. DBSC binds browser cookies to a device
+key pair, while DPoP binds an access token to a client key pair.
 
 ### Refresh Token Rotation Family
 
@@ -159,7 +143,7 @@ Native apps (iOS / Android) do not require DPoP at this time. However, the serve
 infrastructure is designed to accept DPoP proofs from native clients that receive Authorization-
 header access tokens:
 
-- Token tables (`user_tokens`, `staff_tokens`, `customer_tokens`) already store `dpop_jkt`.
+- Client and Operator token records already store `dpop_jkt`.
 - `DPoP::ProofValidator` and `DPoP::RequestVerifier` are client-agnostic.
 - The `cnf.jkt` claim in JWT access tokens works regardless of client type.
 

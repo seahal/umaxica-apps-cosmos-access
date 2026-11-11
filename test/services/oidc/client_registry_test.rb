@@ -23,7 +23,7 @@ class OidcClientRegistryTest < ActiveSupport::TestCase
     assert_equal "client", client.resource_type
     assert_equal "Warp App RP", client.name
     assert_includes client.domains,
-                    ENV.fetch("PUBLIC_WARP_SERVICE_URL", "warp.app.localhost")
+                    ENV.fetch("PUBLIC_WARP_SERVICE_URL")
     assert_kind_of Array, client.redirect_uris
     assert client.redirect_uris.any? { |uri| uri.include?("/oidc/callback") }
   end
@@ -180,7 +180,7 @@ class OidcClientRegistryTest < ActiveSupport::TestCase
     assert_equal "TECH_ORG_WW", client.jwt_namespace
     assert_equal OperatorCapabilityGrant::TECH_ACCESS, client.required_operator_capability
     expected_hosts =
-      [ENV.fetch("PUBLIC_TECH_STAFF_URL"), ENV["PRIVATE_TECH_STAFF_URL"]].compact.map do |origin|
+      [ENV.fetch("PUBLIC_TECH_STAFF_URL")].map do |origin|
         URI.parse(origin).host || URI.parse("//#{origin}").host
       end
 
@@ -343,7 +343,7 @@ class OidcClientRegistryTest < ActiveSupport::TestCase
   test "core client is registered to regional redirect hosts" do
     expectations = {
       "warp-app-jp" => {
-        host: ENV.fetch("PUBLIC_WARP_SERVICE_URL", "warp.app.localhost"),
+        host: ENV.fetch("PUBLIC_WARP_SERVICE_URL"),
         aud: "warp-app-jp",
         resource_type: "client",
       },
@@ -364,7 +364,7 @@ class OidcClientRegistryTest < ActiveSupport::TestCase
   test "core app client is registered to the core app redirect host" do
     client = OidcClientRegistry.find!("core-app-jp")
     redirect_hosts = client.redirect_uris.map { |uri| URI.parse(uri).host }
-    expected_host = ENV.fetch("PUBLIC_CORE_SERVICE_URL", "jpx.umaxica.app")
+    expected_host = ENV.fetch("PUBLIC_CORE_SERVICE_URL")
 
     assert_includes redirect_hosts, expected_host
     assert_includes client.domains, expected_host

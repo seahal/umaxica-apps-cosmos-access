@@ -9,7 +9,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { solveInvisibleTurnstile as realSolve } from "@/features/auth/passkeys/invisibleTurnstile";
-import type { StepUpPasskeyFormProps } from "@/features/auth/passkeys/StepUpPasskeyForm";
 
 import {
   jsonResponse,
@@ -38,7 +37,6 @@ const { default: PasskeyAuthenticationPanel } =
 type PasskeyAuthenticationPanelProps = Parameters<typeof PasskeyAuthenticationPanel>[0];
 const { default: PasskeyRegistrationPanel } =
   await import("@/features/auth/passkeys/PasskeyRegistrationPanel");
-const { default: StepUpPasskeyForm } = await import("@/features/auth/passkeys/StepUpPasskeyForm");
 const { PASSKEY_MESSAGES, TURNSTILE_DEFAULT_ERROR } =
   await import("@/features/auth/passkeys/messages");
 
@@ -575,107 +573,5 @@ describe("PasskeyRegistrationPanel", () => {
       TURNSTILE_DEFAULT_ERROR,
       expect.any(HTMLElement),
     );
-  });
-});
-
-describe("StepUpPasskeyForm", () => {
-  const nativeRequestSubmit = HTMLFormElement.prototype.requestSubmit;
-
-  afterEach(() => {
-    HTMLFormElement.prototype.requestSubmit = nativeRequestSubmit;
-  });
-
-  const props = {
-    action: "/verification/passkey",
-    param_scope: "verification",
-    challenge_id: "challenge-1",
-    request_options: REQUEST_OPTIONS,
-    submit_label: "認証する",
-  };
-
-  const start = async (overrides: Partial<StepUpPasskeyFormProps> = {}) => {
-    const screen = mount(
-      <StepUpPasskeyForm
-        {...props}
-        {...overrides}
-      />,
-    );
-    screen.click("button[type=button]");
-    await screen.flush();
-    return screen;
-  };
-
-  it("carries the server's challenge and the page's CSRF token in the form", () => {
-    const screen = mount(<StepUpPasskeyForm {...props} />);
-    const form = screen.container.querySelector("form");
-
-    expect(form?.getAttribute("action")).toBe("/verification/passkey");
-    expect(
-      screen.container.querySelector<HTMLInputElement>('input[name="authenticity_token"]')?.value,
-    ).toBe("csrf-value");
-    expect(
-      screen.container.querySelector<HTMLInputElement>('input[name="verification[challenge_id]"]')
-        ?.value,
-    ).toBe("challenge-1");
-  });
-
-  it("refuses to start on a browser without WebAuthn", async () => {
-    vi.stubGlobal("PublicKeyCredential", undefined);
-    const screen = await start();
-
-    expect(screen.text("[role=alert]")).toBe(PASSKEY_MESSAGES.unsupported);
-  });
-
-  it("refuses to start when the server issued no options", async () => {
-    const screen = await start({ request_options: null });
-
-    expect(screen.text("[role=alert]")).toBe(PASSKEY_MESSAGES.optionsMissing);
-  });
-
-  it("refuses to start when the server issued no challenge id", async () => {
-    const screen = await start({ challenge_id: "" });
-
-    expect(screen.text("[role=alert]")).toBe(PASSKEY_MESSAGES.optionsMissing);
-  });
-
-  it("writes the assertion into the form before it submits", async () => {
-    credentials.get.mockResolvedValue(assertionCredential());
-    // What the server receives is whatever the field holds at submit time, so the value is read
-    // there rather than after the render that follows.
-    let submitted: string | undefined;
-    const requestSubmit = vi.fn(function submit(this: HTMLFormElement) {
-      submitted = this.querySelector<HTMLInputElement>(
-        'input[name="verification[credential_json]"]',
-      )?.value;
-    });
-    HTMLFormElement.prototype.requestSubmit = requestSubmit;
-
-    const screen = await start();
-
-    expect(requestSubmit).toHaveBeenCalled();
-    expect(submitted).toEqual(expect.any(String));
-    expect(JSON.parse(String(submitted))).toMatchObject({ id: "cred-id", rawId: "AQID" });
-    expect(within(screen.container).getByRole("status").textContent).toBe(
-      PASSKEY_MESSAGES.verifying,
-    );
-  });
-
-  it("reports a cancelled ceremony instead of submitting", async () => {
-    credentials.get.mockRejectedValue(credentialError("NotAllowedError"));
-    const requestSubmit = vi.fn();
-    HTMLFormElement.prototype.requestSubmit = requestSubmit;
-
-    const screen = await start();
-
-    expect(screen.text("[role=alert]")).toBe(PASSKEY_MESSAGES.cancelled);
-    expect(requestSubmit).not.toHaveBeenCalled();
-  });
-
-  it("reports a security error under its own name", async () => {
-    credentials.get.mockRejectedValue(credentialError("SecurityError"));
-
-    const screen = await start();
-
-    expect(screen.text("[role=alert]")).toBe(PASSKEY_MESSAGES.securityError);
   });
 });

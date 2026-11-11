@@ -17,7 +17,7 @@ function authenticateHeader(headers: StepUpChallengeResponse["headers"]): string
   return header?.[1] ?? null;
 }
 
-/** Recognizes the RP challenge and opens its explicit entry without replaying the rejected request. */
+/** Recognizes the Auth app challenge and opens its explicit entry without replaying the rejected request. */
 export function handleStepUpChallenge(response: StepUpChallengeResponse): boolean {
   if (
     response.status !== 401 ||

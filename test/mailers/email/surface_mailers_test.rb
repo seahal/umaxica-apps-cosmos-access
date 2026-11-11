@@ -31,7 +31,7 @@ class Email::SurfaceMailersTest < ActionMailer::TestCase
     assert_equal ["user@example.com"], mail.to
     assert_equal ["otp@umaxica.app"], mail.from
     assert_match "123456", mail.html_part.body.decoded
-    assert_match "verification-token", mail.html_part.body.decoded
+    assert_not_includes mail.html_part.body.decoded, "verification-token"
   end
 
   test "app sign-up otp mail uses the purpose-specific subject" do
@@ -68,28 +68,33 @@ class Email::SurfaceMailersTest < ActionMailer::TestCase
     assert_match "999888", mail.text_part.body.decoded
   end
 
-  test "otp mailers build verification links for their own surface" do
-    [
-      [Email::App::OtpMailer, "mail-app-public-id", "app-token",
-       ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
-       "/identity/emails/registration/edit",],
-      [Email::Org::OtpMailer, "mail-org-public-id", "org-token", ENV.fetch("PUBLIC_BASE_STAFF_URL"),
-       "/identity",],
-    ].each do |mailer, public_id, token, host, path|
-      mail = mailer.with(
-        encrypted_hotp_token: encrypted_otp("123456"),
-        email_address: "target@example.com",
-        public_id: public_id,
-        encrypted_verification_token: OutboundSensitivePayload.encrypt_email_verification_token(token),
-      ).create
+  test "app otp mail omits Base-owned email verification links" do
+    mail = Email::App::OtpMailer.with(
+      encrypted_hotp_token: encrypted_otp("123456"),
+      email_address: "target@example.com",
+      public_id: "mail-app-public-id",
+      encrypted_verification_token: OutboundSensitivePayload.encrypt_email_verification_token("app-token"),
+    ).create
 
-      assert_match host, mail.html_part.body.decoded
-      assert_match path, mail.html_part.body.decoded
-      assert_match token, mail.html_part.body.decoded
-      assert_match host, mail.text_part.body.decoded
-      assert_match path, mail.text_part.body.decoded
-      assert_match token, mail.text_part.body.decoded
-    end
+    assert_no_match(%r{/identity(?:[/?\s]|$)}, mail.html_part.body.decoded)
+    assert_no_match(%r{/identity(?:[/?\s]|$)}, mail.text_part.body.decoded)
+    assert_not_includes mail.html_part.body.decoded, "app-token"
+    assert_not_includes mail.text_part.body.decoded, "app-token"
+  end
+
+  test "org otp mail omits the Base identity verification link" do
+    mail = Email::Org::OtpMailer.with(
+      encrypted_hotp_token: encrypted_otp("123456"),
+      email_address: "target@example.com",
+      public_id: "mail-org-public-id",
+      encrypted_verification_token: OutboundSensitivePayload.encrypt_email_verification_token("org-token"),
+    ).create
+
+    assert_equal ["target@example.com"], mail.to
+    assert_no_match(%r{/identity(?:[/?\s]|$)}, mail.html_part.body.decoded)
+    assert_no_match(%r{/identity(?:[/?\s]|$)}, mail.text_part.body.decoded)
+    assert_not_includes mail.html_part.body.decoded, "org-token"
+    assert_not_includes mail.text_part.body.decoded, "org-token"
   end
 
   test "otp mailer enqueue arguments do not include plaintext otp" do
@@ -105,94 +110,6 @@ class Email::SurfaceMailersTest < ActionMailer::TestCase
     assert_includes job_payload, "encrypted_hotp_token"
     assert_no_match(/"hotp_token"\s*=>/, job_payload)
     assert_not_includes job_payload, "112233"
-  end
-
-  test "alert mailers send a generic alert payload per surface" do
-    [
-      [Email::App::AlertMailer, "alert@umaxica.app"],
-      [Email::Org::AlertMailer, "alert@umaxica.org"],
-    ].each do |mailer, sender|
-      mail = mailer.with(email_address: "target@example.com", title: "Alert title", body: "Alert body").notice
-
-      assert_equal "Alert title", mail.subject
-      assert_equal ["target@example.com"], mail.to
-      assert_equal [sender], mail.from
-      assert_match "Alert body", mail.text_part.body.decoded
-    end
-  end
-
-  test "promotional mailers send from promotional addresses per surface" do
-    [
-      [Email::App::PromotionalMailer, "promotion@umaxica.app"],
-      [Email::Org::PromotionalMailer, "promotion@umaxica.org"],
-    ].each do |mailer, sender|
-      mail = mailer.with(
-        email_address: "target@example.com",
-        title: "Promotion title",
-        body: "Promotion body",
-        cta_url: "https://example.com/campaign",
-      ).notice
-
-      assert_equal "Promotion title", mail.subject
-      assert_equal ["target@example.com"], mail.to
-      assert_equal [sender], mail.from
-      assert_match "Promotion body", mail.text_part.body.decoded
-      assert_match "https://example.com/campaign", mail.text_part.body.decoded
-    end
-  end
-
-  test "promotional mailers omit unsafe cta urls" do
-    [
-      Email::App::PromotionalMailer,
-      Email::Org::PromotionalMailer,
-    ].each do |mailer|
-      mail = mailer.with(
-        email_address: "target@example.com",
-        title: "Promotion title",
-        body: "Promotion body",
-        cta_url: "javascript:alert(1)",
-      ).notice
-
-      assert_match "Promotion body", mail.text_part.body.decoded
-      assert_not_includes mail.text_part.body.decoded, "javascript:alert"
-      assert_not_includes mail.html_part.body.decoded, "javascript:alert"
-    end
-  end
-
-  test "promotional mailers omit cta urls with credentials" do
-    [
-      Email::App::PromotionalMailer,
-      Email::Org::PromotionalMailer,
-    ].each do |mailer|
-      mail = mailer.with(
-        email_address: "target@example.com",
-        title: "Promotion title",
-        body: "Promotion body",
-        cta_url: "https://user:pass@example.com/campaign",
-      ).notice
-
-      assert_not_includes mail.text_part.body.decoded, "user:pass"
-      assert_not_includes mail.html_part.body.decoded, "user:pass"
-    end
-  end
-
-  test "promotional mailers can set unsubscribe headers per surface" do
-    [
-      [Email::App::PromotionalMailer, ClientEmail.new(public_id: "app-email-public-id"), "promotion@umaxica.app"],
-      [Email::Org::PromotionalMailer, OperatorEmail.new(public_id: "org-email-public-id"), "promotion@umaxica.org"],
-    ].each do |mailer, email_record, sender|
-      mail = mailer.with(
-        email_address: "target@example.com",
-        title: "Promotion title",
-        body: "Promotion body",
-        cta_url: "https://example.com/campaign",
-        email_record: email_record,
-      ).notice
-
-      assert_equal "Promotion title", mail.subject
-      assert_equal [sender], mail.from
-      assert_match "List-Unsubscribe", mail.header.to_s
-    end
   end
 
   private

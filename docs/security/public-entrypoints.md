@@ -1,116 +1,63 @@
 # Public Entrypoints
 
-## Purpose
+## Scope
 
-This document records Rails entrypoints that do not require an already signed-in actor. Every
-entrypoint is private by default unless its concrete controller/action declares
+This inventory covers local Auth APP/ORG and Visa APP/ORG Rails routes. Auth serves credential
+ceremonies; Visa serves the OpenID Provider and Authorization Server. Visa's external RP client
+registrations remain available, but RP callbacks, browser sessions, and local completion routes are
+owned by the external RP repositories. Mission, Flipper, Blazer, PgHero, Coverband, and Swagger are
+operator tools, not public product entrypoints.
+
+Every application entrypoint is private by default unless its concrete controller/action declares
 `AUTHENTICATION_MODE = :bare`, `:open`, or `:guest`.
 
-Framework-owned routes such as Rails info pages, Action Mailbox, Active Storage, Turbo Native, and
-development tooling are outside this application inventory. They are not public product contracts.
+| Mode        | Login required?         | Meaning                                                                                               |
+| ----------- | ----------------------- | ----------------------------------------------------------------------------------------------------- |
+| `:bare`     | No                      | No application authentication lifecycle; used for health, protocol metadata, and telemetry intake.    |
+| `:open`     | No                      | Anonymous and authenticated actors may enter; invalid credentials still fail through normal handling. |
+| `:guest`    | No for anonymous actors | Guest ceremony entry; signed-in actors are rejected or redirected by the flow.                        |
+| `:private`  | Yes                     | Normal authenticated endpoint; not public.                                                            |
+| `:deny_all` | Not reachable           | Fail-closed endpoint; not public.                                                                     |
 
-## Authentication Modes
+## Public route families
 
-| Mode        | Login required?         | Meaning                                                                                                                 |
-| ----------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `:bare`     | No                      | No application authentication lifecycle. Used for probes, static protocol metadata, content reads, and telemetry sinks. |
-| `:open`     | No                      | Anonymous and authenticated actors may enter. Invalid credentials must still fail through authentication handling.      |
-| `:guest`    | No for anonymous actors | Guest-only entry or ceremony flow. Signed-in actors are rejected or redirected by the flow.                             |
-| `:private`  | Yes                     | Normal signed-in actor endpoint. Not public.                                                                            |
-| `:deny_all` | Not reachable           | Fail-closed endpoint. Not public.                                                                                       |
+The category IDs below are the maintained inventory for the retained public route families. Adding a
+public route requires assigning it to an owned category and updating its enforcement coverage.
 
-## Documented Public Categories
+| ID                            | Local routes                                                                                             | Boundary                                                                                                                                     |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_LOCAL_AUTH_ADMISSION` | Auth `GET /ceremony_bindings`; Visa APP/ORG ceremony-binding confirmation                                | Opaque, short-lived references attach to the exact browser and transaction; confirmation remains guarded.                                    |
+| `PUBLIC_HEALTH`               | Auth and Visa APP/ORG `/health`, `/health/*`, `/api/v0/health.json`                                      | Health output exposes no topology or configuration. Public edge isolation follows [`health-check.md`](../operations/health-check.md).        |
+| `PUBLIC_REVISION`             | Auth and Visa APP/ORG `/revision`, `/api/v0/revision.json`                                               | Deployment identifier only; no database, actor, session, or environment listing.                                                             |
+| `PUBLIC_CSP_REPORTS`          | Auth and Visa APP/ORG `POST /csp-violation-report`                                                       | Unauthenticated browser telemetry only; it cannot mutate actor, session, or account state.                                                   |
+| `PUBLIC_WELL_KNOWN`           | Auth and Visa APP/ORG `GET /.well-known/jwks.json`; Visa APP/ORG `GET /.well-known/openid-configuration` | Public signing keys and Visa OIDC metadata. Auth is not an OIDC Provider or RP.                                                              |
+| `PUBLIC_ROBOTS_SITEMAPS`      | Auth and Visa APP/ORG `/robots.txt`; Auth APP/ORG `/sitemap.xml`                                         | Crawler metadata only.                                                                                                                       |
+| `PUBLIC_PREFERENCE`           | Auth APP/ORG `GET`/`PATCH /api/v0/preferences/{cookie,theme}`                                            | Own-host chrome state only; it does not grant identity or session authority.                                                                 |
+| `PUBLIC_WEB_EDGE`             | Auth APP Email OTP delivery; Visa APP/ORG `/edge/v0/token/{check,dbsc,refresh}`                          | Public transport endpoints retain their delivery, token, DBSC, browser-binding, and rate-limit checks.                                       |
+| `PUBLIC_OAUTH_OIDC_SSO`       | Visa APP/ORG `/oauth/*` and `/oidc/*`; Auth OIDC handoff                                                 | Client registration, redirect, state, nonce, PKCE, token, and session checks remain enforced. Visa is the local OP/AS.                       |
+| `PUBLIC_SIGN_IN_UP`           | Auth APP/ORG sign-in and supported sign-up entries, cancellation and switch; APP provider sign-in/up     | Anonymous entry is ceremony-bound. Provider state, browser continuity, CSRF, rate limits, and action-specific authorization remain required. |
+| `PUBLIC_AUTH_STEP_UP`         | Auth APP/ORG `/verification*`, Auth APP `/settings/totps*`; Visa APP/ORG sensitive-admission endpoints   | Ceremony and registration evidence is purpose-bound and does not itself establish session freshness.                                         |
+| `PUBLIC_SOCIAL`               | Auth APP/ORG social link and provider callback routes                                                    | Provider/state validation and ceremony records own execution safety.                                                                         |
+| `PUBLIC_APPLE_NOTIFICATIONS`  | Auth APP `POST /apple/notifications`                                                                     | Apple Server Notifications V2 webhook; JWS verified, not session-authenticated.                                                              |
 
-The category IDs below are enforced by `test/unit/security/public_entrypoint_inventory_test.rb`.
-Adding a new `:bare`, `:open`, or `:guest` route requires either fitting one of these categories or
-updating this document and the test together.
+The exact host constraints and verb/path inventory are the live Auth and Visa route files under
+`config/routes/`. The PWA offline category and all non-Auth/Visa product surfaces are outside the
+current public-entrypoint inventory.
 
-| ID                                | Entrypoints                                                                                                                                                                | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PUBLIC_ROOTS`                    | `GET /` on public app-owned hosts, including Tech                                                                                                                          | Thin landing, redirect, or content-root endpoints only. Base and Warp app/org and Palm app roots retain their authentication-aware behavior; Base and Warp com roots are anonymous. Responses are not stored by shared caches.                                                                                                                                                                                                                                                |
-| `PUBLIC_DASHBOARD`                | `GET /dashboard` on Base and Warp app/org and Palm app                                                                                                                     | Authenticated requests render the authorized Dashboard. Base and Palm redirect signed-out HTML requests to their own `/sign` entry with the Dashboard target; Warp retains its signed-out 404. The com surfaces have no dashboard route. See `adr/home-dashboard-authentication-boundary.md`.                                                                                                                                                                                  |
-| `PUBLIC_LOCAL_AUTH_ADMISSION`     | Base `POST /`; Auth `GET /ceremony_bindings`; Base/Visa ceremony-binding confirmation GET and Base POST                                                                    | Base issues a short-lived opaque admission. Auth attaches it through a GET navigation and sends the browser to the owning confirmation boundary; the Base confirmation POST is CSRF-protected. Auth remains a credential ceremony and attachment creates no RP transaction or token.                                                                                                                                                                                          |
-| `PUBLIC_LOBBY`                    | `GET /lobby` on Base app/org                                                                                                                                                | Canonical unauthenticated Base entry. Authenticated actors are redirected to `/dashboard`. Sign-out completes here via PRG. Base com has an anonymous root and preference surface, with no lobby or authenticated actor.                                                                                                                                                                                                                                                    |
-| `PUBLIC_HEALTH`                   | `GET /health`, `/health/liveness`, `/health/readiness`, `/health/startup` (`text/plain`); `GET /api/v0/health.json` (`application/json`, `pass/warn/fail`), including Tech | Rails marks these `:bare`; public edge traffic must remain blocked as described in `docs/operations/health-check.md`. No topology, hostnames, exceptions, paths, or env in any body.                                                                                                                                                                                                                                                                                          |
-| `PUBLIC_REVISION`                 | `GET /revision` (`text/plain`, body `"<sha>\n"`); `GET /api/v0/revision.json` (`application/json`), including Tech                                                         | Deployment identifier from `Rails.application.revision` only, one shared code path. Reads no database, actor, session, or environment listing. Unset renders `"\n"` (text) / `{"revision": null}` (JSON).                                                                                                                                                                                                                                                                     |
-| `PUBLIC_CSP_REPORTS`              | `POST /csp-violation-report`, including Tech                                                                                                                               | Unauthenticated browser telemetry intake only. Must not mutate actor/session/account state.                                                                                                                                                                                                                                                                                                                                                                                   |
-| `PUBLIC_WELL_KNOWN`               | `GET /.well-known/jwks.json`, `GET /.well-known/openid-configuration`                                                                                                      | Protocol metadata and public keys.                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `PUBLIC_ROBOTS_SITEMAPS`          | `GET /robots.txt`, `GET /sitemap.xml`                                                                                                                                      | Crawler metadata endpoints.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `PUBLIC_PWA_OFFLINE`              | `GET /service-worker`, `GET /offline` on Base, Warp, and Palm hosts (`Rails::PwaController`); Auth keeps only a self-unregistering `GET /service-worker`                   | Static offline fallback assets served by the framework's own PWA controller. Both render with no session, actor, tenant, or database access; the worker caches only `/offline` and never writes to the cache at request time. See `adr/pwa-offline-route-exception.md`.                                                                                                                                                                                                       |
-| `PUBLIC_CONTENT_READ_APIS`        | Docs, Help, Info, and News roots plus `GET /api/v0/entries*`                                                                                                               | Read-only content surfaces; no create/update/delete authority.                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `PUBLIC_PREFERENCE`               | `/preference*` (Base app/com/org); `/api/v0/preferences/{cookie,theme}` (Base, Auth, Core, Warp)                                                                           | Login-independent preference read/write endpoints, served host-locally on each family's own host. Base com retains its anonymous preference surface. Auth, Core, and Warp expose these endpoints on app/org only. Preference DBSC registration is retired; authentication DBSC remains on Visa token routes.                                                                                                                                                                       |
-| `PUBLIC_WEB_EDGE`                 | Auth app `POST /web/v0/in/email/otp`; Visa app/org `/edge/v0/token/{check,dbsc,refresh}`                                                                                   | Open protocol/transport endpoints, not general business APIs. Auth and Core expose no token-edge routes; Visa token-edge endpoints serve authentication refresh and DBSC.                                                                                                                                                                                                                                                                                                      |
-| `PUBLIC_OAUTH_OIDC_SSO`           | `/oauth*`, `/oidc*`, `/sso*`, RP `/auth/*`, and Auth `/sign/oidc/handoff` protocol handoff paths on active app/org authentication surfaces, including Tech | Public protocol reachability does not bypass state, client, token, nonce, PKCE, CSRF, actor-flow binding, or logout guards. Auth and Visa have no com authentication or OIDC routes; Base/Core/Warp com have no RP protocol routes.                                                                                                                                                                                                                                             |
-| `PUBLIC_SIGN_IN_UP`               | RP `/sign` and `/oidc/callback`, including Tech; Auth `/sign/in*`, `/sign/up*`, and `/web/v0/in/*` on app/org                                                            | Neutral RP authentication entry/callback plus credential and sign-up ceremonies. RP entry does not choose sign-in versus sign-up; `:guest` routes reject already signed-in actors. No com authentication entry or callback is registered.                                                                                                                                                                                                                                  |
-| `PUBLIC_SIGN_OUT`                 | `/sign/out*`, `/oidc/logout*` and route-controller sign-out aliases on active authenticated surfaces                                                                        | Logout pages are reachable without login; actual mutation stays guarded by current session state. No com authentication or OIDC logout routes are registered.                                                                                                                                                                                                                                                                                                               |
-| `PUBLIC_WITHDRAWAL`               | Base app `/identity/withdrawal*` lifecycle routes                                                                                                                         | Withdrawal ceremony entrypoints remain publicly reachable; controller auth, step-up, and lifecycle guards own safety. Base com has no visitor withdrawal workflow.                                                                                                                                                                                                                                                                                                           |
-| `PUBLIC_IDENTITY_RECOVERY`        | Base app `/identity/recovery*` lifecycle routes                                                                                                                           | Recovery entrypoints are public by necessity; ceremony state, rate limits, and controller guards own authorization. Base com has no visitor recovery workflow.                                                                                                                                                                                                                                                                                                               |
-| `PUBLIC_SOCIAL`                   | `/social*` and Base social ceremony continuation/completion routes                                                                                                         | Provider/state validation and ceremony records still own execution safety.                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `PUBLIC_AUTH_APP_SETTINGS_COMPAT` | Auth app `/settings/*` registration, birthdate, and session-revocation compatibility routes that currently declare `:open`                                                 | Compatibility reachability only; authority must remain in the guarded settings/session services.                                                                                                                                                                                                                                                                                                                                                                              |
-| `PUBLIC_CORE_API`                 | Core `GET /api/v0/session` and `POST /api/v0/token/refresh`                                                                                                                | Core browser/BFF session-token boundary endpoints.                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `PUBLIC_WARP_SETTINGS`            | Warp `GET /settings`                                                                                                                                                       | Current Warp settings shell entrypoint.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `PUBLIC_MCP`                      | `POST /mcp` on the Base and Warp app/com/org hosts                                                                                                                         | **Withdrawn 2026-09-19** (routes commented out; see `adr/mcp-endpoint-withdrawal.md`). Was: Model Context Protocol JSON-RPC transport, unauthenticated. Served only three read-only tools: process liveness, deployment revision, and this endpoint's own realm/surface labels. Reads no database, actor, session, or environment listing, and exposes no write tool. Dependency and topology detail stays out of scope per `adr/internal-health-endpoint-edge-isolation.md`. |
-| `PUBLIC_GUID_RESOLUTION`          | GUID `GET /api/v0/resources/:guid`                                                                                                                                         | Public resolution boundary. The bootstrap validates transport safety and returns Problem Details `404`; it exposes no database key, target URL, or redirect.                                                                                                                                                                                                                                                                                                                  |
-| `PUBLIC_BASE_OWNER_API`           | Base `/api/v0/{avatar,membership,iam,support,publishing}/*`, `/api/v0/identity/{standing,selection}` and `/api/v0/tech-capability-checks`                                  | Server-to-server owner APIs for the Base Self-RP. No cookie session; each call needs the caller's private_key_jwt bound to the exact URL and the actor's Access JWT, and the owner re-applies its own policies.                                                                                                                                                                                                                                                               |
-| `PUBLIC_APPLE_NOTIFICATIONS`      | `POST /apple/notifications`                                                                                                                                                | Apple Server Notifications V2 webhook; JWS-signature verified, not session-authenticated.                                                                                                                                                                                                                                                                                                                                                                                     |
+## Host availability gate
 
-## Default Rule
+The per-host availability gate applies to Auth APP/ORG and Visa APP/ORG controller surfaces. Its
+only slots are `auth_service`, `auth_staff`, `visa_service`, and `visa_staff`, each controlled by
+its corresponding `fqdn_available_<slot>` Flipper feature. A disabled or unwritten availability
+feature refuses the host before rate limiting, session access, authentication, or controller
+execution. The slot comes from the host registry, not the request's Host value. Mounted operator
+tools use their own authentication and are outside this controller gate.
 
-`PUBLIC_AUTH_STEP_UP` covers Auth app/org `GET /verification`. An opaque reference on the entry GET
-redirects to Auth `GET /ceremony_bindings`, which attaches Auth-local continuity and sends the
-browser to the Base confirmation boundary. After confirmation, a GET of the original entry redeems
-the purpose-bound admission and rotates Auth-local continuity. The clean entry page requires that
-continuity and the matching, unexpired Base transaction; it uses the transaction's actor only for
-ceremony ownership authorization. It does not accept an Auth root login as admission.
+Health endpoint edge exposure remains governed by the health isolation policy; changing a public
+surface availability flag does not change that separate edge policy.
 
-The same classification includes the admitted Passkey display, POST options and assertion, GET/POST
-opaque result handoff on both surfaces, and APP Email OTP display, issuance, verification and POST
-redelivery. Every action resolves the exact admitted actor, session and transaction and retains
-business authorization. Display GET requests create no challenge or email generation. ORG has no
-Email OTP endpoint. Auth cancellation POST closes the admitted transaction and its continuity, then
-uses the existing Jump redirect to that surface's fixed Base dashboard. It grants no freshness and
-does not resume the protected change request.
+## Default rule
 
-The category also includes Auth app/org `GET /verification/setup/new`. Setup GET redirects an opaque
-admission reference through Auth `GET /ceremony_bindings` and the Base confirmation boundary; the
-confirmed entry GET redeems only the exact Base bootstrap permission and requires
-`Sec-Fetch-Mode: navigate` with `Sec-Fetch-Dest: document`. Missing or other Fetch Metadata and HEAD
-are refused before redemption or Auth-cookie issuance. Its clean page requires scoped registration
-continuity, actor/session ownership and policy authorization. Available registration methods come
-from that transaction, and registration evidence cannot satisfy ordinary step-up freshness. For an
-already attached binding, both the Auth entry GET and direct `GET /ceremony_bindings` require the
-current host-only `auth_sid` to identify the exact active attached ceremony; a mismatch returns the
-shared 409 refusal before mutation or Auth-cookie/DBSC response headers. APP social login callbacks
-also bind to the admitted ceremony recorded when provider handoff began. Before OAuth state is
-consumed, the callback requires the current host-only `auth_sid` to resolve to that same active
-ceremony; a mismatch returns the shared 409 without consuming the provider state or changing either
-ceremony.
-
-`PUBLIC_SIGN_IN_UP` also covers Auth app/org `POST /sign/cancellation` and APP `POST /sign/switch`
-(D09 Cancel and D06 Switch). Both are CSRF-protected and bound to the current browser's Auth
-ceremony and OIDC parent. Cancel remains available while that parent is pending or authenticated but
-not finalized, including after authentication evidence; Switch is limited to the admitted first
-page. A successful Cancel ends the ceremony, clears the Auth session and `auth_sid`, and atomically
-cancels the pending or authenticated OIDC parent with its handoff under the parent row lock. Visa's
-GET continuation and same-origin POST then deliver that committed `access_denied` to the RP. Cancel
-on an OIDC Visa session-limit page uses the same parent cancellation and delivery; it preserves the
-user's other sessions. A local or social session-limit cancellation without an OIDC parent returns
-to the neutral Base entry. An exact old-SID retry can resume the same cancellation cleanup; it
-cannot restore active Auth continuity. ORG has no Switch route. A clean Sign In entry reload after
-the ceremony has recorded authentication evidence or APP Email OTP progress returns the shared 409
-without changing the parent or Auth continuity. APP Email also refuses a return to its address-entry
-GET after OTP issuance, including the interval before a SignInFlow exists; the active OTP
-verification page and explicit resend remain available. APP Secret refuses a same-page GET after
-successful authentication evidence. APP Sign Up applies the same refusal after its bound Flow
-starts; a fresh admission reference still follows its normal relay.
-
-Routes not covered above must require authentication or fail closed. In code, that means the route
-must resolve to `:private` or `:deny_all`, and its concrete controller/action must declare that
-classification locally.
-
-## Retired Experience bootstrap
-
-The Xper Phase 0 Rails entrypoints and host-constrained routes are retired by
-[`adr/xper-rails-surface-retirement.md`](../../adr/xper-rails-surface-retirement.md). No replacement
-controller, redirect, or proxy serves the former hosts. Existing unknown-host and framework health
-behavior remains in effect; Edge and Cloudflare ownership is separate.
+Routes not in an explicit public family must resolve to `:private` or `:deny_all`, and their
+concrete controller/action must declare that classification. A registered external RP client does
+not make its callback or session routes public in Access because those routes are not served here.

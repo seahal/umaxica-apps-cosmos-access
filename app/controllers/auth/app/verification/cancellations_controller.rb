@@ -11,6 +11,9 @@ class Auth::App::Verification::CancellationsController < Auth::App::ApplicationC
 
   def create
     return unless load_cancellation_ceremony_context!
+    unless @step_up_ceremony_transaction.required_scope == OidcAuthorizeRequestResolver::STEP_UP_SCOPE
+      raise ActionController::BadRequest, "No relying-party verification cancellation return is available"
+    end
 
     issuance = BaseAuthAdmissionCoordinator.issue_cancellation!(
       transaction: @step_up_ceremony_transaction,
@@ -30,11 +33,7 @@ class Auth::App::Verification::CancellationsController < Auth::App::ApplicationC
         }.compact.to_query
         "#{OidcIssuer.authorization_endpoint("client")}?#{query}"
       else
-        base_app_verification_cancellation_url(
-          cancellation_ref: issuance.reference,
-          transaction_ref: @step_up_ceremony_transaction.transaction_id, ri: params[:ri],
-          host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"), protocol: "https",
-        )
+        raise ArgumentError, "unsupported verification cancellation scope"
       end
     redirect_to(destination, status: :see_other, allow_other_host: true)
   rescue BaseAuthAdmissionCoordinator::Denied, IdentityStepUpCeremonyContract::Error,

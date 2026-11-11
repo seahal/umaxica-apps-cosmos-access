@@ -43,7 +43,7 @@ class SocialCeremonyEntryContractTest < ActionDispatch::IntegrationTest
     end
 
     test "#{provider} sign-up entry hands the POST to the OmniAuth request phase with a 307" do
-      switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+      admit_browser_to_sign_up!(integration_session)
       post public_send(:"auth_app_social_#{provider}_registration_path", ri: "jp"),
            headers: { "Host" => @host }
 

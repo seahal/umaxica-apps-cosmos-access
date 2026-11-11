@@ -38,11 +38,7 @@ module FeatureFlags
       ),
       Flag.new(
         name: :outbound_email_suspended, polarity: :suspension,
-        effect: "Stops all mail at the delivery interceptor, transactional and promotional.",
-      ),
-      Flag.new(
-        name: :outbound_promotional_email_suspended, polarity: :suspension,
-        effect: "Stops promotional mail only; transactional mail keeps delivering.",
+        effect: "Stops email delivery at the delivery interceptor.",
       ),
       Flag.new(
         name: :retention_purge_suspended, polarity: :suspension,

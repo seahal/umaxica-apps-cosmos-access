@@ -45,22 +45,6 @@ class Auth::Org::Api::V0::Preferences::ThemeControllerTest < ActionDispatch::Int
     assert_nil response.headers["Set-Cookie"]
   end
 
-  test "PATCH cannot change the Preference theme on the read-only Auth host" do
-    token = encode_preference_jwt(
-      preferences: { "theme" => "system" },
-      host: @host,
-      public_id: "pref-org-public-id",
-      preference_type: "OrgPreference",
-    )
-    cookies[PreferenceCookieName.anonymous_jwt] = token
-
-    with_preference_realm_issuers do
-      patch auth_org_api_v0_preferences_theme_path, params: { theme: "light" }, as: :json
-    end
-
-    assert_response :forbidden
-    assert_no_preference_state_cookies
-  end
   private
 
   def encode_preference_jwt(preferences:, host:, public_id:, preference_type: "AppPreference")

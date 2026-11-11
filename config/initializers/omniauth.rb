@@ -15,7 +15,7 @@
 # - Failure:  GET /social/failure
 #
 # Our custom entry point:
-# - GET /social/:provider/session/new and /social/:provider/registration/new -> prepares intent, renders a POST form
+# - Auth APP routes start provider sign-in and registration through CSRF-protected POSTs.
 #
 # State Parameter:
 # - SocialCallbackGuard validates callback state through CallbackStateStore for all app providers.
@@ -193,21 +193,14 @@ class OmniAuthSocialProviderHostMatrix
     end
   end
 
-  APP_HOST_ENV_KEYS = %w(
-    PUBLIC_AUTH_SERVICE_URL PRIVATE_AUTH_SERVICE_URL
-    PUBLIC_BASE_SERVICE_URL PRIVATE_BASE_SERVICE_URL
-  ).freeze
+  APP_HOST_ENV_KEYS = %w(PUBLIC_AUTH_SERVICE_URL PRIVATE_AUTH_SERVICE_URL).freeze
   ORG_HOST_ENV_KEYS = %w(PUBLIC_AUTH_STAFF_URL PRIVATE_AUTH_STAFF_URL).freeze
   # Deny by default. Every surface is recognized explicitly, and a host that
   # matches none of them classifies as :unknown, which `allowed?` refuses for
   # every provider and every /social/* path.
   #
-  # The previous `:app` fallback made this middleware allow-by-default: any host
-  # Rails Host Authorization admits but that owns no auth surface (warp, base,
-  # core, help, info, palm, ...) was treated as the app auth host and could start
-  # a Google/Apple ceremony, or reach the non-provider /social/* endpoints, on an
-  # origin those callbacks were never registered for. Host Authorization running
-  # in another layer is not a reason for this layer to fail open.
+  # A host that owns no Auth surface classifies as :unknown and cannot start a
+  # provider ceremony or reach the non-provider /social/* endpoints.
   #
   # Host source is the shared boot config (ConfigValues::HostFamilyValues), plus
   # the same PUBLIC_/PRIVATE_ ENV keys the app and org branches already consult;
@@ -215,11 +208,7 @@ class OmniAuthSocialProviderHostMatrix
   def surface_for_host(host)
     boot_hosts = Rails.configuration.x.boot_config.fetch(:hosts)
 
-    # Both the auth service host (which owns the OmniAuth request/callback
-    # paths) and the base service host (config/routes/base.rb, which owns
-    # /social/authentication/continuation, .../completion and the app-surface
-    # provider callbacks) belong to the app surface.
-    app_hosts = [boot_hosts.auth_service.host, boot_hosts.base_service.host]
+    app_hosts = [boot_hosts.auth_service.host]
     return :app if app_hosts.include?(host) || env_host_match?(APP_HOST_ENV_KEYS, host)
     return :org if host == boot_hosts.auth_staff.host || env_host_match?(ORG_HOST_ENV_KEYS, host)
 
@@ -228,7 +217,8 @@ class OmniAuthSocialProviderHostMatrix
 
   def env_host_match?(keys, host)
     keys.any? do |key|
-      value = ENV.fetch(key, nil)
+      value = ENV[key]
+      next false if value.nil?
       next false if value.blank?
 
       ConfigValues.build(value, allow_localhost: !Rails.env.production?).uri&.host == host

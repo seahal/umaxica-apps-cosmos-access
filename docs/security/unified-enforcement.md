@@ -1,21 +1,18 @@
-# Unified Enforcement Operational Contract
+# Unified Enforcement Historical Contract (Pre-Reset)
 
-This document is the operational reference for `adr/unified-enforcement.md`. The ADR is the source
-of truth for rationale and rejected alternatives; this document is the quick-reference contract for
-anyone implementing against or operating Unified Enforcement. The Case and Effect substrate, Account
-Standing, appeal persistence and review, and the verified-email recovery ceremony are implemented.
-Content moderation and richer notification delivery remain separate follow-up work.
+> The org Support routes and local enforcement console described here were retired in the surface
+> reset. This document preserves the prior storage and authorization design for model/data history;
+> it is not a current operator procedure or route contract. Existing persisted records remain
+> subject to the deferred model/database report.
 
-## 2026-11-07 implementation boundary
+This document records the prior implementation contract for `adr/unified-enforcement.md`. The ADR is
+preserved as history; this document no longer instructs operators to use a local Access console.
 
-The current application no longer exposes `com` Enforcement Cases through the org Support routes,
-and `EnforcementIdentifierDigest` accepts only `app` and `org`. Existing `com` enforcement tables
-and records remain; this change did not alter schemas or delete data. The accepted
-`adr/unified-enforcement.md` and the three-realm statements retained below still describe a broader
-design. That conflict needs an owner decision to amend or supersede the ADR; until then, use
-[`docs/runbooks/unified-enforcement-rollout.md`](../runbooks/unified-enforcement-rollout.md) for
-the live `app` and `org` rollout procedure, and treat the older `com` enforcement guidance here as
-unresolved design history rather than an active entrypoint.
+## 2026-11-07 implementation boundary (Historical)
+
+At that date, the application had narrowed enforcement to app/org while retaining com records. The
+subsequent surface reset removed the local enforcement console and routes. No current local Access
+operation is documented here; the retained records require the deferred model/database report.
 
 ## What this replaces
 

@@ -9,15 +9,11 @@ module Security
     class ControllerLifecycleOrderInvariantTest < ActiveSupport::TestCase
       self.fixture_table_names = []
 
-      AUTHENTICATED_SURFACE_CONTROLLERS = [
+      RETAINED_AUTHORITY_CONTROLLERS = [
         Auth::App::ApplicationController,
         Auth::Org::ApplicationController,
-        Base::App::ApplicationController,
-        Base::Org::ApplicationController,
-        Core::App::ApplicationController,
-        Core::Org::ApplicationController,
-        Warp::App::ApplicationController,
-        Warp::Org::ApplicationController,
+        Visa::App::AuthorityController,
+        Visa::Org::AuthorityController,
       ].freeze
 
       REQUIRED_ORDER = %i(
@@ -35,15 +31,11 @@ module Security
         set_current_observability
       ).freeze
 
-      test "authenticated surface application controllers keep reviewed lifecycle order" do
+      test "retained Auth and Visa authority controllers keep reviewed lifecycle order" do
         violations =
-          AUTHENTICATED_SURFACE_CONTROLLERS.filter_map do |controller|
+          RETAINED_AUTHORITY_CONTROLLERS.filter_map do |controller|
             filters = before_filters_for(controller)
             required_order = REQUIRED_ORDER
-            if controller < BrowserRpAuthentication
-              required_order = %i(authenticate_browser_rp_unsafe_request! authenticate_browser_rp_safe_request!) +
-                (REQUIRED_ORDER - [:transparent_refresh_access_token])
-            end
             missing = required_order - filters
             out_of_order = out_of_order_filters(filters, required_order)
             next if missing.empty? && out_of_order.empty?
@@ -54,9 +46,9 @@ module Security
         assert_empty violations, "Authentication lifecycle callback order drifted:\n#{violations.join("\n")}"
       end
 
-      test "authenticated surface application controllers always clear Actor in around action" do
+      test "retained Auth and Visa authority controllers always clear Actor in around action" do
         violations =
-          AUTHENTICATED_SURFACE_CONTROLLERS.filter_map do |controller|
+          RETAINED_AUTHORITY_CONTROLLERS.filter_map do |controller|
             around_filters =
               controller._process_action_callbacks.filter_map do |callback|
                 callback.filter if callback.kind == :around

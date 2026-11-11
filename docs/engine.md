@@ -8,11 +8,13 @@ Rails Engine extraction and the four-app split are both retired by
 
 ## Current Shape
 
-This repository is a single ordinary Rails application. It owns the global product surface:
+This repository is a single ordinary Rails application. It owns the retained product surfaces:
 
 - `app`: end-user application surface
 - `org`: staff and organization surface
-- `com`: public and corporate surface
+
+The local public/corporate `com` surface is retired. Retained legacy `Com` models and database state
+are data ownership only; they do not authorize local routes or controllers.
 
 The regional content surface, such as docs, news, help, and other locale-specific delivery, belongs
 to the separate regional repository.
@@ -20,7 +22,8 @@ to the separate regional repository.
 ## Routing Boundary
 
 Routes stay in the root Rails app under `config/routes.rb` and `config/routes/*.rb`. Host
-constraints and surface-local controller modules separate `app`, `org`, and `com` behavior.
+constraints and surface-local controller modules separate `app` and `org` behavior. External OIDC
+client registrations do not add local route surfaces.
 
 Do not add `engines/`, wrapper apps under `apps/<name>`, `Jit::<EngineName>` namespaces,
 `isolate_namespace`, deployment-mode engine mounting, or cross-engine routing proxies.

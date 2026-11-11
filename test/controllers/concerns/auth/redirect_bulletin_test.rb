@@ -196,27 +196,16 @@ class AuthRedirectBulletinTest < ActiveSupport::TestCase
     assert_equal "Warning", result[:alert]
   end
 
-  test "Auth controllers resolve welcome URLs on their Base surface" do
-    expectations = {
-      Auth::App::ApplicationController => ["PUBLIC_BASE_SERVICE_URL", "www.umaxica.app"],
-      Auth::Org::ApplicationController => ["PUBLIC_BASE_STAFF_URL", "www.umaxica.org"],
-    }
-
-    expectations.each do |controller_class, (environment_key, expected_host)|
+  test "Auth controllers fail explicitly when no relying-party welcome return exists" do
+    [Auth::App::ApplicationController, Auth::Org::ApplicationController].each do |controller_class|
       controller = controller_class.new
       controller.set_request!(ActionController::TestRequest.create(controller_class))
       controller.define_singleton_method(:current_region_identifier) { "jp" }
       controller.define_singleton_method(:params) { {} }
 
-      original_fetch = ENV.method(:fetch)
+      error = assert_raises(ActionController::BadRequest) { controller.sign_in_welcome_path }
 
-      ENV.stub(
-        :fetch, ->(key, *args, &block) {
-          (key == environment_key) ? expected_host : original_fetch.call(key, *args, &block)
-        },
-      ) do
-        assert_equal "https://#{expected_host}/welcome?ri=jp", controller.sign_in_welcome_path
-      end
+      assert_equal "No relying-party welcome return is available", error.message
     end
   end
 

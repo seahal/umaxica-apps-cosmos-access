@@ -477,15 +477,10 @@ module SocialAuth
     response.headers["Referrer-Policy"] = "strict-origin"
     deny_framing!
 
-    start_url = base_app_sign_show_url(
-      ri: RequestContextContract.normalize_region(current_social_auth_ri),
-      host: Rails.configuration.x.boot_config.fetch(:hosts).base_service.host,
-      protocol: "https",
-    )
     render "auth/shared/verified_subject_guidance",
            layout: false,
            status: :bad_request,
-           locals: { **copy, start_url: start_url }
+           locals: copy
   end
 
   # D-47 / D-198 keeps remaining sign-path refusals uniform after the verified-subject crossing
@@ -545,7 +540,7 @@ module SocialAuth
 
   # Override this method to customize the success redirect path
   def social_auth_success_redirect_path
-    respond_to?(:auth_app_root_path) ? auth_app_root_path : "/"
+    raise ActionController::BadRequest, "No relying-party authentication return is available"
   end
 
   def validate_intent_ttl!(provider)
@@ -584,13 +579,7 @@ module SocialAuth
   end
 
   def social_auth_observability_surface
-    return sign_signup_observability_surface if respond_to?(:sign_signup_observability_surface, true)
-
-    case self.class.name
-    when /\ASign::Com::/ then :com
-    when /\ASign::Org::/ then :org
-    else :app
-    end
+    sign_signup_observability_surface
   end
 
   def social_auth_failure_redirect_path_for_intent(intent:, provider:)
@@ -598,20 +587,15 @@ module SocialAuth
 
     provider_from_path = request.path.to_s.split("/social/").last&.split("/")&.first
     provider = provider.presence || session[SOCIAL_PROVIDER_SESSION_KEY] || params[:provider] || provider_from_path
+    social_auth_provider_settings_path(provider)
+  end
 
-    if provider.to_s == "apple"
-      return auth_app_settings_apple_path if respond_to?(:auth_app_settings_apple_path, true)
-      if Rails.application.routes.url_helpers.respond_to?(:auth_app_settings_apple_path)
-        return Rails.application.routes.url_helpers.auth_app_settings_apple_path
-      end
+  def social_auth_provider_settings_path(provider)
+    case SocialIdentifiable.normalize_provider(provider)
+    when "apple" then auth_app_settings_apple_path(ri: params[:ri])
+    when "google" then auth_app_settings_google_path(ri: params[:ri])
+    else raise ActionController::BadRequest, "Unsupported social provider"
     end
-
-    return auth_app_settings_path if respond_to?(:auth_app_settings_path, true)
-    if Rails.application.routes.url_helpers.respond_to?(:auth_app_settings_path)
-      return Rails.application.routes.url_helpers.auth_app_settings_path
-    end
-
-    social_auth_failure_redirect_path
   end
 
   def social_auth_request_id

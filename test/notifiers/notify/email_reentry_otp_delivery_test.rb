@@ -280,6 +280,13 @@ class EmailReentryOtpDeliveryTest < ActiveJob::TestCase
         end
       end
       assert_equal [email.address], ActionMailer::Base.deliveries.last.to
+      if surface == "org"
+        mail = ActionMailer::Base.deliveries.last
+
+        assert_no_match(%r{/identity(?:[/?\s]|$)}, mail.html_part.body.decoded)
+        assert_no_match(%r{/identity(?:[/?\s]|$)}, mail.text_part.body.decoded)
+      end
+
       assert_nil transaction.reload.otp_consumed_at
       transaction.issue_email_otp!(purpose: "recovery")
       assert_no_difference "ActionMailer::Base.deliveries.size" do

@@ -37,16 +37,6 @@ class BranchCoverageBatch28ConcernEasyArmsTest < ActiveSupport::TestCase
     assert_nil helper.current_session_public_id
   end
 
-  test "CoreBrowserApiBoundary blank sid and subject" do
-    helper = Class.new(ApplicationController) { include CoreBrowserApiBoundary }.new
-    helper.set_request!(ActionDispatch::TestRequest.create)
-    helper.set_response!(ActionDispatch::TestResponse.new)
-
-    assert_not helper.respond_to?(:session_from_sid, true)
-    assert_not helper.respond_to?(:subject_from_token, true)
-    assert_not helper.respond_to?(:find_session_by_sid, true)
-  end
-
   test "SignErrorResponses null Origin classification" do
     helper = Class.new(ApplicationController) { include SignErrorResponses }.new
     request = ActionDispatch::TestRequest.create
@@ -67,13 +57,4 @@ class BranchCoverageBatch28ConcernEasyArmsTest < ActiveSupport::TestCase
     end
   end
 
-  test "PublishingManagementCell class methods raise without constants on concrete controller" do
-    anon =
-      Class.new do
-        def self.name = "Anon/Publishing/EntriesController"
-        extend PublishingManagementCell::ClassMethods
-      end
-
-    assert_raises(NameError) { anon.publishing_audience }
-  end
 end

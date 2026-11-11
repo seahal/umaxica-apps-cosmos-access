@@ -65,8 +65,9 @@ authorization-start request cannot consume or resume an authorization transactio
 Visa continuation GET is read-only; the same-origin authorization POST is the result consumer and
 commit boundary. Auth ceremony continuity remains in the surface-specific `AuthCeremonySession`; no
 Rails-session pre-authentication map carries the result or RP transaction state. Visa remains the
-authority for the authorization transaction, Root Session, and authorization code; Base remains the
-browser RP for its RP Session.
+authority for the authorization transaction, Root Session, and authorization code. Registered
+external relying parties own their callback routes and browser sessions in their own repositories;
+Access does not provide a local RP callback or RP session.
 
 ## Redirects Are Not Results
 

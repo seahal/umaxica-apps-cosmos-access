@@ -21,14 +21,11 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       target: OpAppAuthorityStopRootTarget,
       owner: :user,
       preference: AppPreference,
-      base_host: :base_service,
       root: :client_token,
       kind: :user_token_kind_id,
       kind_value: ClientTokenKind::BROWSER_WEB,
       resource_type: "client",
       visa_host: :visa_service,
-      core_host: :core_service,
-      warp_host: :warp_service,
     },
     "org" => {
       token: OperatorToken,
@@ -38,68 +35,81 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       target: OpOrgAuthorityStopRootTarget,
       owner: :staff,
       preference: OrgPreference,
-      base_host: :base_staff,
       root: :operator_token,
       kind: :staff_token_kind_id,
       kind_value: OperatorTokenKind::BROWSER_WEB,
       resource_type: "operator",
       visa_host: :visa_staff,
-      core_host: :core_staff,
-      warp_host: :warp_staff,
     },
   }.freeze
 
-  test "APP RP logout leaves the signed-in ORG browser usable on its next request" do
-    app_config = CASES.fetch("app")
-    actor = clients(:one)
-    root = create_root(app_config, actor)
-    origin = create_grant(app_config, actor, root, "core-app-jp")
-    hosts = Rails.configuration.x.boot_config.fetch(:hosts)
-    browser = open_session
-    install_credentials(browser, origin, actor, root, hosts.core_service.host, app_config)
-    other_browsers = []
-    [["org", hosts.warp_staff.host]].each do |realm, host|
-      config = CASES.fetch(realm)
-      other_actor = actor_for(realm)
-      other_root = create_root(config, other_actor)
-      grant = create_grant(config, other_actor, other_root, "warp-#{realm}-jp")
-      other_browser = open_session
-      install_credentials(other_browser, grant, other_actor, other_root, host, config)
-      other_browser.get("/dashboard?ri=jp")
-
-      assert_equal 200, other_browser.response.status, realm
-      other_browsers << other_browser
-    end
-    browser.post("/sign/out?ri=jp")
-
-    assert_equal 303, browser.response.status
-    target = URI.parse(browser.response.location)
-    browser.host!(hosts.visa_service.host)
-    cookie = visa_access(actor, root, hosts.visa_service.host, app_config)
-    browser.cookies << Rack::Test::Cookie.new(
-      "#{AuthenticationBase::ACCESS_COOKIE_KEY}=#{Rack::Utils.escape(cookie)}",
-      URI.parse("https://#{hosts.visa_service.host}/"),
-    )
-    browser.get(target.request_uri)
-    3.times do
-      break unless browser.response.redirect?
-
-      browser.get(jump_rt_url_from_location_for_test(browser.response.location))
-    end
-
-    assert_equal 200, browser.response.status
-    browser.post("/oidc/logout/confirmation?ri=jp")
-
-    assert_equal 303, browser.response.status
-    assert_predicate root.reload, :revoked?
-    other_browsers.each do |other_browser|
-      other_browser.get("/dashboard?ri=jp")
-
-      assert_equal 200, other_browser.response.status
-    end
-  end
-
   CASES.each do |realm, config|
+    test "#{realm} authorization GET refuses a session revoked outside the browser" do
+      actor =
+        if realm == "app"
+          clients(:one)
+        else
+          Operator.create!(
+            security_mode_id: SecurityModeConfigurable::ADVANCED,
+            status_id: OperatorStatus::ACTIVE,
+            visibility_id: OperatorVisibility::STAFF,
+          )
+        end
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0,
+        config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+      )
+      visa_host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      access_token = AuthenticationToken.encode(
+        actor,
+        host: visa_host,
+        session_public_id: root.device_session.public_id,
+        oidc_sid: root.device_session.public_id,
+        oidc_jti: root.oidc_jti,
+        resource_type: config.fetch(:resource_type),
+        jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(config.fetch(:resource_type)),
+        authentication_context: root.authentication_context_value.to_s,
+      )
+      browser = open_session
+      browser.host!(visa_host)
+      browser.https!
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationBase::ACCESS_COOKIE_KEY}=#{Rack::Utils.escape(access_token)}",
+        URI.parse("https://#{visa_host}/"),
+      )
+
+      root.device_session.revoke!(reason: "server_revocation")
+
+      client = OidcClientRegistry.find!("core-#{realm}-jp")
+      state = "revoked-op-session"
+      browser.get(
+        "/oauth/authorize",
+        params: {
+          response_type: "code",
+          client_id: client.client_id,
+          redirect_uri: client.redirect_uris_by_realm.fetch(config.fetch(:resource_type)).first,
+          code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          code_challenge_method: "S256",
+          scope: "openid",
+          state:,
+          nonce: "revoked-op-session-nonce",
+          prompt: "none",
+          ri: "jp",
+        },
+        headers: { "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document" },
+      )
+
+      assert_equal 302, browser.response.status
+      callback = URI.parse(jump_rt_url_from_location_for_test(browser.response.location))
+      callback_params = Rack::Utils.parse_nested_query(callback.query.to_s)
+
+      assert_equal "login_required", callback_params.fetch("error")
+      assert_equal state, callback_params.fetch("state")
+      assert_nil callback_params["code"]
+      assert_predicate root.device_session.reload, :revoked?
+    end
+
     test "#{realm} committed logout reissues the anonymous Preference JWT after a successful stop" do
       actor = actor_for(realm)
       root = create_root(config, actor)
@@ -136,7 +146,6 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       hosts = Rails.configuration.x.boot_config.fetch(:hosts)
       if realm == "app"
         visa_host = hosts.visa_service.host
-        base_host = hosts.base_service.host
         preference_class = AppPreference
         status_class = AppPreferenceStatus
         prefix = "App"
@@ -151,7 +160,6 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
         web_push_enabled_id = AppPreferenceWebPushOption::ENABLED
       else
         visa_host = hosts.visa_staff.host
-        base_host = hosts.base_staff.host
         preference_class = OrgPreference
         status_class = OrgPreferenceStatus
         prefix = "Org"
@@ -221,10 +229,6 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       browser.cookies << Rack::Test::Cookie.new(
         "#{PreferenceCookieName.anonymous_jwt}=#{Rack::Utils.escape(token)}", URI.parse("https://#{visa_host}/"),
       )
-      browser.cookies << Rack::Test::Cookie.new(
-        "#{PreferenceBrowserBinding::COOKIE_NAME}=#{binding_value}", URI.parse("https://#{base_host}/"),
-      )
-
       browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
 
       assert_equal 303, browser.response.status
@@ -270,10 +274,6 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
         .find_by!(preference_id: target.id)
 
       assert_equal source_binding.digest, target_binding.digest
-      assert_not_includes browser.response.headers["Set-Cookie"].to_s, "#{PreferenceBrowserBinding::COOKIE_NAME}="
-      browser.host!(base_host)
-
-      assert_equal binding_value, browser.cookies[PreferenceBrowserBinding::COOKIE_NAME]
     end
 
     test "#{realm} Preference copy failure rolls back its setting transaction after logout commits" do
@@ -935,56 +935,6 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       assert_equal 1, config.fetch(:target).where(root_id: root.id).count
     end
 
-    test "#{realm} leaving Visa confirmation keeps the OP session and both grants active" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      origin = create_grant(config, actor, root, "core-#{realm}-jp")
-      sibling = create_grant(config, actor, root, "warp-#{realm}-jp")
-      hosts = Rails.configuration.x.boot_config.fetch(:hosts)
-      core_host = hosts.public_send(config.fetch(:core_host)).host
-      visa_host = hosts.public_send(config.fetch(:visa_host)).host
-      browser = open_session
-      install_credentials(browser, origin, actor, root, core_host, config)
-      sibling_browser = open_session
-      warp_host = hosts.public_send(config.fetch(:warp_host)).host
-      install_credentials(sibling_browser, sibling, actor, root, warp_host, config)
-      stops = config.fetch(:stop).count
-      browser.post("/sign/out?ri=jp")
-
-      assert_equal 303, browser.response.status
-      assert_empty browser.cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s
-      assert_empty browser.cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s
-      assert_predicate origin.reload, :active?
-      assert_equal stops, config.fetch(:stop).count
-      target = URI.parse(browser.response.location)
-      browser.host!(visa_host)
-      cookie = visa_access(actor, root, visa_host, config)
-      browser.cookies << Rack::Test::Cookie.new(
-        "#{AuthenticationBase::ACCESS_COOKIE_KEY}=#{Rack::Utils.escape(cookie)}", URI.parse("https://#{visa_host}/"),
-      )
-      browser.get(target.request_uri)
-      3.times do
-        break unless browser.response.redirect?
-
-        browser.get(jump_rt_url_from_location_for_test(browser.response.location))
-      end
-
-      assert_equal 200, browser.response.status
-      browser.get("/?ri=jp")
-
-      assert_predicate root.reload, :currently_usable?
-      assert_predicate origin.reload, :active?
-      assert_predicate sibling.reload, :active?
-      assert_equal stops, config.fetch(:stop).count
-      browser.host!(core_host)
-      browser.post("/sign/out?ri=jp")
-
-      assert_equal 401, browser.response.status
-      sibling_browser.get("/dashboard?ri=jp")
-
-      assert_equal 200, sibling_browser.response.status
-    end
-
     test "#{realm} a missing Jump ticket after commit renders the signed-out page" do
       actor = actor_for(realm)
       root = create_root(config, actor)
@@ -1081,7 +1031,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       assert_not browser.cookies[AuthenticationBase::ACCESS_COOKIE_KEY].present?
     end
 
-    test "#{realm} confirmation stops both rotated roots and their grants on the current device" do
+    test "#{realm} confirmation stops both rotated roots and grants through the Visa OP" do
       actor = actor_for(realm)
       predecessor = create_root(config, actor)
       other_root = create_root(config, actor)
@@ -1096,51 +1046,11 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       origin = create_grant(config, actor, current, "core-#{realm}-jp")
       sibling = create_grant(config, actor, current, "warp-#{realm}-jp")
       other_grant = create_grant(config, actor, other_root, "warp-#{realm}-jp")
-      hosts = Rails.configuration.x.boot_config.fetch(:hosts)
-      core_host = hosts.public_send(config.fetch(:core_host)).host
-      warp_host = hosts.public_send(config.fetch(:warp_host)).host
-      visa_host = hosts.public_send(config.fetch(:visa_host)).host
-      browser = open_session
-      sibling_browser = open_session
-      install_credentials(browser, origin, actor, current, core_host, config)
-      install_credentials(sibling_browser, sibling, actor, current, warp_host, config)
-
-      browser.post("/sign/out?ri=jp")
+      browser = visa_browser(config, actor, current)
+      stage_no_hint(browser)
+      browser.post("/oidc/logout/confirmation?ri=jp")
 
       assert_equal 303, browser.response.status
-      end_session = URI.parse(browser.response.location)
-      end_query = Rack::Utils.parse_nested_query(end_session.query.to_s)
-
-      assert_equal visa_host, end_session.host
-      assert_equal origin.logout_hint.id_token, end_query.fetch("id_token_hint")
-      browser.host!(visa_host)
-      visa_cookie = visa_access(actor, current, visa_host, config)
-      browser.cookies << Rack::Test::Cookie.new(
-        "#{AuthenticationBase::ACCESS_COOKIE_KEY}=#{Rack::Utils.escape(visa_cookie)}", URI.parse("https://#{visa_host}/"),
-      )
-      browser.get(end_session.request_uri)
-      3.times do
-        break unless browser.response.redirect?
-
-        browser.get(jump_rt_url_from_location_for_test(browser.response.location))
-      end
-
-      assert_equal 200, browser.response.status
-      pending = browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY]
-
-      assert_equal current.device_session.public_id, pending.fetch("device_session_public_id")
-      assert_equal origin.public_id, pending.fetch("grant_public_id")
-      browser.post(
-        "/oidc/logout/confirmation?ri=jp", headers: {
-          "Origin" => "https://#{visa_host}", "Sec-Fetch-Site" => "same-origin",
-        },
-      )
-
-      assert_equal 303, browser.response.status
-      callback = URI.parse(jump_rt_url_from_location_for_test(browser.response.location))
-
-      assert_equal end_query.fetch("state"), Rack::Utils.parse_nested_query(callback.query.to_s).fetch("state")
-      assert_equal URI.parse(end_query.fetch("post_logout_redirect_uri")).host, callback.host
       [predecessor, current].each do |root|
         assert_predicate root.reload, :revoked?
         assert_equal 1, config.fetch(:target).where(root_id: root.id).count
@@ -1150,13 +1060,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       assert_predicate sibling.reload, :revoked?
       assert_predicate other_root.reload, :currently_usable?
       assert_predicate other_grant.reload, :active?
-      browser.host!(core_host)
-      browser.post("/sign/out?ri=jp")
-
-      assert_equal 401, browser.response.status
-      sibling_browser.get("/dashboard")
-
-      assert_not_equal 200, sibling_browser.response.status
+      assert_equal 2, config.fetch(:participant).where(grant_id: [origin.id, sibling.id]).count
     end
   end
 
@@ -1270,20 +1174,6 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     )
     store_oidc_rp_logout_hint!(grant, actor, client)
     grant
-  end
-
-  def install_credentials(browser, grant, actor, root, host, config)
-    client = OidcClientRegistry.find!(grant.oidc_client_id)
-    browser.host!(host)
-    browser.https!
-    browser.cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE] = AuthenticationTokenService.encode(
-      actor, host:, resource_type: config.fetch(:resource_type), session_public_id: root.public_id,
-             base_session_public_id: root.public_id, oidc_sid: grant.public_id, oidc_jti: grant.oidc_jti,
-             expires_at: 10.minutes.from_now, scopes: %w(openid profile), issuer: OidcIssuer.for_client(client),
-             audiences: [client.aud], jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(client),
-             subject: OidcSubject.for(actor, resource_type: config.fetch(:resource_type)), client_id: client.client_id,
-    )
-    browser.cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE] = grant.issue_refresh_token!
   end
 
   def visa_access(actor, root, host, config)

@@ -17,6 +17,9 @@ module AuthStepUpResultHandoff
   def create
     return unless load_result_ceremony_context!
     return render_invalid_step_up_context! unless @step_up_ceremony_transaction.verified?
+    unless @step_up_ceremony_transaction.required_scope == OidcAuthorizeRequestResolver::STEP_UP_SCOPE
+      raise ActionController::BadRequest, "No relying-party verification completion return is available"
+    end
 
     issuance = BaseAuthAdmissionCoordinator.issue_result!(
       transaction: @step_up_ceremony_transaction,
@@ -42,10 +45,6 @@ module AuthStepUpResultHandoff
 
   def result_completion_url(issuance)
     transaction = issuance.transaction
-    return ceremony_result_completion_url(
-      result_ref: issuance.reference, transaction_ref: transaction.transaction_id, ri: params[:ri],
-    ) unless transaction.required_scope == OidcAuthorizeRequestResolver::STEP_UP_SCOPE
-
     resource_type = { "app" => "client", "org" => "operator" }.fetch(transaction.surface)
     query = {
       step_up_result_ref: issuance.reference,

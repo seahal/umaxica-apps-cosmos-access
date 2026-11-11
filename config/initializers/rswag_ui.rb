@@ -11,20 +11,19 @@ if Rails.env.development?
     # Rswag::Ui::Middleware renders lib/rswag/ui/index.erb with `config_object.to_json` inlined
     # into the `SwaggerUIBundle({...})` call, so every key set here reaches Swagger UI directly.
 
-    # The three surfaces, as relative paths under this same host. `config/routes/swagger.rb` mounts
+    # The two owned API surfaces, as relative paths under this same host. `config/routes/swagger.rb` mounts
     # Rswag::Api::Engine at /openapi, so these resolve to the authenticated document endpoint on
     # swagger.umaxica.dev and nowhere else. Relative on purpose: an absolute URL would hard-code an
-    # origin, and the browser is already on the canonical one. Adding a fourth entry pointing at
+    # origin, and the browser is already on the canonical one. Adding an entry pointing at
     # any other origin would make Swagger UI fetch an OpenAPI document this repository does not
     # control.
     config.openapi_endpoint("/openapi/openapi.app.yml", "Umaxica app surface")
-    config.openapi_endpoint("/openapi/openapi.com.yml", "Umaxica com surface")
     config.openapi_endpoint("/openapi/openapi.org.yml", "Umaxica org surface")
 
     # Read-only. An empty `supportedSubmitMethods` removes the "Try it out" control for every HTTP
     # method, so the page cannot be used to issue requests against the described APIs. This is the
     # initial posture on purpose: enabling it would mean a dashboard host could drive authenticated
-    # calls into the app, org, and com surfaces, which is a separate authorization decision.
+    # calls into the app and org surfaces, which is a separate authorization decision.
     config.config_object[:supportedSubmitMethods] = []
 
     # Never keep entered credentials in browser storage. With submission disabled there is nothing

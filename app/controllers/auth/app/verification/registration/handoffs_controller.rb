@@ -31,6 +31,6 @@ class Auth::App::Verification::Registration::HandoffsController < ::Auth::App::A
   def ceremony_result_layout = "auth/app/application"
 
   def ceremony_result_completion_url(**)
-    base_app_verification_completion_url(**, host: base_rp_host, protocol: "https")
+    raise ActionController::BadRequest, "No relying-party registration completion return is available"
   end
 end

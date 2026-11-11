@@ -2,8 +2,11 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require_relative "../support/oidc_auth_admission_test_helper"
 
 class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
+  include OidcAuthAdmissionTestHelper
+
   self.fixture_table_names = []
 
   setup do
@@ -24,29 +27,17 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
     TurnstileVerifierStub.challenge_response = nil
   end
 
-  test "an admitted Google callback records Auth evidence and Base issues the original OIDC root" do
+  test "an admitted Google callback records Auth evidence and Visa issues the original OIDC result" do
     actor = Client.create!(
       security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
       birthdate: "2000-01-01",
     )
     subject = "ordinary-social-#{SecureRandom.hex(8)}"
     ClientGoogleIdentity.create!(user: actor, uid: subject, provider: "google", status_id: ClientGoogleIdentityStatus::ACTIVE)
-    BaseSelectorBootstrapAuthority.call(surface: :app, principal: actor)
-    base = self
     auth = open_session
-    base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
     auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-    base_headers = { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" }
     auth_headers = { "Origin" => "https://#{auth_host}", "Sec-Fetch-Site" => "same-origin" }
-    base.host!(base_host)
-    base.https!
-    base.get("/sign", params: { ri: "jp" })
-
-    assert_equal 200, base.response.status
-    entry_form = Nokogiri::HTML(base.response.body).at_css("form")
-    entry_fields = entry_form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-    base.post(entry_form["action"], params: entry_fields, headers: base_headers)
-    binding = bootstrap_social_admission!(base:, auth:, base_host:, auth_host:)
+    binding = bootstrap_social_admission!(auth:, auth_host:)
 
     assert_equal 200, auth.response.status
     csrf = auth.response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
@@ -94,7 +85,7 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
     before_root_count = ClientToken.where(user_id: actor.id).count
     auth.host!(result.host)
     auth.https!
-    auth.get(result.request_uri, headers: base_result_headers(base, result.host))
+    auth.get(result.request_uri, headers: visa_result_headers(result.host))
 
     assert_equal 200, auth.response.status
     form = auth.response.parsed_body.at_css("form#visa-authorization-continuation-form")
@@ -114,13 +105,11 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
                  "Visa result did not issue the root: #{auth.response.status} #{auth.response.location}"
 
     assert_equal 303, auth.response.status
-    receiver = URI.parse(jump_rt_url_from_location_for_test(auth.response.location))
+    callback = URI.parse(jump_rt_url_from_location_for_test(auth.response.location))
+    registered_callback = OidcClientRegistry.find!("core-app-jp").redirect_uris_by_realm.fetch("client").first
+    expected_callback = URI.parse(registered_callback)
 
-    assert_equal base_host, receiver.host
-    base.host!(base_host)
-    base.get(receiver.request_uri, headers: base_headers)
-
-    assert_response :redirect
+    assert_equal [expected_callback.host, expected_callback.path], [callback.host, callback.path]
     token = ClientToken.find_by!(user_id: actor.id)
 
     assert_equal [ceremony.authentication_event_at, "google"],
@@ -129,10 +118,7 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
                  [token.root_login_established_at.present?,
                   authorization_transaction_for_test(binding).reload.browser_session_ref,
                   authorization_transaction_for_test(binding).consumed?,]
-    grant = OpAppGrant.find_by!(client_token_id: token.id)
-
-    assert_equal "base-app-ww", grant.oidc_client_id
-    assert_social_rp_dashboard(base)
+    assert_equal ClientStatus::ACTIVE, actor.reload.status_id
   end
 
   test "AC-53: a Google callback for another auth_sid is refused before state or ceremony writes" do
@@ -309,30 +295,17 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
     ]
   end
 
-  test "an admitted Apple callback records Auth evidence and Base issues the original OIDC root" do
+  test "an admitted Apple callback records Auth evidence and Visa issues the original OIDC result" do
     actor = Client.create!(
       security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
       birthdate: "2000-01-01",
     )
     subject = "ordinary-social-#{SecureRandom.hex(8)}"
     ClientAppleIdentity.create!(user: actor, uid: subject, provider: "apple", status_id: ClientAppleIdentityStatus::ACTIVE)
-    BaseSelectorBootstrapAuthority.call(surface: :app, principal: actor)
-    base = self
     auth = open_session
-    base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
     auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-    base_headers = { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" }
     auth_headers = { "Origin" => "https://#{auth_host}", "Sec-Fetch-Site" => "same-origin" }
-    base.host!(base_host)
-    base.https!
-    base.get("/sign", params: { ri: "jp" })
-
-    assert_equal 200, base.response.status
-    entry_form = Nokogiri::HTML(base.response.body).at_css("form")
-    entry_fields = entry_form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-    base.post(entry_form["action"], params: entry_fields, headers: base_headers)
-
-    binding = bootstrap_social_admission!(base:, auth:, base_host:, auth_host:)
+    binding = bootstrap_social_admission!(auth:, auth_host:)
 
     assert_equal 200, auth.response.status
     csrf = auth.response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
@@ -373,7 +346,7 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
     assert_difference(-> { ClientToken.where(user_id: actor.id).count }, 1) do
       auth.host!(result.host)
       auth.https!
-      auth.get(result.request_uri, headers: base_result_headers(base, result.host))
+      auth.get(result.request_uri, headers: visa_result_headers(result.host))
 
       assert_equal 200, auth.response.status
       form = auth.response.parsed_body.at_css("form#visa-authorization-continuation-form")
@@ -391,13 +364,11 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
     end
 
     assert_equal 303, auth.response.status
-    receiver = URI.parse(jump_rt_url_from_location_for_test(auth.response.location))
+    callback = URI.parse(jump_rt_url_from_location_for_test(auth.response.location))
+    registered_callback = OidcClientRegistry.find!("core-app-jp").redirect_uris_by_realm.fetch("client").first
+    expected_callback = URI.parse(registered_callback)
 
-    assert_equal base_host, receiver.host
-    base.host!(base_host)
-    base.get(receiver.request_uri, headers: base_headers)
-
-    assert_response :redirect
+    assert_equal [expected_callback.host, expected_callback.path], [callback.host, callback.path]
     token = ClientToken.find_by!(user_id: actor.id)
 
     assert_equal [ceremony.authentication_event_at, "apple"],
@@ -406,10 +377,7 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
                  [token.root_login_established_at.present?,
                   authorization_transaction_for_test(binding).reload.browser_session_ref,
                   authorization_transaction_for_test(binding).consumed?,]
-    grant = OpAppGrant.find_by!(client_token_id: token.id)
-
-    assert_equal "base-app-ww", grant.oidc_client_id
-    assert_social_rp_dashboard(base)
+    assert_equal ClientStatus::ACTIVE, actor.reload.status_id
   end
   test "an existing Google subject started at signup is refused without Auth evidence or Root" do
     actor = Client.create!(
@@ -418,22 +386,10 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
     )
     subject = "ordinary-social-#{SecureRandom.hex(8)}"
     ClientGoogleIdentity.create!(user: actor, uid: subject, provider: "google", status_id: ClientGoogleIdentityStatus::ACTIVE)
-    base = self
     auth = open_session
-    base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
     auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-    base_headers = { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" }
     auth_headers = { "Origin" => "https://#{auth_host}", "Sec-Fetch-Site" => "same-origin" }
-    base.host!(base_host)
-    base.https!
-    base.get("/sign", params: { ri: "jp" })
-
-    assert_equal 200, base.response.status
-    entry_form = Nokogiri::HTML(base.response.body).at_css("form")
-    entry_fields = entry_form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-    base.post(entry_form["action"], params: entry_fields, headers: base_headers)
-
-    binding = bootstrap_social_admission!(base:, auth:, base_host:, auth_host:)
+    binding = bootstrap_social_admission!(auth:, auth_host:, intent: "sign_up")
 
     assert_equal 200, auth.response.status
     csrf = auth.response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
@@ -445,13 +401,7 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
       provider: "google", uid: subject, info: { name: "Provider fixture" },
       credentials: { token: "provider-fixture", expires_at: 1.hour.from_now.to_i },
     )
-    switch_browser_to_sign_up!(auth, base_browser: base)
-    # The Switch admits the browser again on a new Sign Up Binding of the same parent.
-    binding = binding.class.where(
-      authorization_transaction_id: binding.authorization_transaction_id, entry_intent: "sign_up",
-    ).order(:id).last
-    auth.host!(auth_host)
-    csrf = auth.response.parsed_body.at_css(%q(meta[name="csrf-token"]))&.[]("content") || csrf
+    admit_browser_to_sign_up!(auth)
     auth.post(
       auth_app_social_google_registration_path, params: { ri: "jp" },
                                                 headers: auth_headers.merge("X-CSRF-Token" => csrf),
@@ -471,10 +421,7 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
 
     assert_equal I18n.t("sign.app.social.verified_subject_guidance.registered.title"), guidance.at_css("h1").text
     assert_includes guidance.text, I18n.t("sign.app.social.verified_subject_guidance.registered.body")
-    fresh_start = URI.parse(guidance.at_css("a")["href"])
-
-    assert_equal [base_host, "/sign", { "ri" => "jp" }],
-                 [fresh_start.host, fresh_start.path, Rack::Utils.parse_query(fresh_start.query)]
+    assert_empty guidance.css("a")
     assert_nil auth.session[SocialCallbackGuard::SOCIAL_STATE_SESSION_KEY]
     assert_nil auth.session[SocialAuth::SOCIAL_ENTRY_SESSION_KEY]
     ceremony = ClientAuthCeremonySession.find(binding.reload.admitted_auth_ceremony_session_id)
@@ -486,88 +433,9 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
 
   test "a verified unregistered Google subject at sign-in receives only a fresh sign-up entry" do
     subject = "unregistered-social-#{SecureRandom.hex(8)}"
-    base = self
-    auth = open_session
+    auth, binding, csrf = admitted_social_browser!(sign_up: false)
     auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-    base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-    visa_host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
     auth_headers = { "Origin" => "https://#{auth_host}", "Sec-Fetch-Site" => "same-origin" }
-    navigation = {
-      "Sec-Fetch-Mode" => "navigate",
-      "Sec-Fetch-Dest" => "document",
-      "Sec-Fetch-Site" => "cross-site",
-    }
-
-    base.host!(base_host)
-    base.https!
-    base.get("/sign", params: { ri: "jp" })
-    entry_form = Nokogiri::HTML(base.response.body).at_css("form")
-    entry_fields = entry_form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-    base.post(
-      entry_form["action"], params: entry_fields,
-                            headers: { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" },
-    )
-
-    base_jump = URI.parse(base.response.location)
-    base_target =
-      if base_jump.host == visa_host
-        base_jump
-      else
-        base_rt = Rack::Utils.parse_query(base_jump.query).fetch("rt")
-        URI.parse(JWT.decode(base_rt, nil, false).first.fetch("url"))
-      end
-
-    assert_equal [visa_host, "/oauth/authorize"], [base_target.host, base_target.path]
-    visa = open_session
-    visa.host!(visa_host)
-    visa.https!
-    visa.get(base_target.request_uri, headers: navigation)
-
-    visa_jump = URI.parse(visa.response.location)
-    sentry_uri =
-      if visa_jump.host == auth_host
-        visa_jump
-      else
-        visa_rt = Rack::Utils.parse_query(visa_jump.query).fetch("rt")
-        URI.parse(JWT.decode(visa_rt, nil, false).first.fetch("url"))
-      end
-
-    assert_equal auth_host, sentry_uri.host
-    entry_ref = Rack::Utils.parse_query(sentry_uri.query).fetch("entry_ref")
-    binding = BaseAuthAdmissionCoordinator.find_admission_binding!(surface: "app", reference: entry_ref)
-
-    auth.host!(auth_host)
-    auth.https!
-    auth.get(sentry_uri.request_uri, headers: navigation)
-    current = auth
-    8.times do
-      break unless current.response.redirect?
-
-      location = URI.parse(current.response.location)
-      target =
-        if [base_host, visa_host, auth_host].include?(location.host)
-          location
-        else
-          jump_rt = Rack::Utils.parse_query(location.query).fetch("rt")
-          URI.parse(JWT.decode(jump_rt, nil, false).first.fetch("url"))
-        end
-      receiver =
-        case target.host
-        when base_host then base
-        when visa_host then visa
-        when auth_host then auth
-        else raise ArgumentError, "unexpected social admission host"
-        end
-      receiver.host!(target.host)
-      receiver.get(target.request_uri, headers: navigation)
-      current = receiver
-    end
-
-    assert_equal auth, current
-    assert_equal 200, auth.response.status
-    assert_predicate binding.reload.base_confirmed_at, :present?
-    assert_predicate binding.reload, :redeemed?
-    csrf = auth.response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
 
     OmniAuth.config.mock_auth[:google] = OmniAuth::AuthHash.new(
       provider: "google", uid: subject, info: { name: "Provider fixture" },
@@ -594,10 +462,7 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
     assert_equal I18n.t("sign.app.social.verified_subject_guidance.unregistered.title"),
                  guidance.at_css("h1").text
     assert_includes guidance.text, I18n.t("sign.app.social.verified_subject_guidance.unregistered.body")
-    fresh_start = URI.parse(guidance.at_css("a")["href"])
-
-    assert_equal [base_host, "/sign", { "ri" => "jp" }],
-                 [fresh_start.host, fresh_start.path, Rack::Utils.parse_query(fresh_start.query)]
+    assert_empty guidance.css("a")
     assert_nil auth.session[SocialCallbackGuard::SOCIAL_STATE_SESSION_KEY]
     assert_nil auth.session[SocialAuth::SOCIAL_ENTRY_SESSION_KEY]
     admitted_ceremony = ClientAuthCeremonySession.find(binding.reload.admitted_auth_ceremony_session_id)
@@ -606,26 +471,14 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
   end
 
   %w(google apple).each do |provider|
-    test "A29-6: #{provider} Sign Up completes and then signs in to the original RP" do
+    test "A29-6: #{provider} Sign Up completes without creating an OP session" do
       sign_in_feature = FeatureFlags::REGISTRY.fetch(:sign_in_available_app).name
       previous_sign_in_availability = Flipper.enabled?(sign_in_feature)
       subject = "new-social-#{SecureRandom.hex(8)}"
-      base = self
       auth = open_session
-      base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
       auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-      base_headers = { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" }
       auth_headers = { "Origin" => "https://#{auth_host}", "Sec-Fetch-Site" => "same-origin" }
-      base.host!(base_host)
-      base.https!
-      base.get("/sign", params: { ri: "jp" })
-
-      assert_equal 200, base.response.status
-      entry_form = Nokogiri::HTML(base.response.body).at_css("form")
-      entry_fields = entry_form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-      base.post(entry_form["action"], params: entry_fields, headers: base_headers)
-
-      binding = bootstrap_social_admission!(base:, auth:, base_host:, auth_host:)
+      binding = bootstrap_social_admission!(auth:, auth_host:, intent: "sign_up")
 
       assert_equal 200, auth.response.status
       csrf = auth.response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
@@ -637,13 +490,6 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
         provider: provider, uid: subject, info: { name: "Provider fixture" },
         credentials: { token: "provider-fixture", expires_at: 1.hour.from_now.to_i },
       )
-      switch_browser_to_sign_up!(auth, base_browser: base)
-      # The Switch admits the browser again on a new Sign Up Binding of the same parent.
-      binding = binding.class.where(
-        authorization_transaction_id: binding.authorization_transaction_id, entry_intent: "sign_up",
-      ).order(:id).last
-      auth.host!(auth_host)
-      csrf = auth.response.parsed_body.at_css(%q(meta[name="csrf-token"]))&.[]("content") || csrf
       auth.post(
         "/social/#{provider}/registration", params: { ri: "jp" },
                                             headers: auth_headers.merge("X-CSRF-Token" => csrf),
@@ -719,35 +565,11 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
       identity = ClientExternalIdentity.find_by!(provider: provider, subject:)
       actor = Client.find(identity.client_id)
 
-      assert_equal [actor.id, true, true, nil],
-                   [signup.reload.principal_id, signup.completed?, ClientIdentity.exists?(source_record_id: actor.id),
-                    base.cookies[AuthenticationBase::ACCESS_COOKIE_KEY],]
+      assert_equal [actor.id, true, true],
+                   [signup.reload.principal_id, signup.completed?, ClientIdentity.exists?(source_record_id: actor.id)]
       assert_equal 0, ClientToken.where(user_id: actor.id).count
       assert_nil auth.cookies[AuthenticationBase::ACCESS_COOKIE_KEY]
       assert_nil auth.cookies[AuthenticationBase::REFRESH_COOKIE_KEY]
-      ceremony = admitted_auth_ceremony_session_for_test(binding.reload)
-      evidence_time = ceremony.authentication_event_at
-
-      assert_equal [true, provider], [binding.redeemed?, ceremony.authentication_method]
-      # S1/S2: the canonical Sign In continues to the original OIDC authorization, where Base issues
-      # the one Root for the provider evidence (S3).
-      Flipper.enable(sign_in_feature)
-
-      assert_difference(-> { ClientToken.where(user_id: actor.id).count }, 1) do
-        drive_browser_through_continuations!(auth, base_browser: base)
-      end
-      token = ClientToken.find_by!(user_id: actor.id)
-
-      assert_equal [true, true, 200, "/dashboard"],
-                   [base.cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].present?,
-                    base.cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].present?,
-                    base.response.status, base.request.path,]
-
-      assert_equal [evidence_time, provider, true, token.public_id, true],
-                   [token.authentication_event_at, token.established_authentication_method,
-                    token.root_login_established_at.present?,
-                    authorization_transaction_for_test(binding).reload.browser_session_ref,
-                    authorization_transaction_for_test(binding).consumed?,]
     ensure
       previous_sign_in_availability ? Flipper.enable(sign_in_feature) : Flipper.disable(sign_in_feature)
     end
@@ -760,22 +582,10 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
     )
     subject = "ordinary-social-#{SecureRandom.hex(8)}"
     ClientGoogleIdentity.create!(user: actor, uid: subject, provider: "google", status_id: ClientGoogleIdentityStatus::ACTIVE)
-    base = self
     auth = open_session
-    base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
     auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-    base_headers = { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" }
     auth_headers = { "Origin" => "https://#{auth_host}", "Sec-Fetch-Site" => "same-origin" }
-    base.host!(base_host)
-    base.https!
-    base.get("/sign", params: { ri: "jp" })
-
-    assert_equal 200, base.response.status
-    entry_form = Nokogiri::HTML(base.response.body).at_css("form")
-    entry_fields = entry_form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-    base.post(entry_form["action"], params: entry_fields, headers: base_headers)
-
-    binding = bootstrap_social_admission!(base:, auth:, base_host:, auth_host:)
+    binding = bootstrap_social_admission!(auth:, auth_host:)
 
     assert_equal 200, auth.response.status
     csrf = auth.response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
@@ -810,8 +620,15 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
     auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     host! auth_host
     https!
-    get auth_app_root_path(ri: "jp")
-    csrf = response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
+    csrf = SecureRandom.urlsafe_base64(32)
+    continuity = { "session_id" => SecureRandom.hex(16), "_csrf_token" => csrf }
+    cookie_request = ActionDispatch::TestRequest.create
+    jar = ActionDispatch::Cookies::CookieJar.build(cookie_request, {})
+    session_key = Rails.application.config.session_options.fetch(:key)
+    jar.encrypted[session_key] = { value: continuity }
+    store_raw_cookies(
+      cookies, "#{session_key}=#{Rack::Utils.escape(jar[session_key])}", URI.parse("https://#{auth_host}/"),
+    )
     assert_no_difference(
       [
         "ClientToken.count", "ClientSignUpFlow.count", "ClientSocialCeremonyTransaction.count",
@@ -886,7 +703,7 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
     assert_predicate auth.cookies["auth_sid"].to_s, :empty?
   end
 
-  test "R-AU-49: Back after a social dispatch keeps the first page and permits Switch before callback" do
+  test "R-AU-49: social sign-up entry does not render a sign-in switch" do
     auth, binding, csrf = admitted_social_browser!(sign_up: true)
     headers = auth_origin_headers.merge("X-CSRF-Token" => csrf)
     assert_no_difference("ClientSignUpFlow.count") do
@@ -894,31 +711,14 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
     end
 
     assert_equal 307, auth.response.status
-    state = auth.session.fetch(SocialCallbackGuard::SOCIAL_STATE_SESSION_KEY)
-
     auth.get(auth_app_sign_up_path(ri: "jp"), headers: navigation_headers)
 
     assert_equal 200, auth.response.status
     props = JSON.parse(Nokogiri::HTML(auth.response.body).at_css("script[data-page='app']").text).fetch("props")
 
-    assert_equal "sign_in", props.fetch("switch_form").fetch("to")
-    assert_equal "/sign/cancellation?ri=jp", props.fetch("cancel_form").fetch("action")
-    switch_form = props.fetch("switch_form")
-
-    auth.post(
-      switch_form.fetch("action"), params: { to: switch_form.fetch("to"),
-                                             authenticity_token: switch_form.fetch("authenticity_token"), },
-                                   headers: auth_origin_headers.merge(
-                                     "X-CSRF-Token" => switch_form.fetch("authenticity_token"),
-                                   ),
-    )
-
-    assert_equal 303, auth.response.status
+    assert_nil props["switch_form"]
+    assert_predicate props.fetch("cancel_form"), :present?
     assert_equal 0, ClientSignUpFlow.where(auth_admission_binding_id: binding.id).count
-    assert_no_difference("ClientSignUpFlow.count") do
-      auth.get(auth_app_social_google_callback_path, params: { state:, ri: "jp" }, headers: auth_origin_headers)
-    end
-    assert_equal 409, auth.response.status
   end
 
   test "R-AU-49: a fresh social dispatch replaces state and a stale callback leaves it usable" do
@@ -1161,10 +961,7 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
       assert_equal [0, 0, 0, 0], outcome.fetch(:created)
       assert_equal I18n.t(guidance_translation_keys.fetch(:title)), page.at_css("h1").text
       assert_includes page.text, I18n.t(guidance_translation_keys.fetch(:body))
-      target = URI.parse(page.at_css("a")["href"])
-
-      assert_equal [ENV.fetch("PUBLIC_BASE_SERVICE_URL"), "/sign", { "ri" => "jp" }],
-                   [target.host, target.path, Rack::Utils.parse_query(target.query)]
+      assert_empty page.css("a")
       assert_equal [true, false, false, false, "pending", false],
                    [outcome.fetch(:apple_nonce_present), outcome.fetch(:nonce_remaining),
                     outcome.fetch(:social_state_remaining), outcome.fetch(:entry_remaining),
@@ -1240,7 +1037,7 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
                  [flow.entry_method, flow.social_provider, flow.principal_id, flow.requirement_cleared?(:confirmation)]
   end
 
-  test "a registered Apple subject at signin records only the admitted Apple evidence before Base handoff" do
+  test "a registered Apple subject at signin records only the admitted Apple evidence before Visa handoff" do
     outcome = social_intent_crossing!(provider: "apple", registered: true, sign_up: false)
 
     assert_equal 303, outcome.fetch(:response).first
@@ -1281,7 +1078,7 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
       assert_equal 200, auth.response.status
       props = JSON.parse(Nokogiri::HTML(auth.response.body).at_css("script[data-page='app']").text).fetch("props")
 
-      assert_equal "sign_in", props.fetch("switch_form").fetch("to")
+      assert_nil props["switch_form"]
       assert_equal 0, ClientSignUpFlow.where(auth_admission_binding_id: binding.id).count
     end
   end
@@ -1354,61 +1151,46 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
 
   # Returns the Auth browser admitted on the requested entry intent, its binding and CSRF token.
   def admitted_social_browser!(sign_up:)
-    base = open_session
-    auth = open_session
-    base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-    auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-    base.host!(base_host)
-    base.https!
-    base.get("/sign", params: { ri: "jp" })
-    entry_form = Nokogiri::HTML(base.response.body).at_css("form")
-    entry_fields = entry_form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-    base.post(
-      entry_form["action"], params: entry_fields,
-                            headers: { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" },
-    )
-    binding = bootstrap_social_admission!(base:, auth:, base_host:, auth_host:)
-    csrf = auth.response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
-    return [auth, binding, csrf] unless sign_up
+    sign_up ? bootstrap_auth_sign_up_admission! : bootstrap_auth_sign_in_admission!
+    sid_cookie = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"
+    ceremony = ClientAuthCeremonySession.find_active_by_raw_sid(cookies[sid_cookie])
+    binding = ClientAuthAdmissionBinding.find_by!(admitted_auth_ceremony_session_id: ceremony.id)
+    csrf = response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
 
-    switch_browser_to_sign_up!(auth, base_browser: base)
-    binding = binding.class.where(
-      authorization_transaction_id: binding.authorization_transaction_id, entry_intent: "sign_up",
-    ).order(:id).last
-    auth.host!(auth_host)
-    [auth, binding, auth.response.parsed_body.at_css(%q(meta[name="csrf-token"]))&.[]("content") || csrf]
+    [self, binding, csrf]
   end
 
   def auth_origin_headers
     { "Origin" => "https://#{ENV.fetch("PUBLIC_AUTH_SERVICE_URL")}", "Sec-Fetch-Site" => "same-origin" }
   end
 
-  def bootstrap_social_admission!(base:, auth:, base_host:, auth_host:)
-    assert_equal 303, base.response.status
-
+  def bootstrap_social_admission!(auth:, auth_host:, intent: "sign_in")
     visa_host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
     visa = open_session
-    authorization_uri = social_authorization_uri!(base:, visa_host:)
     visa.host!(visa_host)
     visa.https!
-    visa.get(authorization_uri.request_uri, headers: navigation_headers)
+    client = OidcClientRegistry.find!("core-app-jp")
+    authorization = {
+      response_type: "code",
+      client_id: client.client_id,
+      redirect_uri: client.redirect_uris_by_realm.fetch("client").first,
+      scope: "openid profile",
+      state: SecureRandom.urlsafe_base64(32),
+      nonce: SecureRandom.urlsafe_base64(32),
+      code_challenge: OidcTestEntry::CODE_CHALLENGE,
+      code_challenge_method: "S256",
+    }
+    authorization[:prompt] = "create" if intent.to_s == "sign_up"
+    visa.get("/oauth/authorize", params: authorization, headers: navigation_headers)
 
     sentry_uri, binding = social_sentry_and_binding!(visa:, auth_host:)
     auth.host!(auth_host)
     auth.https!
     auth.get(sentry_uri.request_uri, headers: navigation_headers)
 
-    settle_social_admission!(auth:, base:, visa:, base_host:, visa_host:)
+    settle_social_admission!(auth:, visa:, visa_host:, auth_host:)
     @visa_browser = visa
     binding
-  end
-
-  def social_authorization_uri!(base:, visa_host:)
-    authorization_uri = URI.parse(jump_rt_url_from_location_for_test(base.response.location))
-
-    assert_equal visa_host, authorization_uri.host
-    assert_equal "/oauth/authorize", authorization_uri.path
-    authorization_uri
   end
 
   def social_sentry_and_binding!(visa:, auth_host:)
@@ -1421,13 +1203,13 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
     [sentry_uri, binding]
   end
 
-  def settle_social_admission!(auth:, base:, visa:, base_host:, visa_host:)
+  def settle_social_admission!(auth:, visa:, visa_host:, auth_host:)
     current = auth
     8.times do
       break unless current.response.redirect?
 
       target = URI.parse(jump_rt_url_from_location_for_test(current.response.location))
-      receiver = social_admission_receiver(target:, base:, visa:, auth:, base_host:, visa_host:)
+      receiver = social_admission_receiver(target:, visa:, auth:, visa_host:, auth_host:)
       receiver.host!(target.host)
       receiver.get(target.request_uri, headers: navigation_headers)
       current = receiver
@@ -1437,11 +1219,11 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
     assert_equal 200, current.response.status
   end
 
-  def social_admission_receiver(target:, base:, visa:, auth:, base_host:, visa_host:)
-    return base if target.host == base_host
+  def social_admission_receiver(target:, visa:, auth:, visa_host:, auth_host:)
     return visa if target.host == visa_host
+    return auth if target.host == auth_host
 
-    auth
+    raise RuntimeError, "Unexpected OIDC admission host: #{target.host.inspect}"
   end
 
   def navigation_headers
@@ -1452,8 +1234,8 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
     }
   end
 
-  def base_result_headers(base, visa_host)
-    cookie_header = cookie_header_for(@visa_browser || base)
+  def visa_result_headers(visa_host)
+    cookie_header = cookie_header_for(@visa_browser)
     navigation_headers.merge(
       "Origin" => "https://#{visa_host}",
       "Cookie" => cookie_header,
@@ -1463,23 +1245,5 @@ class SocialLoginAdmissionTest < ActionDispatch::IntegrationTest
 
   def cookie_header_for(browser)
     browser.cookies.to_hash.map { |name, value| "#{name}=#{Rack::Utils.escape(value)}" }.join("; ")
-  end
-
-  def assert_social_rp_dashboard(base)
-    drive_browser_through_continuations!(base, base_browser: base)
-
-    assert_equal [true, true, 200, "/dashboard"],
-                 [base.cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].present?,
-                  base.cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].present?,
-                  base.response.status, base.request.path,]
-  end
-
-  def oidc_userinfo_result(actor)
-    OidcOpUserInfoClient::Result.new(
-      success: true,
-      claims: { "sub" => OidcSubject.for(actor, resource_type: "client") },
-      error: nil,
-      dependency_failure: false,
-    )
   end
 end

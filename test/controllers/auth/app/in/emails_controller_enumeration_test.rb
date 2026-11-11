@@ -55,7 +55,6 @@ module Auth
                       entry0_intent = "sign_in"
                       entry0_host = {
                         "app" => ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
-                        "com" => ENV.fetch("PUBLIC_AUTH_CORPORATE_URL"),
                         "org" => ENV.fetch("PUBLIC_AUTH_STAFF_URL"),
                       }.fetch(entry0_surface)
                       entry0_browser.host!(entry0_host)
@@ -127,7 +126,6 @@ module Auth
                       entry1_intent = "sign_in"
                       entry1_host = {
                         "app" => ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
-                        "com" => ENV.fetch("PUBLIC_AUTH_CORPORATE_URL"),
                         "org" => ENV.fetch("PUBLIC_AUTH_STAFF_URL"),
                       }.fetch(entry1_surface)
                       entry1_browser.host!(entry1_host)
@@ -205,7 +203,6 @@ module Auth
               admission_intent = "sign_in"
               admission_host = {
                 "app" => ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
-                "com" => ENV.fetch("PUBLIC_AUTH_CORPORATE_URL"),
                 "org" => ENV.fetch("PUBLIC_AUTH_STAFF_URL"),
               }.fetch(admission_surface)
               admission_browser.host!(admission_host)
@@ -266,7 +263,6 @@ module Auth
               admission_intent = "sign_in"
               admission_host = {
                 "app" => ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
-                "com" => ENV.fetch("PUBLIC_AUTH_CORPORATE_URL"),
                 "org" => ENV.fetch("PUBLIC_AUTH_STAFF_URL"),
               }.fetch(admission_surface)
               admission_browser.host!(admission_host)

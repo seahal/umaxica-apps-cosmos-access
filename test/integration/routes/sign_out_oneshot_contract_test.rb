@@ -4,46 +4,36 @@
 require "test_helper"
 
 class SignOutOneshotContractTest < ActionDispatch::IntegrationTest
-  test "every first-party Browser RP exposes a GET-only OIDC logout return route" do
+  test "Visa App and Org retain their OIDC logout routes" do
     hosts = Rails.configuration.x.boot_config.fetch(:hosts)
     cases = [
-      [hosts.core_service.host, "core/app/sign/outs"],
-      [hosts.core_staff.host, "core/org/sign/outs"],
-      [hosts.warp_service.host, "warp/app/sign/outs"],
-      [hosts.warp_staff.host, "warp/org/sign/outs"],
-      [hosts.edit_staff.host, "edit/org/sign/outs"],
-      [hosts.base_service.host, "base/app/sign_outs"],
-      [hosts.base_staff.host, "base/org/sign_outs"],
-      [hosts.palm_service.host, "palm/app/sign/out/completions"],
-      [hosts.tech_staff.host, "tech/org/sign/out/completions"],
+      [hosts.visa_service.host, "visa/app"],
+      [hosts.visa_staff.host, "visa/org"],
     ]
 
-    cases.each do |host, controller|
-      get_route = Rails.application.routes.recognize_path("https://#{host}/sign/out/completion", method: :get)
+    cases.each do |host, namespace|
+      routes = [
+        ["/oidc/logout", :get, "#{namespace}/oidc/logouts", "show"],
+        ["/oidc/logout", :post, "#{namespace}/oidc/logouts", "create"],
+        ["/oidc/logout/confirmation", :post, "#{namespace}/oidc/logouts/confirmations", "create"],
+        ["/oidc/logout/completion", :get, "#{namespace}/oidc/logouts/completions", "show"],
+      ]
 
-      assert_equal controller, get_route.fetch(:controller), host
-      assert_equal "show", get_route.fetch(:action), host
-      assert_raises(ActionController::RoutingError, host) do
-        Rails.application.routes.recognize_path("https://#{host}/sign/out/completion", method: :post)
+      routes.each do |path, method, expected_controller, expected_action|
+        route = Rails.application.routes.recognize_path("https://#{host}#{path}", method: method)
+
+        assert_equal [expected_controller, expected_action], [route.fetch(:controller), route.fetch(:action)], host
       end
     end
   end
 
-  test "Browser RP sign-out start does not expose a DELETE cancellation route" do
+  test "Visa OIDC logout does not expose a DELETE route" do
     hosts = Rails.configuration.x.boot_config.fetch(:hosts)
-    browser_rp_hosts = [
-      hosts.core_service.host,
-      hosts.core_staff.host,
-      hosts.warp_service.host,
-      hosts.warp_staff.host,
-      hosts.edit_staff.host,
-      hosts.palm_service.host,
-      hosts.tech_staff.host,
-    ]
+    visa_hosts = [hosts.visa_service.host, hosts.visa_staff.host]
 
-    browser_rp_hosts.each do |host|
+    visa_hosts.each do |host|
       assert_raises(ActionController::RoutingError, host) do
-        Rails.application.routes.recognize_path("https://#{host}/sign/out", method: :delete)
+        Rails.application.routes.recognize_path("https://#{host}/oidc/logout", method: :delete)
       end
     end
   end

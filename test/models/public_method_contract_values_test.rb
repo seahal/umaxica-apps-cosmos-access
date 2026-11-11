@@ -29,25 +29,7 @@ class PublicMethodContractValuesTest < ActiveSupport::TestCase
     end
   end
 
-  test "taxonomy assignment structural kinds follow their declared vocabulary kind" do
-    single = Publishing::Info::App::RevisionSingleTaxonomyAssignment.new(
-      vocabulary_kind: Publishing::TaxonomyKind::SINGLE_HIERARCHICAL,
-    )
-    multiple = Publishing::Info::App::RevisionMultipleTaxonomyAssignment.new(
-      vocabulary_kind: Publishing::TaxonomyKind::MULTIPLE_ORDERED_FLAT,
-    )
 
-    assert_equal Publishing::TaxonomyKind::SINGLE_HIERARCHICAL, single.structural_kind.key
-    assert_equal Publishing::TaxonomyKind::MULTIPLE_ORDERED_FLAT, multiple.structural_kind.key
-  end
-
-  test "publishing revision and version classes map back to their own entry family" do
-    revision = Publishing::Info::App::EntryRevision.new
-    version = Publishing::Info::App::EntryVersion.new
-
-    assert_equal Publishing::Info::App::Entry, Publishing::ContentFamilies.entry_class_for_revision(revision)
-    assert_equal Publishing::Info::App::Entry, Publishing::ContentFamilies.entry_class_for_version(version)
-  end
 
   test "passkey result candidate initializes metadata as an empty object by default" do
     candidate = IdentityPasskeyCeremonyResultIssuer::Candidate.new(
@@ -98,38 +80,5 @@ class PublicMethodContractValuesTest < ActiveSupport::TestCase
     assert_equal result.to_h, JSON.parse(result.to_json, symbolize_names: true)
   end
 
-  test "inventory results serialize summary and details without changing their shape" do
-    summary = { selection_complete: true, avatars_requested: 0 }
-    details = []
-    avatar_result = AvatarOwnershipTransitionInventoryQuery::Result.new(summary:, details:)
-    group_result = AvatarGroupOwnershipTransitionInventoryQuery::Result.new(summary:, details:)
-    backfill_result = AvatarConcreteOwnershipBackfillOperation::Result.new(summary:, details:)
-    group_backfill_result = AvatarGroupConcreteOwnershipBackfillOperation::Result.new(summary:, details:)
-    cutover_result = AvatarOwnershipCutoverOperation::Result.new(
-      status: "established",
-      summary:,
-      inventory: avatar_result,
-      group_inventory: group_result,
-    )
 
-    assert_predicate avatar_result, :selection_complete?
-    assert_equal({ summary:, details: }, group_result.to_h)
-    assert_equal({ summary:, details: }, backfill_result.to_h)
-    assert_equal({ summary:, details: }, group_backfill_result.to_h)
-    assert_equal(
-      { status: "established", summary:, inventory: avatar_result.to_h, group_inventory: group_result.to_h },
-      cutover_result.to_h,
-    )
-    assert_equal cutover_result.to_h, JSON.parse(cutover_result.to_json, symbolize_names: true)
-    assert_equal({ summary:, details: }, JSON.parse(avatar_result.to_json, symbolize_names: true))
-    assert_equal({ summary:, details: }, JSON.parse(group_result.to_json, symbolize_names: true))
-    assert_equal({ summary:, details: }, JSON.parse(backfill_result.to_json, symbolize_names: true))
-    assert_equal({ summary:, details: }, JSON.parse(group_backfill_result.to_json, symbolize_names: true))
-  end
-
-  test "published entries query returns an empty relation when locale is absent" do
-    query = PublishingPublishedEntriesQuery.new(entry_class: Publishing::Info::App::Entry, locale: " ")
-
-    assert_empty query.call
-  end
 end

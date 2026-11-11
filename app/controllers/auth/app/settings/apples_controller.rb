@@ -110,11 +110,11 @@ module Auth
 
         def show_page_props
           {
-            title: t("controller.sign.app.setting.index.apple"),
-            heading: t("controller.sign.app.setting.index.apple"),
+            title: t("auth.app.settings.providers.apple"),
+            heading: t("auth.app.settings.providers.apple"),
             description: t("views.sign.app.settings.apples.show.description"),
             status: social_link_status_label,
-            back_link: { label: t("sign.app.settings.show.back"), href: auth_app_settings_path },
+            back_link: { label: t("sign.app.settings.show.back"), href: auth_app_sign_in_path(ri: params[:ri]) },
             edit_link: {
               label: t("actions.edit"),
               href: edit_auth_app_settings_apple_path(ri: params[:ri]),
@@ -136,8 +136,8 @@ module Auth
             linked && social_unlink_allowed?
 
           {
-            title: t("controller.sign.app.setting.index.apple"),
-            heading: t("controller.sign.app.setting.index.apple"),
+            title: t("auth.app.settings.providers.apple"),
+            heading: t("auth.app.settings.providers.apple"),
             description: t("views.sign.app.settings.apples.show.description"),
             back_link: {
               label: t("sign.app.settings.show.back"),

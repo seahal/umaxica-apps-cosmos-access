@@ -113,7 +113,7 @@ class Notify::OtpNotifiersTest < ActiveSupport::TestCase
     assert_equal ["otp@umaxica.app"], mail.from
     assert_equal ["notifier-render@example.com"], mail.to
     assert_match "123456", mail.html_part.body.decoded
-    assert_match "verification-token", mail.html_part.body.decoded
+    assert_not_includes mail.html_part.body.decoded, "verification-token"
   end
 
   test "purpose-specific delivery reaches the app mailer without exposing the otp" do

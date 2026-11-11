@@ -1,6 +1,6 @@
 /*
- * Shared typography baseline. Every surface stylesheet under `surfaces/` imports this file, so it
- * is the one place that reaches all fourteen FQDNs.
+ * Shared typography baseline. Each Auth and Visa surface stylesheet under `surfaces/` imports this
+ * file, so the four owned FQDNs use the same text defaults.
  *
  * Sources:
  * - https://ics.media/entry/240411/  line wrapping

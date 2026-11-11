@@ -6,15 +6,15 @@ require "test_helper"
 class AcceptanceWu02CeremonyPurposeHostTest < ActionDispatch::IntegrationTest
   self.fixture_table_names = []
 
-  test "A02-9: Base refuses Sign-in path bindings before changing their binding, ceremony, or transaction" do
+  test "A02-9: Auth refuses Sign-in path bindings before changing their binding, ceremony, or transaction" do
     realms = [
-      ["app", "PUBLIC_BASE_SERVICE_URL", "core-app-jp", ClientOidcAuthorizationTransaction,
+      ["app", "PUBLIC_AUTH_SERVICE_URL", "core-app-jp", ClientOidcAuthorizationTransaction,
        ClientAuthAdmissionBinding, ClientAuthCeremonySession,],
-      ["org", "PUBLIC_BASE_STAFF_URL", "core-org-jp", OperatorOidcAuthorizationTransaction,
+      ["org", "PUBLIC_AUTH_STAFF_URL", "core-org-jp", OperatorOidcAuthorizationTransaction,
        OperatorAuthAdmissionBinding, OperatorAuthCeremonySession,],
     ]
 
-    realms.each do |surface, base_host_key, client_id, transaction_model, _binding_model, session_model|
+    realms.each do |surface, auth_host_key, client_id, transaction_model, _binding_model, session_model|
       client = OidcClientRegistry.find!(client_id)
       transaction = OidcAuthorizationTransactionCoordinator.issue!(
         surface: surface,
@@ -40,19 +40,19 @@ class AcceptanceWu02CeremonyPurposeHostTest < ActionDispatch::IntegrationTest
       binding.attach_auth_session!(auth_session: continuity, confirmation_ref: SecureRandom.uuid)
       before = [binding.reload.attributes, continuity.reload.attributes,
                 transaction_model.find(transaction.id).attributes,]
-      base_browser = open_session
-      base_browser.https!
-      base_browser.host!(ENV.fetch(base_host_key))
-      base_browser.get(
+      auth_browser = open_session
+      auth_browser.https!
+      auth_browser.host!(ENV.fetch(auth_host_key))
+      auth_browser.get(
         "/ceremony_bindings/#{binding.confirmation_ref}/confirmation?ri=jp",
         headers: { "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document" },
       )
 
-      assert_equal [400, nil], [base_browser.response.status, base_browser.response.location], surface
+      assert_equal [404, nil], [auth_browser.response.status, auth_browser.response.location], surface
       assert_equal before,
                    [binding.reload.attributes, continuity.reload.attributes,
                     transaction_model.find(transaction.id).attributes,],
-                   "Base #{surface} must refuse a Sign-in path binding without changing any parent state"
+                   "Auth #{surface} must refuse a Sign-in path binding without changing any parent state"
     end
   end
 

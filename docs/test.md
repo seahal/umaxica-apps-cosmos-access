@@ -1,10 +1,14 @@
-# Test Specification (TS)
+# Historical Test Specification (Pre-Reset)
 
-> **Partially superseded by Identity Authority inversion:** Identity test expectations in this
-> document must be read through `docs/qa/identity-authority-regression-checklist.md`. `acme/www`
-> commits session, token, account, preference, authorization, and freshness state. `sign/id` is
-> ceremony-only and must not be tested as the owner of sessions, refresh, preference, dashboards,
-> account lifecycle, token issuance, logout, or step-up freshness.
+> This legacy specification records earlier route and test plans. It names removed product surfaces,
+> hosts, and workflows; none of those sections are current Access route acceptance criteria. Current
+> local routes are Auth APP/ORG, Visa APP/ORG, and the Mission, Flipper, Blazer, PgHero, Coverband,
+> and Swagger operator tools. Use current accepted specs and checklists for behavior; this document
+> is preserved as historical context rather than maintained case by case.
+
+> Current identity ownership is Auth for credential ceremonies and Visa for local session/OIDC
+> authority. External relying parties own their callbacks, browser sessions, and product pages in
+> their own repositories.
 
 ## Project: Umaxica Apps Cosmos Access
 

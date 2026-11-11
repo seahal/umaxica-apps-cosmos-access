@@ -11,22 +11,26 @@ class AdmissionCurfewTest < ActionDispatch::IntegrationTest
   self.fixture_table_names = []
 
   setup do
-    ri = "jp"
     @base_browser = open_session
-    base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    visa_host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
     auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-    @base_browser.host!(base_host)
+    @base_browser.host!(visa_host)
     @base_browser.https!
-    @base_browser.get("/sign", params: { ri: ri, pt: "/dashboard?ri=#{ri}" })
-    form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-    fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-    @base_browser.post(
-      form["action"], params: fields, headers: {
-        "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin",
-      },
+    client = OidcClientRegistry.find!("core-app-jp")
+    @base_browser.get(
+      "/oauth/authorize", params: {
+        response_type: "code",
+        client_id: client.client_id,
+        redirect_uri: client.redirect_uris_by_realm.fetch("client").first,
+        scope: "openid profile",
+        state: SecureRandom.urlsafe_base64(32),
+        nonce: SecureRandom.urlsafe_base64(32),
+        code_challenge: OidcTestEntry::CODE_CHALLENGE,
+        code_challenge_method: "S256",
+      }, headers: navigation_headers(site: "same-origin"),
     )
     current_browser = @base_browser
-    current_host = base_host
+    current_host = visa_host
     jump_host = URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
 
     12.times do
@@ -37,13 +41,7 @@ class AdmissionCurfewTest < ActionDispatch::IntegrationTest
       target = URI.parse(jump_rt_url_from_location_for_test(target.to_s)) if target.host == jump_host
 
       case target.host
-      when base_host
-        @base_browser.host!(base_host)
-        @base_browser.https!
-        @base_browser.get(target.request_uri, headers: navigation_headers(site: "cross-site"))
-        current_browser = @base_browser
-        current_host = base_host
-      when visa_host_for_test_base_host(base_host)
+      when visa_host
         @base_browser.host!(target.host)
         @base_browser.https!
         @base_browser.get(target.request_uri, headers: navigation_headers(site: "cross-site"))

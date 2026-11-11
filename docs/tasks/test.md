@@ -12,7 +12,9 @@ This document defines how the Rails platform is verified across the current boun
 
 - `app` for end-user product and account flows
 - `org` for staff and organization workflows
-- `com` for public and corporate workflows
+
+Access does not serve the former public/corporate `com` UI or route surface. Tests for retained
+legacy identity models describe persistence only.
 
 ## References
 
@@ -36,7 +38,6 @@ This document defines how the Rails platform is verified across the current boun
 | -------- | ------------------------------------------------------------------- |
 | `app`    | End-user auth, account, preference, and product flows               |
 | `org`    | Staff auth, organization workflows, authorization, and audit writes |
-| `com`    | Public/corporate pages, visitor preference, and guest-safe flows    |
 
 ## Core Cases
 

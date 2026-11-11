@@ -27,9 +27,9 @@ class SessionLimitModelRefusalTest < ActiveSupport::TestCase
       end
     end
 
-    @controller = Base::App::AuthorityController.new
+    @controller = Visa::App::AuthorityController.new
     request = ActionDispatch::TestRequest.create
-    request.host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    request.host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
     request.set_header("HTTPS", "on")
     request.session = ActionController::TestSession.new
     @controller.request = request

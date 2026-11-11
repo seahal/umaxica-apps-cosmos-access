@@ -10,10 +10,10 @@ class BrowserBlockNotificationSubscriberTest < ActiveSupport::TestCase
   test "logs the parsed browser and requested resource without the raw user agent" do
     messages = []
     request = FakeRequest.new(
-      Base::App::RootsController,
-      { action: "index" },
-      "app.umaxica.test",
-      "/",
+      Visa::App::AuthorityController,
+      { action: "show" },
+      "visa.umaxica.test",
+      "/oauth/authorize",
       "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 Chrome/41.0.2228.0 Safari/537.36",
     )
     event = ActiveSupport::Notifications::Event.new(
@@ -33,10 +33,10 @@ class BrowserBlockNotificationSubscriberTest < ActiveSupport::TestCase
     assert_equal "security.browser_block.blocked", parsed.fetch("event")
     assert_equal(
       {
-        "controller" => "Base::App::RootsController",
-        "action" => "index",
-        "host" => "app.umaxica.test",
-        "path" => "/",
+        "controller" => "Visa::App::AuthorityController",
+        "action" => "show",
+        "host" => "visa.umaxica.test",
+        "path" => "/oauth/authorize",
         "browser" => "Chrome",
         "browser_version" => "41.0.2228.0",
         "required_versions" => "modern",

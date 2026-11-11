@@ -1,9 +1,10 @@
 # Sign-Up Sequence
 
-> **Current scope:** APP sign-up and ORG operator lifecycle routes are active. COM authentication
-> and Visitor sign-up have been retired. The COM sections below are retained historical material;
-> their routes and lifecycle descriptions are not current contracts. ORG invitation provisioning
-> currently refuses new invitations. See
+> **Current scope:** Auth APP sign-up and Auth ORG operator lifecycle routes are active; Visa owns
+> local OIDC session and token authority. COM authentication and Visitor sign-up have been retired.
+> The COM sections below are retained historical material; their routes and lifecycle descriptions
+> are not current contracts. External relying parties own their callbacks and product pages in their
+> own repositories. ORG invitation provisioning currently refuses new invitations. See
 > [Sign-Up Eligibility Policy](../policy/signup-eligibility.md) for the current birthdate rule.
 
 ## Effective admission intent
@@ -11,10 +12,10 @@
 At issuance, `AuthEntryIntentResolver` selects Sign In for an ordinary OIDC request, Sign Up for the
 OP's persisted `prompt=create`, or the explicit Switch target when switching. The Binding stores the
 resulting immutable `entry_intent` as `sign_in` or `sign_up`. Re-verification purposes store the
-explicit value `not_applicable`; every realm's database rejects a missing intent or a purpose/intent
-mismatch. Auth entry GETs, confirmed GET redemption, admitted ceremony checks and Base's
-confirmation return target use the same resolver and retained fact. Changing a route or browser
-parameter cannot change the selected intent; wrong-intent entry refuses before consumption.
+explicit value `not_applicable`; retained APP/ORG authority databases reject a missing intent or a
+purpose/intent mismatch. Auth entry GETs, confirmed GET redemption, admitted ceremony checks and
+Visa's confirmation return target use the same resolver and retained fact. Changing a route or
+browser parameter cannot change the selected intent; wrong-intent entry refuses before consumption.
 
 Every Binding stores an immutable, required `curfew_at` from its OP writer's issuance clock plus 30
 minutes, without a database default. A Switch requires the original redeemed/cancelled Binding and
@@ -27,7 +28,7 @@ does not establish an end-to-end deadline for every ceremony consumer.
 APP Social results also resolve their Flow through the required `auth_admission_binding_id`. The
 signed result's session reference must identify a redeemed sign-up Binding that owns that Flow.
 Valid signatures and an independently valid browser proof do not substitute for this agreement. Both
-the first final commit and a committed-receipt read enforce it; the Base receiver scopes its
+the first final commit and a committed-receipt read enforce it; the Visa receiver scopes its
 completion-reference reads and writes to the same Binding. An ownership refusal consumes no fresh
 result/candidate and does not delete a durable registered identity. This protects the current legacy
 Social receiver until WU-05 replaces that transport with shared Finalization.
@@ -44,7 +45,7 @@ past its deadline) or terminal with cleanup pending, failed or past its retry ca
 submit is refused with the contact-held copy (422) and changes nothing: the earlier flow, browser
 locator, pending contact, principal and proof stay as they are and no OTP is queued. Controllers
 never end or clean an earlier attempt to admit a new one. A new attempt after release starts from a
-new Base admission; a session hint naming the released attempt of an earlier admission is then
+new Visa admission; a session hint naming the released attempt of an earlier admission is then
 dropped.
 
 `RetentionPurgeJob` reports stuck APP registrations after its cleanup and retention work using the
@@ -77,10 +78,10 @@ delivery, completion and termination take the same Flow-before-principal lock or
 deadlock with cleanup across databases. Retired COM cleanup implementations are outside the active
 route and lifecycle contract described here.
 
-> **Authority boundary:** `acme/www` is the Session, Token, Account, Preference, Authorization, and
-> downstream-token Authority. `sign/id` is ceremony-only. Existing sign-side physical tables/models
-> do not imply sign-side authority. Do not use this document to reintroduce sign-side sessions,
-> refresh, preference, dashboard, account lifecycle, token issuance, logout, or step-up freshness.
+> **Authority boundary:** Auth performs credential ceremonies. Visa owns local OIDC transactions,
+> sessions, tokens and freshness. Registered external relying parties own their callbacks, browser
+> sessions and product pages in their own repositories. Persisted models do not create local RP
+> routes in Access.
 
 This document records the active APP sign-up and ORG operator acquisition/lifecycle routes. The
 retired COM Email and Telephone sections are historical implementation notes only. Active APP
@@ -125,10 +126,10 @@ until a separate ADR changes that policy.
 
 Current surface terminology and inventory:
 
-| Surface | Term                                    | Actor/resource                                         | Identifier                                                            | Credential setup                                                                                            | Challenge                                                                          | Verification                                                                         | Session/token                                                                       | Chronicle/audit                       | Routes/controllers/views/tests                                                                                                                          |
-| ------- | --------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app`   | User/client registration                | `Client`, contact identifiers, app social identities   | Email, telephone, Google provider assertion, Apple provider assertion | Birthdate checkpoint, passkey checkpoint, passcode checkpoint, and social identity binding where applicable | Sign-up checkpoint requirements; provider callback state validation for app social | Email/telephone OTP verification and checkpoint completion before durable completion | Post-finalization handoff enters the app sign-in/session sequence                   | Client sign-up chronicle/audit events | `config/routes/auth.rb` app `sign/up` and `social`; `app/controllers/sign/app/sign/up/**`; app social callback controllers/views/tests                  |
-| `org`   | Operator acquisition / staff onboarding | `Operator`, invitation and lifecycle request resources | Invitation token or lifecycle request context                         | Passkey and secret credential setup through staff onboarding or signed-in settings where implemented        | No public social sign-up challenge                                                 | Invitation/lifecycle approval and local credential setup boundaries                  | Operator session is established only through org sign-in after local authentication | Operator chronicle/audit events       | `config/routes/auth.rb` org `sign/up/invitations` and settings lifecycle request routes; `app/controllers/sign/org/up/**`; org sign-up/onboarding tests |
+| Surface | Term                                    | Actor/resource                                         | Identifier                                                            | Credential setup                                                                                            | Challenge                                                                          | Verification                                                                         | Session/token                                                                       | Chronicle/audit                       | Routes/controllers/views/tests                                                                                                         |
+| ------- | --------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `app`   | User/client registration                | `Client`, contact identifiers, app social identities   | Email, telephone, Google provider assertion, Apple provider assertion | Birthdate checkpoint, passkey checkpoint, passcode checkpoint, and social identity binding where applicable | Sign-up checkpoint requirements; provider callback state validation for app social | Email/telephone OTP verification and checkpoint completion before durable completion | Post-finalization handoff enters the app sign-in/session sequence                   | Client sign-up chronicle/audit events | `config/routes/auth.rb` app `sign/up` and `social`; `app/controllers/auth/app/sign/up/**`; app social callback controllers/views/tests |
+| `org`   | Operator acquisition / staff onboarding | `Operator`, invitation and lifecycle request resources | Invitation token or lifecycle request context                         | Passkey and secret credential setup through staff onboarding or signed-in settings where implemented        | No public social sign-up challenge                                                 | Invitation/lifecycle approval and local credential setup boundaries                  | Operator session is established only through org sign-in after local authentication | Operator chronicle/audit events       | `config/routes/auth.rb` org invitation and lifecycle routes; `app/controllers/auth/org/**`; org sign-up/onboarding tests               |
 
 The APP sign-up checkpoint owns required registration setup before durable account finalization.
 Birthdate is a sign-up checkpoint requirement for APP end-user registration.
@@ -188,7 +189,7 @@ between sign-up and sign-in by whether the provider identity is already register
   registration setup that still needs checkpoint completion.
 - After a provider callback verifies an identity that conflicts with the attempted entry, the APP
   response gives guidance for a fresh entry: registered identity at sign-up, or unknown identity at
-  sign-in. This is a 400 guidance page with a clean Base sign-in link; it does not resume the
+  sign-in. This is a 400 guidance page with a clean Auth sign-in link; it does not resume the
   rejected attempt, create an account or authenticated evidence, or retain the old social callback
   state. Other sign-path callback refusals keep the uniform response, and Email/Telephone OTP entry
   does not disclose whether the submitted contact is registered.
@@ -201,29 +202,26 @@ between sign-up and sign-in by whether the provider identity is already register
 All active APP sign-up paths share the same post-finalization routing rule:
 
 1. Complete sign-up finalization.
-2. Enter the existing sign-in boundary in the same Rails action/request.
-3. The sign-in boundary creates or resumes the pending sign-in cycle.
-4. Evaluate session-limit handling, sign-in guardrail state, `/sign/in/check`, and
-   `/sign/in/selector` in order.
-5. Commit the selector selection, then issue the active authenticated session.
-6. Continue to `/welcome`.
-7. If a safe `rt` return path is present, jump there after welcome sequence handling; otherwise
-   continue to `/dashboard`.
+2. Continue through the admitted Auth ceremony and Visa sign-in boundary.
+3. Visa applies its session-limit and sign-in guardrails, then commits the local session and OIDC
+   response.
+4. Visa returns the result to the registered external RP callback.
+5. The RP validates the response, establishes its own local session, and chooses its landing page.
 
-The sign-up finalization and sign-in boundaries must not redirect, render, or perform an HTTP reload
-between each other. Route selection belongs to the post-finalization handoff after the sign-in
-boundary has either stopped at a pending sign-in participant or issued the authenticated session.
+The sign-up finalization and Visa sign-in boundaries must not introduce an alternate session issuer.
+Access does not provide an RP callback, `/welcome`, or `/dashboard` landing; those pages and the
+post-login route belong to the registered external RP.
 
 ## Signed-In Actor Re-entry
 
 A signed-in actor must not start a new sign-up or sign-in sequence without first signing out.
 Attempting to enter registration or login while already signed in is an abnormal request.
 
-The server must reject that request with a status code and a plain-text message. It must not
-redirect to dashboard, continue a return path, create a new registration sequence, or sign the actor
-out on their behalf.
+The server must reject that request with a status code and a plain-text message. It must not create
+a new registration sequence or sign the actor out on their behalf. Access has no local dashboard
+destination; an external RP owns its post-authentication navigation.
 
-## Guardrail, Checkpoint, Selector, Welcome, And Dashboard
+## Guardrail, Checkpoint, Selector, And RP Handoff
 
 `/sign/up/guard` is the sign-up stop point for cases where the current sign-up sequence must not
 continue. It is distinct from `/sign/up/check`:
@@ -235,9 +233,9 @@ Sign-in guardrail state is also part of the common post-finalization handoff. It
 checkpoint, selector, and session issuance. If it blocks after durable sign-up completion, that is a
 sign-in failure domain; it must not delete completed account data.
 
-Guardrail, checkpoint, selector, and welcome are sequence participants whose required content can
-grow or disappear over time. The sign-up and handoff state machines decide when the current sequence
-is allowed to evaluate each participant.
+Guardrail, checkpoint, and selector are sequence participants whose required content can grow or
+disappear over time. The sign-up and handoff state machines decide when the current sequence is
+allowed to evaluate each participant. RP welcome and dashboard pages are external to Access.
 
 Each participant evaluates an ordered stack of requirement items for the current sign-up or
 post-finalization sign-in sequence. The sequence advances only when the current participant's stack
@@ -251,28 +249,10 @@ Expected participant behavior:
   blocking item, keep the actor at checkpoint until all required setup is cleared.
 - Selector: if there is one activation candidate, auto-commit it without rendering UI. If there are
   multiple candidates, require explicit selection. The active session is issued only after selector
-  commit succeeds.
-- Welcome: if the sequence welcome stack is empty, continue to the safe `rt` return path or
-  `/dashboard`. If the stack has items, display them after sign-in. Reaching welcome means the actor
-  has completed selector and active session issuance and can behave as a signed-in actor.
-
-`/welcome` is the post-finalization handoff route. It consumes the preserved `rt` only when that
-return path is safe. If `rt` is missing, blank, invalid, unsafe, expired, or points back to
-`/welcome`, the actor is redirected to `/dashboard`.
-
-`/dashboard` remains an ordinary authenticated page. Ordinary direct dashboard access must not turn
-a query parameter into a post-auth continuation.
-
-Before redirecting to `/welcome`, the server clears any previous welcome gate for the surface and
-issues a new session gate with `remaining = 5`, `issued_at`, and `expires_at`. Each `/welcome`
-request decrements `remaining`. Once `remaining <= 0`, or once the current time is at or after
-`expires_at`, the welcome gate is cleared and the actor is redirected to `/dashboard`. The expiry is
-absolute and refresh does not extend it.
-
-For example, telephone sign-up checkpoint can contain separate birthdate, passkey, and passcode
-requirements. The account must not finalize until all three items are cleared. Adding a future
-requirement should add a checkpoint item, not introduce a new route between checkpoint and
-finalization.
+  commit succeeds. For example, telephone sign-up checkpoint can contain separate birthdate,
+  passkey, and passcode requirements. The account must not finalize until all three items are
+  cleared. Adding a future requirement should add a checkpoint item, not introduce a new route
+  between checkpoint and finalization.
 
 Checkpoint cancellation is allowed only before durable finalization starts. Cancelled sign-up cycles
 are logically discarded immediately and scheduled for later physical cleanup; controllers do not
@@ -338,13 +318,9 @@ Expected state-machine path:
   - If sign-in/session issuance fails after durable sign-up completion, treat it as sign-in failure
     handling and do not delete the completed account.
 
-- Welcome sequence: `GET /welcomes/:id`
-  - Current route helper: `sign_app_welcome_path("post_auth")`.
-  - This step is also bypassable by `continue_welcome_sequence_without_content!` when no welcome
-    sequence content is required.
-  - The common post-finalization handoff applies: after sign-in guardrail, checkpoint, selector,
-    session issuance, and welcome handling, continue to the safe `rt` return path when present;
-    otherwise continue to `/dashboard`.
+- External RP landing: Access has no `/welcome` or `/dashboard` route. Visa returns the
+  authorization result to the registered external RP, which owns its local session, welcome
+  sequence, and dashboard.
 
 - Post-auth handoff: `complete_update_and_redirect`
   - The controller-level completion hook should hand off into the sequence instead of deciding the
@@ -468,11 +444,9 @@ Recorded historical design (not an implementation target):
   - Sign-in/session issuance failure after durable sign-up completion belongs to sign-in failure
     handling and must not delete completed account data.
 
-- Welcome sequence: `GET /welcomes/:id`
-  - Current route helper: `sign_com_welcome_path("post_auth")`.
-  - The common post-finalization handoff applies: after sign-in guardrail, checkpoint, selector,
-    session issuance, and welcome handling, continue to the safe `rt` return path when present;
-    otherwise continue to `/dashboard`.
+- External RP landing: Access has no `/welcome` or `/dashboard` route. Visa returns the
+  authorization result to the registered external RP, which owns its local session, welcome
+  sequence, and dashboard.
 
 Recorded historical path:
 
@@ -576,13 +550,9 @@ Expected state-machine path:
   - Sign-in/session issuance failure after durable sign-up completion belongs to sign-in failure
     handling and must not delete completed account data.
 
-- Welcome sequence: `GET /welcomes/:id`
-  - Current route helper: `sign_app_welcome_path("post_auth")`.
-  - This step is bypassable by `continue_welcome_sequence_without_content!` when no welcome sequence
-    content is required.
-  - The common post-finalization handoff applies: after sign-in guardrail, checkpoint, selector,
-    session issuance, and welcome handling, continue to the safe `rt` return path when present;
-    otherwise continue to `/dashboard`.
+- External RP landing: Access has no `/welcome` or `/dashboard` route. Visa returns the
+  authorization result to the registered external RP, which owns its local session, welcome
+  sequence, and dashboard.
 
 Current path (state-machine implementation):
 
@@ -641,7 +611,7 @@ Expected state-machine path:
   - Validate the stored callback state and verified provider assertion.
   - Normalize the provider to Google.
   - Refuse a subject that is not eligible for the admitted Sign Up; any verified-subject guidance
-    starts a fresh Base `/sign` request and does not reuse this attempt.
+    starts a fresh Auth `/sign` request and does not reuse this attempt.
   - Lock the Admission Binding, then the Auth Ceremony. Recheck the live sign-up admission, Cancel,
     existing Flow and evidence before creating the Flow and recording callback evidence.
   - Advance the Flow to checkpoint pending. The Client and identity are finalized only through the
@@ -685,13 +655,9 @@ Expected state-machine path:
   - Sign-in/session issuance failure after durable sign-up completion belongs to sign-in failure
     handling and must not delete completed account data.
 
-- Welcome sequence: `GET /welcomes/:id`
-  - Current route helper: `sign_app_welcome_path("post_auth")`.
-  - This step is bypassable by `continue_welcome_sequence_without_content!` when no welcome sequence
-    content is required.
-  - The common post-finalization handoff applies: after sign-in guardrail, checkpoint, selector,
-    session issuance, and welcome handling, continue to the safe `rt` return path when present;
-    otherwise continue to `/dashboard`.
+- External RP landing: Access has no `/welcome` or `/dashboard` route. Visa returns the
+  authorization result to the registered external RP, which owns its local session, welcome
+  sequence, and dashboard.
 
 ### App Apple
 
@@ -718,7 +684,7 @@ Expected state-machine path:
   - Validate the stored callback state and verified provider assertion.
   - Normalize the provider to Apple.
   - Refuse a subject that is not eligible for the admitted Sign Up; any verified-subject guidance
-    starts a fresh Base `/sign` request and does not reuse this attempt.
+    starts a fresh Auth `/sign` request and does not reuse this attempt.
   - Lock the Admission Binding, then the Auth Ceremony. Recheck the live sign-up admission, Cancel,
     existing Flow and evidence before creating the Flow and recording callback evidence.
   - Advance the Flow to checkpoint pending. The Client and identity are finalized only through the
@@ -762,13 +728,9 @@ Expected state-machine path:
   - Sign-in/session issuance failure after durable sign-up completion belongs to sign-in failure
     handling and must not delete completed account data.
 
-- Welcome sequence: `GET /welcomes/:id`
-  - Current route helper: `sign_app_welcome_path("post_auth")`.
-  - This step is bypassable by `continue_welcome_sequence_without_content!` when no welcome sequence
-    content is required.
-  - The common post-finalization handoff applies: after sign-in guardrail, checkpoint, selector,
-    session issuance, and welcome handling, continue to the safe `rt` return path when present;
-    otherwise continue to `/dashboard`.
+- External RP landing: Access has no `/welcome` or `/dashboard` route. Visa returns the
+  authorization result to the registered external RP, which owns its local session, welcome
+  sequence, and dashboard.
 
 Current path:
 
@@ -871,11 +833,9 @@ Recorded historical design (not an implementation target):
   - Sign-in/session issuance failure after durable sign-up completion belongs to sign-in failure
     handling and must not delete completed account data.
 
-- Welcome sequence: `GET /welcomes/:id`
-  - Current route helper: `sign_com_welcome_path("post_auth")`.
-  - The common post-finalization handoff applies: after sign-in guardrail, checkpoint, selector,
-    session issuance, and welcome handling, continue to the safe `rt` return path when present;
-    otherwise continue to `/dashboard`.
+- External RP landing: Access has no `/welcome` or `/dashboard` route. Visa returns the
+  authorization result to the registered external RP, which owns its local session, welcome
+  sequence, and dashboard.
 
 Recorded historical path:
 

@@ -23,12 +23,18 @@ class EmailSignUpOtpDeliveryGuard
               next false unless transaction.operation == "sign_up" && transaction.purpose == "sign_up" &&
                 transaction.session_ref == session_ref && transaction.actor_ref == owner.public_id &&
                 transaction.email_candidate_ref == email.public_id &&
+                # NOTICE: Compares digests or blind indexes with `==`, not raw secrets.
+                # A timing attack cannot recover a hash preimage; secrets themselves use secure_compare.
+                # Tracked in docs/backlog/2026-11-10-core-security-review-followups.md (item 3).
                 transaction.normalized_email_digest == email.address_digest && transaction.expires_at == flow.expires_at
               next false unless destination.is_a?(String) && destination.encoding.ascii_compatible? &&
                 destination.valid_encoding? &&
                 IdentifierBlindIndex.bidx_for_email(
                   destination,
                   realm: transaction.surface,
+                  # NOTICE: Compares digests or blind indexes with `==`, not raw secrets.
+                  # A timing attack cannot recover a hash preimage; secrets themselves use secure_compare.
+                  # Tracked in docs/backlog/2026-11-10-core-security-review-followups.md (item 3).
                 ) == email.address_digest
 
               transaction.deliver_email_otp!(generation: generation, code: code) { yield }

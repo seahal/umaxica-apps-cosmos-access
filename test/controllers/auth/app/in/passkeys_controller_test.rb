@@ -704,7 +704,7 @@ module Auth::App::In
       refresh = token.rotate_refresh_token!
 
       rotations.times do
-        refresh = SignRefreshTokenIssuer.call(refresh_token: refresh)[:refresh_token]
+        refresh = AuthRefreshTokenIssuer.call(refresh_token: refresh)[:refresh_token]
       end
     end
   end
@@ -895,7 +895,7 @@ class Auth::App::In::PasskeysControllerTest
   end
 
   def seed_social_auth_session(provider:, intent: "login", user: nil, entry: nil, ri: "jp", rt: nil, referer: nil)
-    host = configured_host(:sign_service)
+    host = configured_host(:auth_service)
     host!(host) if respond_to?(:host!)
     normalized_provider = SocialIdentifiable.normalize_provider(provider)
     continue_path =

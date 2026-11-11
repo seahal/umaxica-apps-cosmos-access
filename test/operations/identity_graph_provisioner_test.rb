@@ -11,10 +11,10 @@ class IdentityGraphProvisionerTest < ActiveSupport::TestCase
     ensure_reference_rows!
   end
 
-  test "delegates to selector bootstrap authority" do
+  test "delegates to identity graph bootstrap authority" do
     user = create_client!
 
-    BaseSelectorBootstrapAuthority.stub(:call, :provisioned) do
+    IdentityGraphBootstrapAuthority.stub(:call, :provisioned) do
       assert_equal :provisioned, IdentityGraphProvisioner.call!(surface: :app, principal: user)
     end
   end
@@ -24,7 +24,7 @@ class IdentityGraphProvisionerTest < ActiveSupport::TestCase
     error = RuntimeError.new("bootstrap boom")
     logged = nil
 
-    BaseSelectorBootstrapAuthority.stub(:call, ->(*) { raise error }) do
+    IdentityGraphBootstrapAuthority.stub(:call, ->(*) { raise error }) do
       Rails.logger.stub(:error, ->(message) { logged = message }) do
         raised =
           assert_raises(RuntimeError) do

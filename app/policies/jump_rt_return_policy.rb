@@ -68,7 +68,10 @@ module JumpRtReturnPolicy
   def namespace_for_origin(origin)
     return nil if origin.nil?
 
-    matches = JumpRtSurface::ISSUER_NAMESPACES.select { |namespace| JumpRtSurface.issuer_origin(namespace) == origin }
+    matches =
+      JumpRtSurface::RETURN_ORIGIN_NAMESPACES.select do |namespace|
+        JumpRtSurface.return_origin(namespace) == origin
+      end
     raise JumpRtConfigurationError,
           "Jump issuer origin #{origin} is configured for #{matches.join(", ")}" if matches.size > 1
 

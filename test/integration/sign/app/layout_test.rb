@@ -52,6 +52,7 @@ class SignAppLayoutTest < ActionDispatch::IntegrationTest
     # up", which this surface should not have to do. Links a specific ceremony genuinely needs
     # belong in that page's own body, not the shared chrome.
     assert_not chrome.key?("primary_navigation"), "the auth chrome must not carry primary navigation"
+    assert_nil chrome.dig("brand", "href"), "the Auth brand must not link to a missing home route"
 
     footer_hrefs = Array(chrome["footer_navigation"]).map { |link| link.fetch("href") }
 
@@ -60,26 +61,19 @@ class SignAppLayoutTest < ActionDispatch::IntegrationTest
     # Identity settings live on the www/base host and require an authenticated session. Linking
     # them from the unauthenticated sign-in chrome sends people to a page they cannot use.
     assert_empty footer_hrefs.grep(%r{/identity\b}), "auth footer must not link www identity"
-    # The auth root is itself the ceremony-service home. Linking it from the shared footer
-    # sends people back to https://auth.umaxica.app/?ri=... with no additional destination.
+    # Auth has no home route; its shared footer must not offer out-of-ceremony navigation.
     assert_empty(
       footer_hrefs.select { |href| URI.parse(href).path == "/" },
       "auth footer must not link the ceremony-service home",
     )
   end
 
-  test "cookie banner settings url is the base cookie preference edit" do
+  test "Auth chrome offers no preference controls" do
     get new_auth_app_sign_up_email_url(ri: "jp"), headers: default_headers
 
     assert_response :success
 
-    settings_url = inertia_props.dig("chrome", "cookie_controls", "settings_url")
-    uri = URI.parse(settings_url)
-    query_keys = uri.query.to_s.split("&").map { |pair| pair.split("=", 2).first }
-
-    assert_equal "/preference/cookie/edit", uri.path
-    assert_equal "jp", Rack::Utils.parse_query(uri.query).fetch("ri")
-    assert_equal query_keys.uniq, query_keys
-    assert_not_equal URI.parse("http://#{default_headers.fetch("Host")}").host, uri.host
+    assert_nil inertia_props.dig("chrome", "cookie_controls")
+    assert_nil inertia_props.dig("chrome", "theme_controls")
   end
 end

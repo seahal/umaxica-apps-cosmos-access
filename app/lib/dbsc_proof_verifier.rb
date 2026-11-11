@@ -78,6 +78,9 @@ class DbscProofVerifier
     issued_at = payload["iat"]
     return failure("issued_at_future") if issued_at > now.to_f + IAT_LEEWAY
     return failure("issued_at_expired") if issued_at < now.to_f - CHALLENGE_TTL
+    # NOTICE: Checks the DBSC challenge with `==` before the caller verifies the signature. The
+    # challenge is issued by the server to this client and is not a secret from it; signature
+    # verification still follows. Move to secure_compare (docs/backlog/2026-11-10-core-security-review-followups.md, item 3).
     return failure("challenge_mismatch") unless payload["jti"].to_s == challenge.to_s
 
     nil

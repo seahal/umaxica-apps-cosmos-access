@@ -2,9 +2,12 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require_relative "../support/oidc_auth_admission_test_helper"
 # require "helpers/global_test_support"
 
 class SocialLoginRobustnessTest < ActionDispatch::IntegrationTest
+  include OidcAuthAdmissionTestHelper
+
   fixtures :clients, :client_statuses
 
   setup do
@@ -78,7 +81,7 @@ class SocialLoginRobustnessTest < ActionDispatch::IntegrationTest
       flow0_referer = nil
       unless flow0_intent.to_s == "link"
         @base_browser = open_session
-        flow0_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+        flow0_base_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
         flow0_auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
         @base_browser.host!(flow0_base_host)
         @base_browser.https!
@@ -196,7 +199,7 @@ class SocialLoginRobustnessTest < ActionDispatch::IntegrationTest
         flow0_headers = flow0_headers.merge(flow0_user_headers)
       end
       if flow0_entry.to_s == "sign_up" && flow0_intent.to_s != "link"
-        switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+        admit_browser_to_sign_up!(integration_session)
         host!(flow0_host)
       end
       post(flow0_continue_path, headers: flow0_headers)
@@ -249,54 +252,6 @@ class SocialLoginRobustnessTest < ActionDispatch::IntegrationTest
             nil
           end
         rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-        if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-          rp_client_id =
-            case rp_family
-            when "base" then "base-#{rp_surface}-ww"
-            when "edit" then "edit-org-ww"
-            when "tech" then "tech-org-ww"
-            else "#{rp_family}-#{rp_surface}-jp"
-            end
-          rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-          rp_client = OidcClientRegistry.find!(rp_client_id)
-          rp_key = [rp_client.client_id, rp_token.public_id]
-          @base_browser_rp_credentials ||= {}
-          if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-              !(rp_token.device_session_id && OpAppGrant.exists?(
-                device_session_id: rp_token.device_session_id, oidc_client_id: rp_client.client_id, revoked_at: nil,
-              ))
-            rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-            rp_now = Time.current
-            rp_session = OpAppGrant.create!(
-              authentication_epoch: 0,
-              client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-              oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-              refresh_token_expires_at: rp_now + 10.minutes,
-            )
-            rp_access = AuthenticationTokenService.encode(
-              rp_token.actor_record, host: rp_host, resource_type: "client",
-                                     session_public_id: rp_token.public_id, base_session_public_id: rp_token.public_id,
-                                     oidc_sid: rp_session.public_id, oidc_jti: rp_session.oidc_jti,
-                                     expires_at: rp_now + 10.minutes, scopes: %w(openid profile),
-                                     issuer: OidcIssuer.for_client(rp_client), audiences: [rp_client.aud],
-                                     jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                                     subject: OidcSubject.for(
-                                       rp_token.actor_record,
-                                       resource_type: "client",
-                                     ), client_id: rp_client.client_id,
-            )
-            @base_browser_rp_credentials[rp_key] = [rp_access, rp_session.issue_refresh_token!]
-          end
-          if @base_browser_rp_credentials[rp_key]
-            rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-            rp_cookie = [
-              rp_headers.fetch("Cookie"),
-              "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-              "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-            ].join("; ")
-            rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-          end
-        end
         rp_headers
       end
     post auth_app_social_google_session_url(intent: "step_up", ri: "jp"),
@@ -359,74 +314,7 @@ class SocialLoginRobustnessTest < ActionDispatch::IntegrationTest
         flow1_ri = "jp"
         flow1_rt = nil
         flow1_referer = nil
-        unless flow1_intent.to_s == "link"
-          @base_browser = open_session
-          flow1_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-          flow1_auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-          @base_browser.host!(flow1_base_host)
-          @base_browser.https!
-          @base_browser.get("/sign", params: { ri: flow1_ri, pt: "/dashboard?ri=#{flow1_ri}" })
-          flow1_form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-          flow1_fields =
-            flow1_form.css("input[name]").to_h { |flow1_input|
-              [
-                flow1_input["name"],
-                flow1_input["value"],
-              ]
-            }
-          @base_browser.post(
-            flow1_form["action"], params: flow1_fields, headers: {
-              "Origin" => "https://#{flow1_base_host}", "Sec-Fetch-Site" => "same-origin",
-            },
-          )
-          JitSecurityJwtRegistry.surface("BASE_APP")
-          # The Base sign entry hands the browser to the Visa OP authorize endpoint, which
-          # relays an unauthenticated browser to the Auth sign-in entry. The Auth admission
-          # then runs its ceremony-binding confirmation on Visa and redeems the reference,
-          # so the chain must be followed until Auth renders the sign-in page itself.
-          flow1_admission_browser = @base_browser
-          12.times do |flow1_admission_index|
-            raise RuntimeError,
-                  "Social admission stopped before a redirect" unless flow1_admission_browser.response.redirect?
-
-            flow1_target = URI.parse(flow1_admission_browser.response.location)
-            # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-            3.times do
-              break unless flow1_target.host == "jump.umaxica.net"
-
-              flow1_unwrapped = URI.parse(jump_rt_url_from_location_for_test(flow1_target.to_s))
-              break if flow1_unwrapped.to_s == flow1_target.to_s
-
-              flow1_target = flow1_unwrapped
-            end
-            if flow1_admission_index.zero?
-              unless flow1_target.host == visa_host_for_test_base_host(flow1_base_host)
-                raise RuntimeError, "Base authorization host mismatch"
-              end
-            elsif flow1_admission_index == 1
-              raise RuntimeError, "Auth admission host mismatch" unless flow1_target.host == flow1_auth_host
-            end
-            flow1_next_browser =
-              if flow1_target.host.nil?
-                flow1_admission_browser
-              elsif flow1_target.host == flow1_auth_host
-                self
-              else
-                @base_browser
-              end
-            flow1_next_browser.host!(flow1_target.host) if flow1_target.host
-            flow1_next_browser.https!
-            flow1_next_browser.get(
-              flow1_target.request_uri, headers: {
-                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
-              },
-            )
-            flow1_admission_browser = flow1_next_browser
-            break if flow1_next_browser == self && !response.redirect?
-          end
-
-          assert_equal [flow1_auth_host, 200], [request.host, response.status]
-        end
+        bootstrap_auth_sign_in_admission!
         flow1_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
         host!(flow1_host)
         flow1_normalized_provider = SocialIdentifiable.normalize_provider(flow1_provider)
@@ -467,7 +355,7 @@ class SocialLoginRobustnessTest < ActionDispatch::IntegrationTest
           flow1_headers = flow1_headers.merge(flow1_user_headers)
         end
         if flow1_entry.to_s == "sign_up" && flow1_intent.to_s != "link"
-          switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+          admit_browser_to_sign_up!(integration_session)
           host!(flow1_host)
         end
         post(flow1_continue_path, headers: flow1_headers)
@@ -498,74 +386,7 @@ class SocialLoginRobustnessTest < ActionDispatch::IntegrationTest
         flow2_ri = "jp"
         flow2_rt = nil
         flow2_referer = long_referer
-        unless flow2_intent.to_s == "link"
-          @base_browser = open_session
-          flow2_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-          flow2_auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-          @base_browser.host!(flow2_base_host)
-          @base_browser.https!
-          @base_browser.get("/sign", params: { ri: flow2_ri, pt: "/dashboard?ri=#{flow2_ri}" })
-          flow2_form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-          flow2_fields =
-            flow2_form.css("input[name]").to_h { |flow2_input|
-              [
-                flow2_input["name"],
-                flow2_input["value"],
-              ]
-            }
-          @base_browser.post(
-            flow2_form["action"], params: flow2_fields, headers: {
-              "Origin" => "https://#{flow2_base_host}", "Sec-Fetch-Site" => "same-origin",
-            },
-          )
-          JitSecurityJwtRegistry.surface("BASE_APP")
-          # The Base sign entry hands the browser to the Visa OP authorize endpoint, which
-          # relays an unauthenticated browser to the Auth sign-in entry. The Auth admission
-          # then runs its ceremony-binding confirmation on Visa and redeems the reference,
-          # so the chain must be followed until Auth renders the sign-in page itself.
-          flow2_admission_browser = @base_browser
-          12.times do |flow2_admission_index|
-            raise RuntimeError,
-                  "Social admission stopped before a redirect" unless flow2_admission_browser.response.redirect?
-
-            flow2_target = URI.parse(flow2_admission_browser.response.location)
-            # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-            3.times do
-              break unless flow2_target.host == "jump.umaxica.net"
-
-              flow2_unwrapped = URI.parse(jump_rt_url_from_location_for_test(flow2_target.to_s))
-              break if flow2_unwrapped.to_s == flow2_target.to_s
-
-              flow2_target = flow2_unwrapped
-            end
-            if flow2_admission_index.zero?
-              unless flow2_target.host == visa_host_for_test_base_host(flow2_base_host)
-                raise RuntimeError, "Base authorization host mismatch"
-              end
-            elsif flow2_admission_index == 1
-              raise RuntimeError, "Auth admission host mismatch" unless flow2_target.host == flow2_auth_host
-            end
-            flow2_next_browser =
-              if flow2_target.host.nil?
-                flow2_admission_browser
-              elsif flow2_target.host == flow2_auth_host
-                self
-              else
-                @base_browser
-              end
-            flow2_next_browser.host!(flow2_target.host) if flow2_target.host
-            flow2_next_browser.https!
-            flow2_next_browser.get(
-              flow2_target.request_uri, headers: {
-                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
-              },
-            )
-            flow2_admission_browser = flow2_next_browser
-            break if flow2_next_browser == self && !response.redirect?
-          end
-
-          assert_equal [flow2_auth_host, 200], [request.host, response.status]
-        end
+        bootstrap_auth_sign_in_admission!
         flow2_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
         host!(flow2_host)
         flow2_normalized_provider = SocialIdentifiable.normalize_provider(flow2_provider)
@@ -606,7 +427,7 @@ class SocialLoginRobustnessTest < ActionDispatch::IntegrationTest
           flow2_headers = flow2_headers.merge(flow2_user_headers)
         end
         if flow2_entry.to_s == "sign_up" && flow2_intent.to_s != "link"
-          switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+          admit_browser_to_sign_up!(integration_session)
           host!(flow2_host)
         end
         post(flow2_continue_path, headers: flow2_headers)

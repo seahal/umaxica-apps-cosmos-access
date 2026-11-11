@@ -47,7 +47,7 @@ class SignRiskEnforcer
     )
   end
 
-  # Risk-triggered force re-step-up. acme/www owns freshness mutation.
+  # Risk-triggered force re-step-up. Auth owns freshness mutation.
   def self.require_step_up_for_token_set(tokens)
     tokens.currently_usable_at.find_each do |token|
       IdentityStepUpCeremonyFreshnessRevoker.call!(token)

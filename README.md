@@ -5,23 +5,15 @@
 
 ## Routing
 
-- `app`: end-user application; Palm is its browser relying party
-- `org`: staff and organization surface; Tech is its global operator relying party
-- `com`: anonymous public and corporate surface; it serves public preference entry and public
-  read-only pages, with no credential, session, admission, or OIDC relying-party boundary
-- `visa`: OpenID Provider and browser-bound authority for the app and org realms
-- `www`: Base browser relying party and identity/session-management surface for the app and org
-  realms
-- `net`: network-facing surface supporting other TLDs (`app`/`com`/`org`), including
-  cookie-authentication-less access
-- `dev`: support and status surface
+- `auth`: the credential gateway for the App and Org authentication realms.
+- `visa`: the OpenID Provider (OP), including discovery, JWKS, authorization, token, and
+  browser-bound authority flows for those realms.
+- `mission`, `flipper`, `blazer`, `pghero`, `swagger`, and `coverband`: development operations tools
+  on their own host-constrained routes.
 
-Multi-domain Rails application serving these audience surfaces. Routing is host-constrained, so
-domain and subdomain matter in both development and production.
-
-The OIDC authority is hosted by Visa (`visa.umaxica.app`, `.org`). Base is the separate browser RP
-and identity/session surface (`www.umaxica.app`, `.org`); its host-only cookies are never shared
-with Visa. `www.umaxica.com` is the anonymous preference entry, not an identity or session surface.
+This Rails process draws only Auth, Visa, and those six development tools. It has no relying-party
+(RP) surface; unregistered and retired hosts receive the non-disclosing JSON 404. OIDC client
+registrations for RPs in other repositories remain part of Access's OP configuration.
 
 ## Stack
 
@@ -129,8 +121,9 @@ does not have the file, and does not need it. See the Dev Container startup docu
 
 `config/database.yml` fixes the development and test connections to the Compose services: writers
 and test databases on `primary`, development replicas on `replica`, port `5432`, user `root`,
-password `development`. These are non-secret local values and are not read from the environment.
-Production connections still come from the `NEON_*` variables.
+password `development`. These are non-secret local values and are not read from the environment. The
+production section is intentionally unconfigured. Production boot fails with an explicit
+missing-database error until an owner selects a provider.
 
 WebAuthn uses one RP ID and one exact origin per surface (`app` and `org`). Production requires them
 as environment variables; other environments read the same variables first and fall back to the
@@ -163,34 +156,24 @@ bin/dev
 Modern browsers resolve `*.localhost` to `127.0.0.1`, so extra `/etc/hosts` entries are usually not
 needed.
 
-The URLs below use port `3000`, where host-native Rails listens. The Dev Container publishes its
-Rails port `3000` on host port `3001` and Vite on `3036`, both on `127.0.0.1` only, so from the host
-a Dev Container is reached on `:3001`. Substituting the host's LAN or Tailscale address will not
-connect, by design. `compose.yaml` publishes the PostgreSQL writer and reader and the Valkey
-services to loopback as well (`5432`, `5433`, and `6379` to `6381` by default) so host-native Rails
-can use them; containers continue to use Compose DNS names. See
+Rails listens on port `3000` inside the Dev Container. The container publishes that service to
+`127.0.0.1:3001` on the host; PostgreSQL and Valkey are container-network services with no host
+publication. Host-native Rails is not supported. See
 `docs/operations/development-host-port-exposure.md`.
 
-| Surface                    | URL                                                                                                              |
-| :------------------------- | :--------------------------------------------------------------------------------------------------------------- |
-| Base                       | `http://base.{app,com,org}.localhost:3000`                                                                       |
-| Visa (OIDC authority)      | `http://visa.{app,org}.localhost:3000`                                                                           |
-| Base (developer / network) | `http://base.{dev,net}.localhost:3000`                                                                           |
-| Auth                       | `http://auth.{app,org}.localhost:3000`                                                                           |
-| Core                       | `http://core.{app,org,net,dev}.localhost:3000`                                                                   |
-| Warp / Palm / Tech         | `http://warp.{app,com,org}.localhost:3000` / `http://palm.app.localhost:3000` / `http://tech.org.localhost:3000` |
-| Info / Help / Docs / News  | `http://{info,help,docs,news}.{app,com,org}.localhost:3000`                                                      |
+| Surface        | Development hostnames                                          |
+| -------------- | -------------------------------------------------------------- |
+| Auth App / Org | `auth.app.localhost`, `auth.org.localhost`                     |
+| Visa App / Org | `visa.app.localhost`, `visa.org.localhost`                     |
+| Mission        | `mission.core.dev.localhost`, `mission-access.umaxica.dev`     |
+| Flipper        | `flipper.core.dev.localhost`, `flipper-access.umaxica.dev`     |
+| Blazer         | `blazer.core.dev.localhost`, `blazer-access.umaxica.dev`       |
+| PgHero         | `pghero.core.dev.localhost`, `pghero-access.umaxica.dev`       |
+| Swagger        | `swagger.core.dev.localhost`, `swagger-access.umaxica.dev`     |
+| Coverband      | `coverband.core.dev.localhost`, `coverband-access.umaxica.dev` |
 
-The application contract supplies PUBLIC and PRIVATE URL values in both supported modes; Compose
-supplies only service topology. Each route host constraint lists the configured host alongside its
-localhost literal. Development is published through Cloudflare Tunnel behind Cloudflare Access;
-Access, not Host Authorization, keeps the development listener non-public. See
-`docs/architecture/cloudflare-request-paths.md` for the trust boundaries and
-`research/implementation/2026-08-10-development-tunnel-access-verification.md` for the measured
-end-to-end evidence.
-
-`sign.{app,org}.localhost` resolves only when `AUTH_*_URL` and `PUBLIC_AUTH_*_URL` are unset. Under
-Compose the canonical local names for the credential gateway are `auth.*`.
+Use port `3000` from inside the container and host port `3001` from the host. The `.umaxica.dev`
+tool aliases are development-container host aliases; live edge routing is managed separately.
 
 ## Code Quality
 

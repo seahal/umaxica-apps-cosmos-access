@@ -9,12 +9,12 @@ class AvatarPermissionResolverTest < ActiveSupport::TestCase
       security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
       visibility_id: ClientVisibility::USER,
     )
-    @app = BaseSelectorBootstrapAuthority.call(surface: :app, principal: @client)
+    @app = IdentityGraphBootstrapAuthority.call(surface: :app, principal: @client)
     @operator = Operator.create!(
       security_mode_id: SecurityModeConfigurable::ADVANCED,
       status_id: OperatorStatus::ACTIVE, visibility_id: OperatorVisibility::STAFF,
     )
-    @org = BaseSelectorBootstrapAuthority.call(surface: :org, principal: @operator)
+    @org = IdentityGraphBootstrapAuthority.call(surface: :org, principal: @operator)
   end
 
   test "active app and org owners resolve the same Avatar permissions" do
@@ -71,7 +71,7 @@ class AvatarPermissionResolverTest < ActiveSupport::TestCase
       security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
       visibility_id: ClientVisibility::USER,
     )
-    BaseSelectorBootstrapAuthority.call(surface: :app, principal: other)
+    IdentityGraphBootstrapAuthority.call(surface: :app, principal: other)
 
     assert_not AvatarPermissionResolver.call(
       actor: other,
@@ -92,35 +92,5 @@ class AvatarPermissionResolverTest < ActiveSupport::TestCase
         permission: "avatar.unknown",
       )
     end
-  end
-
-  test "an explicit generation-bound grant authorizes Avatar use without granting management authority" do
-    period = @app.avatar.reload.enterprise_ownership_periods.current.first
-    AvatarAccessGrants::IssueOperation.call(
-      ownership_period: period,
-      subject: @app.account,
-      capability: "avatar.view",
-      granted_by_actor_public_id: @client.public_id,
-      granting_subject_public_id: @app.account.public_id,
-    )
-
-    membership = @app.account.persona_memberships.find_by!(enterprise: @app.collective)
-    membership.update!(membership_kind_id: PersonaMembershipKind::MEMBER)
-
-    assert AvatarPermissionResolver.call(
-      actor: @client,
-      surface: :app,
-      subject_public_id: @app.account.public_id,
-      owner_collective_public_id: @app.collective.public_id,
-      permission: "avatar.view",
-      avatar: @app.avatar,
-    )
-    assert_not AvatarPermissionResolver.call(
-      actor: @client,
-      surface: :app,
-      subject_public_id: @app.account.public_id,
-      owner_collective_public_id: @app.collective.public_id,
-      permission: "avatar.group.manage",
-    )
   end
 end

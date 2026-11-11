@@ -117,75 +117,16 @@ class AppSecretSignupJourneyTest < ActionDispatch::IntegrationTest
   SIGNUP_CASES.each do |active_count, outcome|
     test "telephone signup with A=#{active_count} saves its fixed Secret set and handles #{outcome}" do # rubocop:disable Minitest/MultipleAssertions -- Verifies each observable boundary in one signup journey.
       host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-      base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-      host!(base_host)
+      host!(host)
       https!
-      get "/sign", params: { ri: "jp" }
-      csrf = response.parsed_body.at_css('input[name="authenticity_token"]')["value"]
-      post "/sign", params: { ri: "jp", authenticity_token: csrf }, headers: {
-        "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin",
-      }
-      issuer = JitSecurityJwtRegistry.surface("BASE_APP")
-      target = URI.parse(response.location)
-      # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-      unless target.host == base_host
-        rt = Rack::Utils.parse_query(target.query).fetch("rt")
-        payload, = JWT.decode(
-          rt, JitSecurityJwtRegistry.public_key_for(issuer.id, issuer.current_kid), true,
-          algorithms: ["ES384"], verify_iss: true, iss: "https://#{base_host}",
-          verify_aud: true, aud: Rails.configuration.x.boot_config.fetch(:jump).audience,
-        )
-        target = URI.parse(payload.fetch("url"))
-      end
-      # This registration journey asks the OP for prompt=create. A neutral RP sign-in request
-      # no longer authorizes entering signup merely by visiting its contact page (D-72).
-      target.query = URI.encode_www_form(URI.decode_www_form(target.query) + [["prompt", "create"]])
-      host!(target.host)
-      https!
+      cookies["csrf_token"] = "test-csrf-token"
+      issuance = OidcTestEntry.issue!(
+        surface: "app", intent: "sign_up", base_browser_nonce: SecureRandom.urlsafe_base64(32), base_token: nil,
+      )
+      admit_auth_ceremony_entry!(auth_app_sign_up_path(ri: "jp"), reference: issuance.reference)
+      get response.location, headers: { "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document" }
+
       headers = { "Origin" => "https://#{host}", "Sec-Fetch-Site" => "same-origin" }
-      get target.request_uri
-
-      assert_response :see_other
-      auth_uri = URI.parse(response.location)
-      # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-      unless auth_uri.host == base_host
-        second_rt = Rack::Utils.parse_query(auth_uri.query).fetch("rt")
-        # WU-02: the hop from the authorization step to Auth is issued by Visa.
-        visa_issuer = JitSecurityJwtRegistry.surface("VISA_APP")
-        second_payload, = JWT.decode(
-          second_rt, JitSecurityJwtRegistry.public_key_for(visa_issuer.id, visa_issuer.current_kid), true,
-          algorithms: ["ES384"], verify_iss: true, iss: "https://#{visa_host_for_test_base_host(base_host)}",
-          verify_aud: true, aud: Rails.configuration.x.boot_config.fetch(:jump).audience,
-        )
-        auth_uri = URI.parse(second_payload.fetch("url"))
-      end
-      host!(auth_uri.host)
-      get auth_uri.request_uri, headers: headers
-
-      12.times do
-        if response.redirect?
-          location = URI.parse(response.location)
-          if location.host == "jump.umaxica.net"
-            jump_token = Rack::Utils.parse_query(location.query).fetch("rt")
-            jump_payload, = JWT.decode(jump_token, nil, false)
-            location = URI.parse(jump_payload.fetch("url"))
-          end
-          host!(location.host) if location.host
-          get location.request_uri, headers: {
-            "Sec-Fetch-Site" => "same-origin",
-            "Sec-Fetch-Mode" => "navigate",
-            "Sec-Fetch-Dest" => "document",
-          }
-        else
-          form = response.parsed_body.at_css("form[id$='continuation-form'], form[id$='confirmation-form']")
-          break unless form
-
-          fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-          post form["action"], params: fields, headers: {
-            "Origin" => "https://#{request.host}", "Sec-Fetch-Site" => "same-origin",
-          }
-        end
-      end
 
       assert_equal 200, response.status, "admission stopped before the Auth page"
       assert_equal host, request.host
@@ -301,9 +242,11 @@ class AppSecretSignupJourneyTest < ActionDispatch::IntegrationTest
       csrf = response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
       page = JSON.parse(response.parsed_body.at_css("script[data-page='app']").text)
       if active_count == 19
-        assert_equal I18n.t("base.app.secrets.distribution_one_present"), page.fetch("props").fetch("notice")
+        assert_equal I18n.t("sign.app.registration.checkpoint.show.secrets.distribution_one_present"),
+                     page.fetch("props").fetch("notice")
       elsif active_count == 20
-        assert_equal I18n.t("base.app.secrets.distribution_omitted"), page.fetch("props").fetch("notice")
+        assert_equal I18n.t("sign.app.registration.checkpoint.show.secrets.distribution_omitted"),
+                     page.fetch("props").fetch("notice")
         assert_equal "omitted", page.fetch("props").fetch("state")
         assert_nil issuance.expires_at
         assert_nil issuance.encrypted_payload
@@ -386,8 +329,8 @@ class AppSecretSignupJourneyTest < ActionDispatch::IntegrationTest
       completed_page = JSON.parse(response.parsed_body.at_css("script[data-page='app']").text)
       expected_notice =
         case active_count
-        when 19 then I18n.t("base.app.secrets.distribution_one_confirmed")
-        when 20 then I18n.t("base.app.secrets.distribution_omitted")
+        when 19 then I18n.t("sign.app.registration.checkpoint.show.secrets.distribution_one_confirmed")
+        when 20 then I18n.t("sign.app.registration.checkpoint.show.secrets.distribution_omitted")
         end
       if expected_notice
         assert_equal expected_notice, completed_page.fetch("props").fetch("notice")

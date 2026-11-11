@@ -6,10 +6,8 @@
 # Registered as an ActionMailer interceptor (config/initializers/outbound_email.rb) rather
 # than added to each mailer, so a new mailer cannot be added outside the switch.
 class OutboundEmailSuspensionInterceptor
-  PROMOTIONAL_MAILER_SUFFIX = "::PromotionalMailer"
-
   def self.delivering_email(message)
-    channel = channel_for(message)
+    channel = :email
     return unless OutboundChannelSuspension.suspended?(channel)
 
     message.perform_deliveries = false
@@ -24,9 +22,4 @@ class OutboundEmailSuspensionInterceptor
     )
   end
 
-  def self.channel_for(message)
-    mailer = message.delivery_handler&.name.to_s
-    mailer.end_with?(PROMOTIONAL_MAILER_SUFFIX) ? :promotional_email : :email
-  end
-  private_class_method :channel_for
 end

@@ -82,6 +82,9 @@ class SocialAuthSignupFinalizer
     evidence = @flow.completed_requirements.fetch("social_signup")
     digest = OpenSSL::HMAC.hexdigest("SHA256", Rails.application.secret_key_base, [provider, uid].join(":"))
     unless @flow.social_provider == provider && @flow.pending_contact_type == "social_identity" &&
+        # NOTICE: Compares digests or blind indexes with `==`, not raw secrets.
+        # A timing attack cannot recover a hash preimage; secrets themselves use secure_compare.
+        # Tracked in docs/backlog/2026-11-10-core-security-review-followups.md (item 3).
         evidence.fetch("provider") == provider && evidence.fetch("uid_digest") == digest &&
         ceremony_started_at == @flow.issued_at
       raise SocialAuth::ProviderError.new("errors.social_auth.provider_error")

@@ -3,8 +3,6 @@
 
 # Read-only inventory for unfinished APP registrations that the scheduled cleanup cannot reach.
 class SignUpStuckRegistrationReportQuery
-  class WritingRoleRefused < StandardError; end
-
   CASE_FLOW_MISSING = "flow_missing"
   CASE_CLEANUP_ATTEMPTS_EXHAUSTED = "cleanup_attempts_exhausted"
 
@@ -213,13 +211,8 @@ class SignUpStuckRegistrationReportQuery
     }
   end
 
-  # Each database read uses its replica and forbids writes. An explicit writer context is a caller
-  # error, not an invitation to change its transaction role silently.
+  # Each read uses its primary database and forbids writes.
   def read(model, &)
-    if ActiveRecord::Base.connected_to_stack.any? { |entry| entry[:role] == :writing }
-      raise WritingRoleRefused, "stuck sign-up reporting runs only on a reading role"
-    end
-
-    model.connection_class_for_self.connected_to(role: :reading, prevent_writes: true, &)
+    model.connection_class_for_self.connected_to(role: :writing, prevent_writes: true, &)
   end
 end

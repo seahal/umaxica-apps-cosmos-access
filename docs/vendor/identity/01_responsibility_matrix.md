@@ -385,7 +385,7 @@ The following evidence is required for SIer-implemented capability to be accepte
 - **08_threat-model.md** is DRAFT, owner TBD. Share in RFI as context only; not normative. (DEC-010)
 - **research/oauth2-1-compliance-gap.md** is a stale non-authoritative doc. Do not include in RFI
   resource set. Seal before first SIer contact. Update or archive before RFP. (DEC-001/002)
-- **docs/spec/authorization_guide.md** (Pundit version) is stale. Use `docs/authorization_guide.md`
-  (ActionPolicy version). (DEC-007)
+- The legacy Pundit authorization guide is retired. Use `docs/authorization_guide.md` for the
+  current Action Policy entry point. (ActionPolicy version). (DEC-007)
 - **11_decision-register.md** and **12_gap-risk-register.md** predate Round 4 decisions and have not
   been updated with DEC-008~013 or Round 4 GAP findings. Update before RFP.

@@ -10,3 +10,9 @@
 
 nothing:
   id: <%= DivisionStatus::NOTHING %>
+
+# Complete the fixed catalog from its owning model.
+<% DivisionStatus::DEFAULTS.reject { |id| [DivisionStatus::NOTHING].include?(id) }.each_with_index do |id, index| %>
+reference_<%= index %>:
+  id: <%= id %>
+<% end %>

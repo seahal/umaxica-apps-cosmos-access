@@ -222,6 +222,9 @@ class OidcStepUpAuthorizationCompletionCommitter
       admission_binding.parent_kind == :step_up_ceremony_transaction &&
       admission_binding.step_up_ceremony_transaction_id == ticket.id && admission_binding.base_token_id == token.id &&
       admission_binding.expires_at > now && admission_binding.curfew_at > now &&
+      # NOTICE: Compares digests or blind indexes with `==`, not raw secrets.
+      # A timing attack cannot recover a hash preimage; secrets themselves use secure_compare.
+      # Tracked in docs/backlog/2026-11-10-core-security-review-followups.md (item 3).
       admission_binding.base_browser_digest == AuthAdmissionBinding.browser_digest(
         surface:, entry_ref: admission_binding.entry_ref, nonce: authorization_transaction.login_challenge,
       )

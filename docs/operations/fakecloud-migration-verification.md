@@ -140,11 +140,10 @@ Run on a machine that can rebuild. Record failures here rather than deleting the
 - [ ] persistence: create a bucket, `podman compose down`, `up` — the bucket survives
 - [ ] `podman compose down -v` removes `fakecloud-data` and the bucket is gone
 
-### S3
+### S3 emulator
 
-- [ ] `aws --endpoint-url http://localhost:4566 s3 mb / cp / cp / rm` round trip
-- [ ] `bin/rails object_storage:prepare` and `bin/rails object_storage:smoke` pass from inside
-      `core`
+Access no longer has an object-storage integration or Rails S3 tasks. Any emulator check belongs to
+the infrastructure owner that uses it and is not part of Access application verification.
 
 ### Terraform
 

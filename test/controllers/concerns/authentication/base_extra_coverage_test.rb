@@ -160,7 +160,7 @@ class AuthenticationBaseExtraCoverageTest < ActiveSupport::TestCase
     private
 
     def jump_rt_issuer_namespace
-      "BASE_APP"
+      "AUTH_APP"
     end
   end
 

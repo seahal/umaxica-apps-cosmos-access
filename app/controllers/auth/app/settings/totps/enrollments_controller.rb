@@ -5,7 +5,7 @@ module Auth
   module App
     module Settings
       module Totps
-        # POST starts the admitted candidate once; DELETE cancels the exact Base permission.
+        # POST starts the admitted candidate once; DELETE cancels that candidate.
         class EnrollmentsController < ::Auth::App::ApplicationController
           # D-59: TOTP enrollment is a step-up ceremony, not a Sign Entry.
           sign_entry_classification! :excluded, reason: "signed-in settings surface, not a sign entry"
@@ -46,10 +46,7 @@ module Auth
             discard_legacy_totp_enrollment!
             cookies.delete(auth_ceremony_sid_cookie_name, path: "/")
             reset_session
-            redirect_to_surface_url(
-              base_app_dashboard_url(host: base_rp_host, protocol: "https", ri: params[:ri]),
-              status: :see_other,
-            )
+            head :no_content
           end
 
           private

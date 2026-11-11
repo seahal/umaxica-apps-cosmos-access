@@ -4,18 +4,13 @@
 require "test_helper"
 
 # Ownership gates and status gates that decide whether one actor may act on
-# another's record. Every arm that answers false is the one keeping a surface's
-# accounts and organizations out of another surface's reach, and the checkpoint
-# gate is what keeps a sign-in cycle from being advanced from the wrong step.
+# another's record, and the checkpoint gate that keeps a sign-in cycle from
+# being advanced from the wrong step.
 class OwnershipAndStatusGateSweepTest < ActiveSupport::TestCase
   fixtures :clients, :client_statuses, :client_visibilities, :operators, :operator_statuses
 
   test "a record type the account gate does not serve is never shown" do
     assert_not AccountPolicy.new(Object.new, user: clients(:one)).show?
-  end
-
-  test "a record type the organization gate does not serve is never shown" do
-    assert_not OrganizationPolicy.new(Object.new, user: operators(:one)).show?
   end
 
   # Enforcement cases are staff-only across the board; a client holding one is

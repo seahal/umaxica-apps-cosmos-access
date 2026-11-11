@@ -1,51 +1,37 @@
 # Subdomain Map
 
-Subdomain labels are entry points. They are not Rails Engine boundaries.
+Local hosts are entry points for independent host-constrained surfaces. Access currently serves Auth
+APP/ORG, Visa APP/ORG, and six operator tools.
 
-## Current Public Surfaces
+## Application surfaces
 
-Local hosts are labelled `<service>.<surface>.localhost`. The `base.*` label carries the product,
-staff, and corporate surfaces:
+| Surface  | Default local host   | Responsibility                                            |
+| -------- | -------------------- | --------------------------------------------------------- |
+| Auth APP | `auth.app.localhost` | Credential ceremonies and provider callbacks              |
+| Auth ORG | `auth.org.localhost` | Organization credential ceremonies and provider callbacks |
+| Visa APP | `visa.app.localhost` | APP OpenID Provider and Authorization Server              |
+| Visa ORG | `visa.org.localhost` | ORG OpenID Provider and Authorization Server              |
 
-| Surface | Default local host   | Purpose                        |
-| ------- | -------------------- | ------------------------------ |
-| `app`   | `base.app.localhost` | End-user product surface       |
-| `org`   | `base.org.localhost` | Staff and organization surface |
-| `com`   | `base.com.localhost` | Public and corporate surface   |
+Auth and Visa hosts remain separate. Visa's external RP registrations do not add local RP hosts or
+callbacks to this map; those hosts belong to their own repositories.
 
-The credential gateway uses the `auth.*` label for the app and org audience families. The
-corporate (`com`) hosts are anonymous: they serve the public preference entry and public read-only
-pages, so `auth.com.localhost` has no credential route.
+## Operator tools
 
-| Audience | Default local host   |
-| -------- | -------------------- |
-| `app`    | `auth.app.localhost` |
-| `org`    | `auth.org.localhost` |
+| Tool      | Development host               | Public canonical host          |
+| --------- | ------------------------------ | ------------------------------ |
+| Mission   | `mission.core.dev.localhost`   | `mission-access.umaxica.dev`   |
+| Flipper   | `flipper.core.dev.localhost`   | `flipper-access.umaxica.dev`   |
+| Blazer    | `blazer.core.dev.localhost`    | `blazer-access.umaxica.dev`    |
+| PgHero    | `pghero.core.dev.localhost`    | `pghero-access.umaxica.dev`    |
+| Coverband | `coverband.core.dev.localhost` | `coverband-access.umaxica.dev` |
+| Swagger   | `swagger.core.dev.localhost`   | `swagger-access.umaxica.dev`   |
 
-The gateway also answers on `sign.*.localhost`, which is the boot-config default that applies when
-`AUTH_*_URL` and `PUBLIC_AUTH_*_URL` are unset.
+The tool hosts are separate from Auth/Visa product hosts and use their own access controls. No
+additional local application surface is defined by this map.
 
-Development and network-only hosts may exist for operational endpoints, but they are not separate
-Rails Engines.
+## URL configuration names
 
-## Canonical ENV Naming
-
-URL environment variables should use the smallest boundary name that makes the ownership clear.
-
-- `PUBLIC_*` means a browser-visible or externally reachable URL.
-- `PRIVATE_*` means a Rails-internal, pod-internal, or service-internal URL.
-
-Current runtime code still contains surface/service names for compatibility, but new docs and new
-runtime config should prefer the public/private boundary language instead of inventing another
-surface-prefixed URL family.
-
-Examples of the older compatibility style that still exists in code:
-
-- `ACME_SERVICE_URL`
-- `ACME_STAFF_URL`
-- `ACME_CORPORATE_URL`
-- `ACME_DEVELOPER_URL`
-- `ACME_NETWORK_URL`
-
-Do not introduce engine-prefixed URL names such as `IDENTITY_SIGN_APP_URL`,
-`FOUNDATION_BASE_ORG_URL`, or `DISTRIBUTOR_POST_APP_URL` for new runtime code in this repository.
+Use the existing `PUBLIC_*_URL` names for browser-facing URLs and `PRIVATE_*_URL` names for internal
+ingress URLs. Required and optional environment access follows
+[`adr/env-fetch-without-default.md`](../../adr/env-fetch-without-default.md); this map does not
+define code-side defaults or compatibility names.

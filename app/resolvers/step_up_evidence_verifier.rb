@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
-# Rechecks a verified OP access-token event against the live Base grant at a write boundary.
+# Rechecks a verified OP access-token event against the live registered-client grant at a write boundary.
 # Call from the writer's transaction so the root and grant locks remain held through its commit.
 class StepUpEvidenceVerifier
-  STEP_UP_ACR = StepUpEvidenceResolver::STEP_UP_ACR
+  STEP_UP_ACR = OidcAuthorizeRequestResolver::STEP_UP_ACR
 
   class << self
     public

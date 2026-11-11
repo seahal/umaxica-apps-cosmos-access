@@ -8,8 +8,8 @@ ruby "4.0.9"
 gem "rbs", "~> 4.0", require: false
 # runtime for sorbet
 gem "sorbet-runtime"
-# Rails application framework from the main branch.
-gem "rails", github: "rails/rails", branch: "main"
+# Pin Rails until omniauth-rails_csrf_protection supports the newer config_delegate API.
+gem "rails", github: "rails/rails", ref: "9ba8b1edeeacccb1ff5d2497432242eeddf48aed"
 # Propshaft asset pipeline.
 gem "propshaft", github: "rails/propshaft"
 # Rails task runner.
@@ -54,6 +54,8 @@ gem "ostruct"
 gem "tzinfo-data", platforms: %i(windows jruby)
 # Bootsnap boot cache.
 gem "bootsnap", require: false
+# MessagePack serializer for the Valkey cache stores (never Marshal; docs/runbooks/valkey-protection.md).
+gem "msgpack"
 # Password hashing with Argon2. The version is constrained because
 # ActiveModel::SecurePassword::Argon2Password calls Argon2::Password.create
 # without a profile, so the gem default is the effective cost parameter set.
@@ -62,14 +64,8 @@ gem "bootsnap", require: false
 gem "argon2", "~> 2.3"
 # SHA-3 digest implementation.
 gem "sha3", require: false
-# File upload toolkit.
-gem "shrine"
-# Image processing integration.
-gem "image_processing", require: false
 # AWS SNS client for SMS delivery.
 gem "aws-sdk-sns", require: false
-# AWS S3 client for explicit object-storage integration tasks.
-gem "aws-sdk-s3", require: false
 # HTML metadata helpers.
 gem "meta-tags"
 # OpenTelemetry SDK.
@@ -132,9 +128,6 @@ gem "store_attribute"
 gem "store_model"
 # Stripe API client.
 gem "stripe", require: false
-# Loaded explicitly only by image-processing paths. Host-native test runs do not
-# require libvips merely to boot Rails.
-gem "ruby-vips", require: false
 # log
 gem "lograge"
 # json
@@ -240,31 +233,14 @@ group :development do
   gem "foreman", require: false
   # Documentation generator.
   gem "yard", require: false
-  # Hotwire live reload helper.
-  gem "hotwire-spark"
   # Rails live reload helper.
   gem "rails_live_reload"
   # Rack live reload middleware.
   gem "rack-livereload"
-  # Request performance profiler.
-  gem "rack-mini-profiler"
   # PostgreSQL dashboard.
   gem "pghero", require: false
   # SQL exploration dashboard.
   gem "blazer", require: false
-  # Browser-based database console. Development only: the engine self-mounts at
-  # /rails/db with no authentication (RailsDb.verify_access_proc defaults to
-  # `proc { true }`), so loading it outside development exposes an unauthenticated
-  # arbitrary-SQL endpoint. test/security/invariants/mounted_engine_invariant_test.rb
-  # guards this.
-  gem "rails_db"
-  # Server-side request performance dashboard, on performance.umaxica.dev. Development only: the
-  # gem's own config/routes.rb ends with an unguarded
-  # `Rails.application.routes.draw { mount RailsPerformance::Engine => RailsPerformance.mount_at }`
-  # with no flag to disable it, which would put the dashboard on every host. config/application.rb
-  # drops the engine's routing path to suppress that; config/routes/performance.rb draws the routes
-  # and mounts the engine behind the host constraint instead.
-  gem "rails_performance", require: false
   # Runtime code-execution coverage (which Ruby actually ran), on coverband.umaxica.dev. Kept to
   # `group :development` alongside the other mounted dashboards, so it observes development
   # execution rather than production -- see adr/diagnostic-surfaces-performance-coverband-swagger.md

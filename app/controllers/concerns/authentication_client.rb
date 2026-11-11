@@ -63,12 +63,12 @@ module AuthenticationClient
   def sign_in_url_with_pt(return_to)
     _ = return_to
     auth_app_sign_in_url(
-      host: sign_app_redirect_host,
+      host: auth_app_redirect_host,
       protocol: "https",
     )
   end
 
-  def sign_app_redirect_host
+  def auth_app_redirect_host
     configured_hosts =
       %w(PUBLIC_AUTH_SERVICE_URL).filter_map do |key|
         CommonRedirect.normalize_host(ENV.fetch(key))

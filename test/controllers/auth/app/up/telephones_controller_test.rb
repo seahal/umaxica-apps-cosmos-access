@@ -29,12 +29,8 @@ module Auth::App::Up
     include ActiveSupport::Testing::TimeHelpers
     include SignInFlowCleanup
     include SignUpJourneyCleanup
-    include DatabaseSelectorPrimary
 
     setup do
-      # Cases travel the clock past the DatabaseSelector's read-your-writes delay, which would
-      # route a read to the replica; the test environment's replica does not hold this case's rows.
-      keep_reads_on_primary!
       sign_up_journey_watermarks!
       ClientSignInFlowState::DEFAULTS.each { |id| ClientSignInFlowState.find_or_create_by!(id: id) }
       ClientSignUpFlowStatus::DEFAULTS.each { |id| ClientSignUpFlowStatus.find_or_create_by!(id: id) }
@@ -164,11 +160,7 @@ module Auth::App::Up
     teardown do
       TurnstileVerifierStub.challenge_enabled = false
       TurnstileVerifierStub.challenge_response = nil
-      begin
-        delete_sign_up_journey_rows!
-      ensure
-        restore_database_selector_delay!
-      end
+      delete_sign_up_journey_rows!
     end
 
     test "should get new" do
@@ -2049,7 +2041,7 @@ class Auth::App::Up::TelephonesControllerTest
   end
 
   def seed_social_auth_session(provider:, intent: "login", user: nil, entry: nil, ri: "jp", rt: nil, referer: nil)
-    host = configured_host(:sign_service)
+    host = configured_host(:auth_service)
     host!(host) if respond_to?(:host!)
     normalized_provider = SocialIdentifiable.normalize_provider(provider)
     continue_path =

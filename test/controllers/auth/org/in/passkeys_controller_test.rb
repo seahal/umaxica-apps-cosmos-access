@@ -188,14 +188,12 @@ class Auth::Org::Sign::In::PasskeysControllerTest < ActionDispatch::IntegrationT
     [nil, "", "invalid-binding", stale_binding].each do |binding|
       get new_auth_org_sign_in_passkey_path, params: { ri: "jp", fb: binding }
 
-      restart_url = base_org_sign_show_url(host: ENV.fetch("PUBLIC_BASE_STAFF_URL"), protocol: "https", ri: "jp")
-
       assert_equal(
         [
-          409, true, nil, true, transaction, cookies_before,
+          409, I18n.t("errors.messages.phase_violation_refused"), nil, true, transaction, cookies_before,
         ],
         [
-          response.status, response.body.include?(restart_url), response.headers["Location"],
+          response.status, response.body, response.headers["Location"],
           response.headers["Cache-Control"].include?("no-store"),
           session.fetch(OrgNormalSignInTransaction::SESSION_KEY), cookies.to_hash,
         ],
@@ -246,7 +244,7 @@ class Auth::Org::Sign::In::PasskeysControllerTest < ActionDispatch::IntegrationT
     assert_equal [token_count, nil], [OperatorToken.count, session[:passkey_challenges]]
   end
 
-  test "new sends the operator back to the entry when no entra transaction is pending" do
+  test "new refuses when no entra transaction is pending" do
     get new_auth_org_sign_in_passkey_url(ri: "jp", **org_normal_sign_in_binding_params)
 
     assert_response :bad_request
@@ -936,7 +934,7 @@ class Auth::Org::Sign::In::PasskeysControllerTest < ActionDispatch::IntegrationT
     refresh = token.rotate_refresh_token!
 
     rotations.times do
-      refresh = SignRefreshTokenIssuer.call(refresh_token: refresh)[:refresh_token]
+      refresh = AuthRefreshTokenIssuer.call(refresh_token: refresh)[:refresh_token]
     end
   end
 end

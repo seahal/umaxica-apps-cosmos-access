@@ -14,8 +14,8 @@ class AccountPolicyTest < ActiveSupport::TestCase
       security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
       visibility_id: ClientVisibility::USER,
     )
-    @record = BaseSelectorBootstrapAuthority.call(surface: :app, principal: @user).account
-    @other_record = BaseSelectorBootstrapAuthority.call(surface: :app, principal: @other_user).account
+    @record = IdentityGraphBootstrapAuthority.call(surface: :app, principal: @user).account
+    @other_record = IdentityGraphBootstrapAuthority.call(surface: :app, principal: @other_user).account
     @policy = AccountPolicy.new(@record, user: @user)
   end
 

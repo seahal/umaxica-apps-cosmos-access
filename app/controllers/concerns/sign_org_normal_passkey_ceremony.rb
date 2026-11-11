@@ -138,7 +138,7 @@ module SignOrgNormalPasskeyCeremony
   end
 
   def passkey_default_redirect_url
-    auth_org_root_path(ri: current_region_identifier)
+    after_login_path
   end
 
   def minimum_response_budget_enabled?

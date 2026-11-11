@@ -5,15 +5,17 @@ require "test_helper"
 
 class LayoutMetaTagsTest < ActiveSupport::TestCase
   LAYOUT_PATHS = {
-    "Base::App" => "app/views/layouts/base/app/application.html.erb",
-    "Base::Com" => "app/views/layouts/base/com/application.html.erb",
-    "Base::Org" => "app/views/layouts/base/org/application.html.erb",
     "Auth::App" => "app/views/layouts/auth/app/application.html.erb",
     "Auth::Org" => "app/views/layouts/auth/org/application.html.erb",
+    "Visa::App" => "app/views/layouts/visa/app/application.html.erb",
+    "Visa::Org" => "app/views/layouts/visa/org/application.html.erb",
   }.freeze
 
   INERTIA_LAYOUT_PATHS = {
-    "Base::App::Inertia" => "app/views/layouts/base/app/inertia.html.erb",
+    "Auth::App::Inertia" => "app/views/layouts/auth/app/inertia.html.erb",
+    "Auth::Org::Inertia" => "app/views/layouts/auth/org/inertia.html.erb",
+    "Visa::App::Inertia" => "app/views/layouts/visa/app/inertia.html.erb",
+    "Visa::Org::Inertia" => "app/views/layouts/visa/org/inertia.html.erb",
   }.freeze
 
   test "all layouts include a charset meta tag" do
@@ -25,8 +27,8 @@ class LayoutMetaTagsTest < ActiveSupport::TestCase
   end
 
   # Turbo layouts only: an Inertia shell never loads Turbo (see StylesheetTagsTest).
-  test "all layouts include turbo-refresh-scroll meta tag" do
-    LAYOUT_PATHS.each do |name, path|
+  test "Auth layouts include turbo-refresh-scroll meta tag" do
+    LAYOUT_PATHS.slice("Auth::App", "Auth::Org").each do |name, path|
       content = Rails.root.join(path).read
 
       assert_match(
@@ -48,7 +50,7 @@ class LayoutMetaTagsTest < ActiveSupport::TestCase
   end
 
   test "inertia layout includes lang and theme markers" do
-    content = Rails.root.join("app/views/layouts/base/app/inertia.html.erb").read
+    content = Rails.root.join("app/views/layouts/auth/app/inertia.html.erb").read
 
     assert_includes content, 'lang="<%= get_language %>"'
     assert_includes content, 'data-theme="<%= theme_cookie_value %>"'

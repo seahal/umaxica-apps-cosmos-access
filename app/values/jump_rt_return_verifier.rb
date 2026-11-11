@@ -1,6 +1,7 @@
 # typed: false
 # frozen_string_literal: true
 
+# TODO: AUDIT external access: fetches JWKS for Jump return verification.
 class JumpRtReturnVerifier
   ALGORITHM = SecurityJwtJumpRtTokenCodec::ALGORITHM
   TOKEN_TYPE = SecurityJwtJumpRtTokenCodec::TOKEN_TYPE

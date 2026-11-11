@@ -262,10 +262,10 @@ module AuthenticationSequenceGate
     attrs[AuthIoKeys::Params::PT] = safe_pt if safe_pt.present?
     attrs.merge!(sign_in_flow_binding_params(cycle)) if cycle
 
-    if respond_to?(:sign_app_selector_path, true)
-      sign_app_selector_path(**attrs)
-    elsif respond_to?(:sign_org_selector_path, true)
-      sign_org_selector_path(**attrs)
+    if respond_to?(:auth_app_selector_path, true)
+      auth_app_selector_path(**attrs)
+    elsif respond_to?(:auth_org_selector_path, true)
+      auth_org_selector_path(**attrs)
     else
       path = "/selector"
       query = attrs.compact.to_query

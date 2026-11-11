@@ -5,13 +5,15 @@
 > `publishing` are **Global-only**. `chronicle`, `occurrence`, `primary`, and `queue` exist as
 > independent (never shared) databases in both Global and Regional. Regional owns one new
 > application database. There is no `*_principal` regional-ready database; that role is retired. The
-> `search` and `storage` reserved connections (zero migrations) are deletion candidates for the
-> split.
+> `search` remains a configured reserved connection with no migrations. The Access `storage`
+> connection and migration path are no longer configured; its physical database, schema, and
+> migration artifacts remain untouched pending the separate database step.
 
-> **Partially superseded by Identity Authority inversion:** Physical database names and table/model
-> placement do not imply logical identity authority. `acme/www` is the Session, Token, Account,
-> Preference, Authorization, and downstream-token Authority. `sign/id` is ceremony-only. Existing
-> sign-side physical tables/models do not imply sign-side authority.
+> Current local product routes are Auth APP/ORG and Visa APP/ORG, plus the six operator tools. Visa
+> owns local sessions, tokens and OIDC authority; Auth owns credential ceremonies. External RP
+> callbacks and browser sessions belong to their own repositories. Former Base and COM database
+> names below describe retained physical storage only; models and data are subject to the deferred
+> model/database report and do not imply current route writers.
 
 ## Purpose
 
@@ -78,7 +80,7 @@ The current `notification` connection will split into three surface signal datab
 
 ## Unchanged Cross-Cutting Databases
 
-These database names remain independent cross-cutting or infrastructure boundaries:
+These configured database names remain independent cross-cutting or infrastructure boundaries:
 
 - `primary` — Rails default database (`db/migrate`, dump `db/structure.sql`). Durable,
   low-frequency, application-wide configuration or metadata that does not have a strong domain,
@@ -86,11 +88,14 @@ These database names remain independent cross-cutting or infrastructure boundari
   Flipper currently uses it. It is not an indiscriminate catch-all: data with a meaningful
   independent ownership boundary stays in its dedicated database.
 - `queue`
-- `storage`
 - `search`
 - `occurrence`
 - `chronicle`
 - `avatar`
+
+The `storage` Rails connection and migration path are no longer configured. Removing those
+configuration entries did not drop the physical database, change its schema, or delete its migration
+artifacts; those remain for the separate database step.
 
 ## Rules
 

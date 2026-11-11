@@ -1,14 +1,15 @@
 # JWT Key Rotation
 
-> **Authority boundary:** JWT key rotation remains required. Visa is the OpenID Provider and token
-> authority on `visa.umaxica.*`; Auth is ceremony-only and must not issue sessions, refresh tokens,
-> downstream tokens, or step-up freshness. Base and the other browser RPs own their local RP keys
-> and sessions. Existing Auth-side physical tables/models do not imply token authority.
+> **Current scope (2026-11-10):** This runbook covers keys used by the local Auth APP/ORG and Visa
+> APP/ORG surfaces, including Visa's OpenID Provider keys. Auth does not issue general login
+> sessions or OP authority. External relying parties own their private signing/state keys and local
+> sessions; rotate those in the owning repository. Their Visa client registrations remain intact.
 
 ## Scope
 
-This runbook covers Auth access tokens, Preference tokens, OIDC ID Tokens, and issuer-surface JWKS.
-Jump RT has additional redirect-specific steps in `docs/runbooks/jump-rt-key-rotation.md`.
+This runbook covers retained Auth tokens, APP/ORG Preference tokens, Visa OIDC ID Tokens, and the
+local JWKS keyrings. Jump RT has additional redirect-specific steps in
+`docs/runbooks/jump-rt-key-rotation.md`.
 
 ## Runtime Model
 
@@ -95,25 +96,19 @@ PREFERENCE_APP_JWT_PRIVATE_KEYSET
 PREFERENCE_APP_JWT_PUBLIC_KEYSET
 PREFERENCE_APP_JWT_REVOKED_KIDS
 
-PREFERENCE_COM_JWT_ACTIVE_KID
-PREFERENCE_COM_JWT_PRIVATE_KEYSET
-PREFERENCE_COM_JWT_PUBLIC_KEYSET
-PREFERENCE_COM_JWT_REVOKED_KIDS
-PREFERENCE_COM_JWT_ISSUER
-PREFERENCE_COM_JWT_AUDIENCE
-
 PREFERENCE_ORG_JWT_ACTIVE_KID
 PREFERENCE_ORG_JWT_PRIVATE_KEYSET
 PREFERENCE_ORG_JWT_PUBLIC_KEYSET
 PREFERENCE_ORG_JWT_REVOKED_KIDS
 ```
 
-APP and ORG issuer origins and audiences are fixed in the registry. COM requires its issuer,
-audience (`com`), and revoked-kid list explicitly. The three keyrings are independent; there is no
-generic Preference issuer, client ID, or shared audience list. Their exact token contract is defined
-in `adr/preference-realm-jwt-and-host-bound-browser-binding.md`.
+APP and ORG issuer origins and audiences are fixed in the registry. These two realm keyrings are
+independent; there is no generic Preference issuer, client ID, or shared audience list. Their exact
+token contract is defined in `adr/preference-realm-jwt-and-host-bound-browser-binding.md`. Retired
+COM preference configuration is not part of current deployment requirements; retained COM models and
+database history are covered by the separate model/database report.
 
-Issuer-surface JWKS:
+Visa OP issuer-surface JWKS:
 
 ```text
 JWT_<NAMESPACE>_ACTIVE_KID
@@ -123,7 +118,8 @@ JWT_<NAMESPACE>_REVOKED_KIDS
 ```
 
 Production should source private material from the production secret backend. Rails credentials are
-acceptable for development and test.
+acceptable for development and test. Only currently deployed Visa APP/ORG and Auth APP/ORG
+namespaces are in local rotation scope; external RP key material remains with each RP owner.
 
 ## Rotation Procedure
 
@@ -148,20 +144,22 @@ Current old-kid verification windows are:
 - OIDC ID Token:
   `Security::TokenLifetimes::OIDC_ID_TOKEN_TTL + JWKS_ROTATION_LEEWAY + CDN_STALE_LEEWAY`.
 - JumpRT: `Security::TokenLifetimes::JUMP_RT_TTL + JWKS_ROTATION_LEEWAY + CDN_STALE_LEEWAY`.
-- RP OIDC `state`: after rotating an RP `oidc_client:<namespace>` key, keep the old public key
-  verifiable for at least 30 minutes plus `CLOCK_SKEW_LEEWAY_SECONDS`, so every in-flight signed
-  `state` can finish or fail closed (`adr/rp-oidc-state-and-return-target.md`, D-150).
+- External RP OIDC `state`: each RP owner keeps its old public key verifiable for at least 30
+  minutes plus `CLOCK_SKEW_LEEWAY_SECONDS` after rotating its `oidc_client:<namespace>` key, so
+  every in-flight signed `state` can finish or fail closed
+  (`adr/rp-oidc-state-and-return-target.md`, D-150). Access does not rotate or publish those RP
+  private keys.
 
 Publication lead time (D-144): publish a new Visa OP signing key in the JWKS at least
 `CACHE_TTL + MAX_STALE_TTL` (1 h 5 min) before it signs anything, so every RP cache already holds
 it. The same lead time applies to any OP namespace that is still deployed during a staged rollout.
 
-Before removing an old RP state key, confirm that the last issued state is older than
-`30.minutes + CLOCK_SKEW_LEEWAY_SECONDS`, all RP callback workers have reloaded the new public key,
-and the RP callback's unknown-`kid` path is fail-closed. Before removing an old Visa signing key,
-confirm the 1 h 5 min publication interval and a successful Discovery/JWKS read from every
-participating RP. Record the exact key IDs, deployment revision and verification time in the release
-evidence; never delete a key solely because the active signer changed.
+Before removing an old external RP state key, the RP owner confirms that the last issued state is
+older than `30.minutes + CLOCK_SKEW_LEEWAY_SECONDS`, all RP callback workers have reloaded the new
+public key, and the RP callback's unknown-`kid` path is fail-closed. Before removing an old Visa
+signing key, confirm the 1 h 5 min publication interval and a successful Discovery/JWKS read from
+every participating RP. Record the exact key IDs, deployment revision and verification time in the
+release evidence; never delete a key solely because the active signer changed.
 
 Old verification keys should be public JWKs only. Do not keep old private keys in production runtime
 unless rollback still requires the previous signer.

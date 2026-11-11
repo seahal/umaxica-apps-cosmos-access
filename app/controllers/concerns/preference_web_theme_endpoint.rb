@@ -24,20 +24,6 @@ module PreferenceWebThemeEndpoint
 
   # `short_code` is an already validated theme code (`requested_theme_value`).
   def apply_theme_update!(short_code)
-    if anonymous_com_claim_shape?(preference_class)
-      write_preference!(
-        operation: :save, actor: Actor.current,
-        submitted: { theme: short_code },
-      ) do |preference, _time, submitted|
-        option_id = {
-          "li" => ComPreferenceThemeOption::LIGHT,
-          "dr" => ComPreferenceThemeOption::DARK,
-          "sy" => ComPreferenceThemeOption::SYSTEM,
-        }.fetch(submitted.fetch(:theme))
-        load_or_create_theme_child(preference).update!(option_id: option_id)
-      end
-      return short_code
-    end
     if anonymous_preference_claim_shape?(preference_class)
       write_preference!(
         operation: :save, actor: preference_write_actor,
@@ -72,13 +58,4 @@ module PreferenceWebThemeEndpoint
     decode_matching_access_token(jwt)
   end
 
-  def load_or_create_theme_child(preference)
-    record_class = PreferenceClassRegistry.record_class(preference_prefix(preference), :theme)
-    relation = record_class.where(preference_id: preference.id)
-    child = relation.first
-    return child if child.present?
-
-    option_class = PreferenceClassRegistry.option_class(preference_prefix, :theme)
-    relation.create!(option_id: option_class::SYSTEM)
-  end
 end

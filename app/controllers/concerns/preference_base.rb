@@ -103,12 +103,6 @@ module PreferenceBase
       create_preference_cookie(prefix, preference)
       ensure_preference_option_defaults(prefix)
       create_preference_option_records(prefix, preference, option_ids)
-      if prefix == "Com"
-        ComPreferenceWebPushOption.ensure_defaults!
-        create_preference_association!(
-          preference, ComPreferenceWebPush, option_id: ComPreferenceWebPushOption::DISABLED,
-        )
-      end
     end
   end
 
@@ -464,16 +458,10 @@ module PreferenceBase
   end
 
   # Accepts either the preference instance or its class; the claim shape is a per-class contract.
-  def anonymous_com_claim_shape?(preference)
-    klass = preference.is_a?(Class) ? preference : preference.class
-
-    klass.name == "ComPreference"
-  end
-
   def anonymous_preference_claim_shape?(preference)
     klass = preference.is_a?(Class) ? preference : preference.class
 
-    [AppPreference, ComPreference, OrgPreference].include?(klass)
+    [AppPreference, OrgPreference].include?(klass)
   end
 
   def anonymous_preference_payload?(payload)
@@ -483,7 +471,6 @@ module PreferenceBase
   def preference_realm_name
     case preference_class.name
     when "AppPreference" then "app"
-    when "ComPreference" then "com"
     when "OrgPreference" then "org"
     else raise ArgumentError, "unsupported Preference model: #{preference_class.name}"
     end
@@ -561,7 +548,6 @@ module PreferenceBase
   def preference_cookie_surface
     case preference_class.name
     when "AppPreference" then :app
-    when "ComPreference" then :com
     when "OrgPreference" then :org
     end
   end

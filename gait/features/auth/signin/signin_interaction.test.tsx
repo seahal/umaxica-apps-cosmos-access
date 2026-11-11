@@ -69,7 +69,6 @@ vi.mock("@/features/auth/turnstile/invisibleToken", () => ({
     solveInvisibleTurnstile(...args),
 }));
 
-const { default: SignInEmailEdit } = await import("@/features/auth/SignInEmailEdit");
 const { default: EmailSignInForm } = await import("@/features/auth/signin/EmailSignInForm");
 const { default: EmailPassCodeForm } = await import("@/features/auth/signin/EmailPassCodeForm");
 const { default: OtpResendButton } = await import("@/features/auth/signin/OtpResendButton");
@@ -930,58 +929,5 @@ describe("step-up passkey screen", () => {
     await flush();
 
     expect(container.querySelector("[role=alert]")?.textContent).toBe(PASSKEY_MESSAGES.cancelled);
-  });
-});
-
-describe("email one-time code edit interaction", () => {
-  const props = {
-    title: "コードの入力",
-    description: "説明",
-    action: "/sign/in/email",
-    pt: "token",
-    field_label: "コード",
-    field_placeholder: "000000",
-    submit_label: "確認",
-    delivery_help: "届かない場合",
-    return_link: { label: "もどる", href: "/sign/in/email/new" },
-    resend: {
-      endpoint: "/web/v0/in/email/otp",
-      state: "resend-state",
-      messages: {
-        button_label: "再送信",
-        sent_message: "送信しました",
-        too_soon_message: "しばらく待ってください",
-        failed_message: "失敗しました",
-      },
-    },
-    turnstile,
-  };
-
-  it("patches the one-time code", async () => {
-    mount(<SignInEmailEdit {...props} />);
-    await flush();
-
-    type('input[name="user_email[pass_code]"]', "654321");
-
-    act(() => {
-      container
-        .querySelector("form")
-        ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    });
-
-    expect(setData).toHaveBeenCalled();
-    expect(patch).toHaveBeenCalledWith("/sign/in/email");
-  });
-
-  it("clears the typed code when the server confirms a resend", async () => {
-    stubFetch(200, { resendable: true });
-    mount(<SignInEmailEdit {...props} />);
-    await flush();
-
-    click("button[type=button]");
-    await flush();
-
-    expect(setData).toHaveBeenCalledWith("user_email", { pass_code: "" });
-    vi.unstubAllGlobals();
   });
 });

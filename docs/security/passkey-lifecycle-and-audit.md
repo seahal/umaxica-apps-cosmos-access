@@ -1,5 +1,10 @@
 # Passkey Lifecycle and Audit Contract
 
+> Historical implementation record for the pre-reset Base and COM route owners. Current local
+> credential ceremonies belong to Auth APP/ORG, while Visa owns local sessions and OIDC authority.
+> External relying parties own their callbacks and browser sessions. Persisted passkey and audit
+> history remains subject to the deferred model/database report.
+
 Passkeys are current-state credentials. APP, COM, and ORG each allow ten retained Passkeys per
 owner. Registration goes through `PasskeyRegistrationOperation`, which locks the owner so the
 model's count validation runs serialized; the database does not enforce the limit, and a write

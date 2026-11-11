@@ -5,7 +5,7 @@ module Visa
   module Org
     module Oauth
       class UserinfosController < Visa::Org::BareController
-        include BaseOauthEndpoint
+        include OidcOpEndpoint
 
         AUTHENTICATION_MODE = :open
 

@@ -46,7 +46,6 @@ class Auth::App::Verification::SetupsControllerTest < ActionDispatch::Integratio
         )
         admission_auth_host = {
           "app" => ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
-          "com" => ENV.fetch("PUBLIC_AUTH_CORPORATE_URL"),
           "org" => ENV.fetch("PUBLIC_AUTH_STAFF_URL"),
         }.fetch(admission_issuance.transaction.surface)
         admission_cookie_name = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"
@@ -72,11 +71,9 @@ class Auth::App::Verification::SetupsControllerTest < ActionDispatch::Integratio
     props = JSON.parse(response.parsed_body.at_css("script[data-page='app']").text).fetch("props")
     methods = props.fetch("methods").to_h { |method| [method.fetch("key"), method.fetch("href")] }
 
-    assert_equal %w(email passkey totp), methods.keys.sort
+    assert_equal %w(passkey totp), methods.keys.sort
     assert_equal new_auth_app_verification_registration_passkey_path(ri: "jp"), methods.fetch("passkey")
     assert_equal new_auth_app_settings_totp_path(ri: "jp"), methods.fetch("totp")
-    assert_equal ENV.fetch("PUBLIC_BASE_SERVICE_URL"), URI.parse(methods.fetch("email")).host
-    assert_equal "/identity/emails/registration/new", URI.parse(methods.fetch("email")).path
     assert_not props.key?("back")
     assert_equal(
       { "label" => I18n.t("actions.cancel"),
@@ -188,7 +185,6 @@ class Auth::App::Verification::SetupsControllerTest < ActionDispatch::Integratio
         )
         admission_auth_host = {
           "app" => ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
-          "com" => ENV.fetch("PUBLIC_AUTH_CORPORATE_URL"),
           "org" => ENV.fetch("PUBLIC_AUTH_STAFF_URL"),
         }.fetch(admission_issuance.transaction.surface)
         admission_cookie_name = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"

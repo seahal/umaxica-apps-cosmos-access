@@ -4,7 +4,7 @@
 // document carries, the shapes that mean "absent", and the failure the API's own absence is.
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { hasRecordedCookieConsent, readCookie, watchCookie } from "@/lib/cookies";
+import { readCookie, watchCookie } from "@/lib/cookies";
 
 beforeEach(() => {
   for (const part of document.cookie.split(";")) {
@@ -115,25 +115,5 @@ describe("watchCookie", () => {
     vi.stubGlobal("cookieStore", undefined);
 
     expect(() => watchCookie("ct", () => {})).toThrow("window.cookieStore is unavailable");
-  });
-});
-
-describe("hasRecordedCookieConsent", () => {
-  test("reports an answered banner for the buffer cookie the server writes as 1", async () => {
-    document.cookie = "preference_consented=1; path=/";
-
-    await expect(hasRecordedCookieConsent()).resolves.toBe(true);
-  });
-
-  test("reports an unanswered banner for the buffer cookie the server writes as 0", async () => {
-    document.cookie = "preference_consented=0; path=/";
-
-    await expect(hasRecordedCookieConsent()).resolves.toBe(false);
-  });
-
-  // SameSite=Strict keeps the buffer off the first cross-site inbound hit, which reads as
-  // unanswered and raises the banner - the safe direction to be wrong in.
-  test("reports an unanswered banner when the buffer cookie is absent", async () => {
-    await expect(hasRecordedCookieConsent()).resolves.toBe(false);
   });
 });

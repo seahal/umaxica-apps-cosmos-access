@@ -7,8 +7,10 @@ rules to avoid schema-change incidents.
 
 **Migrations are the reconstruction authority** for development and test databases.
 
-Every configured `migrations_paths` directory under `db/` must exist. Reserved databases (`search`,
-`storage`) keep empty directories so Rails cannot skip an owner silently.
+Every configured `migrations_paths` directory under `db/` must exist. The `search` database remains
+configured with its empty migration directory. The Access `storage` connection and migration path
+are no longer configured; its physical database, schema, and migration artifacts remain untouched
+pending the separate database step.
 
 Committed `db/*_structure.sql` files are schema-only PostgreSQL dumps generated from the test
 databases. They contain schema metadata (including `schema_migrations`) but no business rows.
@@ -38,10 +40,12 @@ are duplicated into the future `umaxica-apps-regional` repository. After that re
   starting schema, **separate databases, separate data, separate migration history**. The two
   histories are not synchronized after the split.
 - Regional gets a new application database and does not run any Global-only migration path.
-- `search` and `storage` (zero migrations) and `db/audit_schema.rb` (orphan) are deletion candidates
-  for the split; no deletion has been performed yet.
+- `search` (zero migrations) and `db/audit_schema.rb` (orphan) remain deletion candidates for the
+  split. The Access `storage` connection and migration path are no longer configured; its physical
+  database, schema, and migration artifacts remain for the separate database step.
 
-Until the split happens, this repository still prepares the full fleet as one unit.
+Until the split happens, this repository prepares its configured database fleet as one unit. The
+unconfigured storage database is excluded from Rails preparation; its physical data is retained.
 
 ## Principles
 

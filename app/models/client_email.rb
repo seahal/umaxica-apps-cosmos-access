@@ -48,7 +48,6 @@ class ClientEmail < AppPrincipalRecord
   include EmailDeadIdentifierHistory
 
   include MfaStatusCredential
-  include PromotionalEmailUnsubscribable
   include EmailContactBinding
 
   IDENTIFIER_REALM = "app"

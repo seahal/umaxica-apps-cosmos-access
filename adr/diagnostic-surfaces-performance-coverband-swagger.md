@@ -346,3 +346,24 @@ as a dashboard tab that 404s, and a new one simply never appears.
 - `adr/valkey-nonprod-logical-db-topology.md` — the logical database layout extended here
 - `adr/public-private-url-boundaries.md` — the `PUBLIC_`/`PRIVATE_` naming
 - `docs/architecture/cloudflare-request-paths.md` — how a request reaches these hosts
+
+## Amendment (2026-11-10)
+
+rails_performance is removed (owner): its containment depended on copied gem internals, it fails the
+Herb migration, and request performance moves to OpenTelemetry. See
+`docs/backlog/2026-11-10-remove-rails-performance.md`. Coverband and Swagger are unchanged.
+
+## Database console retirement (2026-11-10)
+
+The owner removed the browser database console from Access because its development self-mount
+exposed unauthenticated SQL execution. The earlier topology above is historical; the console is no
+longer a dependency or a permitted mount. `/rails/db` remains a forbidden mount prefix. See
+`docs/backlog/2026-11-10-remove-rails-db.md`. Other operator tools retain their guards.
+
+## Performance implementation retirement (2026-11-10)
+
+Access now removes the performance gem, engine routes, copied internals and exclusive environment
+variables. The earlier performance-specific setup is historical. Six operator tools remain: Mission,
+Flipper, Blazer, PgHero, Swagger and Coverband. OpenTelemetry remains the APM basis. External
+tunnel, DNS and Access application cleanup requires a separate owner operation; no external
+configuration is changed by this implementation.

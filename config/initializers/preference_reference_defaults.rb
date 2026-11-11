@@ -13,11 +13,11 @@ Rails.application.config.after_initialize do
 
   reference_classes = [
     # Status
-    AppPreferenceStatus, ComPreferenceStatus, OrgPreferenceStatus,
+    AppPreferenceStatus, OrgPreferenceStatus,
     # Audit levels
-    AppPreferenceChronicleLevel, ComPreferenceChronicleLevel, OrgPreferenceChronicleLevel,
+    AppPreferenceChronicleLevel, OrgPreferenceChronicleLevel,
     # Audit events
-    AppPreferenceChronicleEvent, ComPreferenceChronicleEvent, OrgPreferenceChronicleEvent,
+    AppPreferenceChronicleEvent, OrgPreferenceChronicleEvent,
   ]
 
   reference_classes.each do |klass|

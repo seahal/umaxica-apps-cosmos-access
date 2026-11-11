@@ -1,5 +1,11 @@
 # Plan: rails_performance / Coverband / Swagger UI on dedicated `*.umaxica.dev` hosts
 
+> Historical implementation plan: Access retired `rails_performance` on 2026-11-10. This file
+> records the earlier implementation; do not use its Performance steps to reintroduce that surface.
+> Coverband and Swagger remain owned operator tools. See
+> [the retirement decision](../adr/diagnostic-surfaces-performance-coverband-swagger.md#performance-implementation-retirement-2026-11-10)
+> and [the surface hard reset](../specs/access-surface-hard-reset/spec.md).
+
 ## Context
 
 The Global Rails application has four operator dashboards (Mission Control Jobs, Flipper UI, Blazer,

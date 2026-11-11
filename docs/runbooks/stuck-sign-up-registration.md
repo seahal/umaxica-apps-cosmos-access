@@ -20,8 +20,8 @@ The event does not contain email addresses, telephone numbers, names or birthdat
 `RetentionPurgeJob` runs every 15 minutes and reports after its cleanup and retention work. A query
 failure is logged without stopping that work.
 
-The report comes from `SignUpStuckRegistrationReportQuery`, which uses the reading role and refuses
-an explicit writing role. It reports:
+The report comes from `SignUpStuckRegistrationReportQuery`, which reads from the primary connection
+with writes prevented. It does not use a replica reading role. It reports:
 
 - `flow_missing`: an unfinished principal or pending contact has no matching sign-up Flow. The
   attempt count is not applicable because no Flow exists.

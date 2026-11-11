@@ -6,12 +6,8 @@ require "test_helper"
 
 class IdentityCeremonyResultNumericDateTest < ActiveSupport::TestCase
   RESULT_CLASSES = [
-    IdentityEmailCeremonyResult,
     IdentityPasskeyCeremonyResult,
-    IdentitySecretCredentialCeremonyResult,
     IdentityStepUpCeremonyResult,
-    IdentityTelephoneCeremonyResult,
-    IdentityTotpCeremonyResult,
   ].freeze
 
   setup do

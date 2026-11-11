@@ -6,7 +6,7 @@ module Visa
     module Oauth
       class TokensController < Visa::Org::BareController
         include ::RateLimit
-        include BaseOauthEndpoint
+        include OidcOpEndpoint
         include BaseOauthTokenEndpoint
 
         AUTHENTICATION_MODE = :open

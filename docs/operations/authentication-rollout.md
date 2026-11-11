@@ -1,67 +1,35 @@
-# Authentication Rollout Contract
+# Auth/Visa Authentication Rollout Contract
 
-This document is the deployment handoff for the Base authority, the seven first-party browser RPs,
-Auth ceremony admission, and the identity-binding migrations. It describes prerequisites and
-rollback boundaries; it does not authorize a shared-database migration or a security downgrade.
+This document covers the local Access authentication boundary: Auth APP/ORG credential ceremonies
+and Visa APP/ORG OpenID Provider behavior. It does not authorize deployment or route changes in an
+external relying-party repository.
 
-## Public identifiers
+## Local ownership
 
-Every surface must use its registered FQDN, RP ID and exact Origin. The Base authority uses the
-canonical application hosts; self-RP and first-party clients use their own registered client IDs.
-Warp is the delivered replacement for the old Side internal name. Issuer, audience, redirect URI,
-JWKS key identifier and RP ID are allowlisted values, not values inferred from the request Host.
+Visa is the only local OpenID Provider and owns its APP/ORG discovery, JWKS, OAuth/OIDC, logout, and
+DBSC routes. Auth owns credential ceremonies and provider callbacks; it does not issue general login
+sessions or provide RP callback routes. The public route and trust boundary is described in the
+[Auth/Visa ownership contract](../architecture/base-auth-seven-rp-boundary.md).
 
-The deployment configuration must preserve host-only RP access and refresh cookies, the configured
-CSP and Fetch Metadata policy, and the Core zero-cookie edge contract. A proxy must preserve the
-headers required for Origin, CSRF and callback validation and must not forward credential cookies to
-the zero-cookie Core UI edge.
+## External relying parties
 
-## Key and callback prerequisites
+Visa's approved external client registrations remain available. Keep each registered client ID,
+issuer, JWKS binding, exact redirect URI, and logout URI aligned with the owning RP's accepted
+configuration. A registration does not authorize Access to host that RP's callback, session, or
+browser UI. Changes to an external RP's keys or routes are owned and verified in that repository.
 
-Provide the production Rails key material, signing-key/JWKS trust configuration, OIDC issuer and
-registered callback/logout URIs before enabling a surface. Verify UserInfo, discovery, token and
-revocation endpoints against the exact client allowlist. Real provider callbacks, OTP delivery,
-WebAuthn RP ID/origin, and notification delivery require separate pre-production verification.
+The cross-repository connection and its acceptance criteria are recorded in the accepted
+[Cosmos connection spec](../../specs/cosmos-cross-repository-connection/spec.md). Follow that spec
+for coordinated OP/RP integration work; this page does not replace its protocol checks.
 
-## Migration sequence
+## Rollout controls
 
-Apply the migrations in repository order on an approved maintenance path. Preflight ambiguous
-identity, binding, token, receipt and retention rows; abort with non-secret identifiers rather than
-inventing state. Build reference data, backfill deterministically, create indexes, validate
-constraints, then retire redundant columns. Preserve terminal/audit history and run both the empty
-database and representative old-schema reconstruction checks.
-
-The app Secret rebuild drops only the old Secret objects after the legacy rows have been captured by
-the migration's explicit transition. The verified transition preserves the Client and unrelated
-table counts, creates no replacement credential for the legacy row, and leaves the new schema with
-the current ownership and replay barriers. Shared production databases were not changed by the
-implementation work.
-
-## In-flight operations and stop conditions
-
-During rollout, pending sign-in, sign-up, sign-out, step-up, binding, OIDC callback, Secret
-issuance, Secret delivery and logout operations must finish under their existing owner and expiry
-rules. Do not revive an expired or cancelled operation. Stop before traffic enablement if any
-reference table is ambiguous, a constraint cannot validate, a required key or Origin is missing,
-an outbox authority snapshot is unknown, or an audit/retention dependency is unavailable.
-
-## Stop and rollback
-
-Stop traffic to the affected surface, preserve logs and immutable operation identifiers, and use
-the forward repair/reconciliation path. Do not restore Auth login-session dependence, re-enable a
-custom CSRF acceptance path, broaden a cookie domain, or drop a validated foreign key as a rollback
-shortcut. A schema rollback requires an approved replacement lifecycle and a tested data-recovery
-plan; it is not the inverse of constraint validation.
-
-## Retention and operations
-
-Run the per-model candidate, payload, reservation, flow, terminal-claim, receipt and Secret proof
-collectors with legal/enforcement holds and kill switches enabled. Keep parent rows while a live
-child, result receipt or replay barrier depends on them. Chronicle confirms audit delivery but does
-not become the authority for identity or credential resolution. Monitor refusal codes, migration
-errors, outbox delivery, refresh coalescing, callback failures and credential-failure versus
-dependency-failure responses.
-
-The deployment checklist is incomplete until real-provider verification, shared migration approval,
-FQDN/RP ID/Origin review, key and JWKS review, notification verification and Chronicle retention
-approval are recorded by the operators who own those systems.
+- Verify the target Auth or Visa APP/ORG host and its route contract before changing provider or
+  edge configuration.
+- Preserve exact issuer, audience, redirect, cookie, CSRF, and key boundaries. Do not use one
+  surface's credentials or session on another surface.
+- Keep production keys and shared database changes within their separately approved operating
+  procedures. A local route cleanup does not rotate credentials, change external registrations, or
+  authorize a database migration.
+- Record only verification outcomes and public identifiers in operational evidence; never record
+  credentials, tokens, cookies, or private key material.

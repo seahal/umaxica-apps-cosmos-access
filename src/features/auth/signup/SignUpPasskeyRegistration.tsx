@@ -1,12 +1,11 @@
 // The passkey requirement of the sign-up checkpoint.
 //
-// The ceremony is the one `src/controllers/passkey_registration_controller.js` ran from the
-// `shared/passkeys/registration` partial, against the same two endpoints and with the same
-// attestation encoding, including the `transports` field the server stores. The checkpoint version
-// travels with the attestation because the server re-validates it before clearing the requirement.
+// The ceremony uses the same two endpoints and attestation encoding, including the `transports`
+// field the server stores. The checkpoint version travels with the attestation because the server
+// re-validates it before clearing the requirement.
 //
-// The partial supplied no Turnstile site key on this page and the options endpoint verifies no
-// token, so the ported ceremony has no Turnstile step. Nothing the server checks changed.
+// This page has no Turnstile site key and the options endpoint verifies no token, so there is no
+// Turnstile step.
 import { useState } from "react";
 
 import Button from "@/components/ui/Button";

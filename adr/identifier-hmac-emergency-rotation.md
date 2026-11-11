@@ -4,26 +4,27 @@
 
 Accepted on 2026-05-18.
 
-Amended on 2026-10-07 by [realm-separated identifiers](realm-separated-identifiers-and-dead-history.md):
-rotation requires an explicit realm and channel and visits only that one identifier model.
-The six dedicated HMAC KEY names replace the two global SALT names. The maintenance freeze is
-scoped to the selected realm/channel; no cross-realm write or global rotation is implied.
+Amended on 2026-10-07 by
+[realm-separated identifiers](realm-separated-identifiers-and-dead-history.md): rotation requires an
+explicit realm and channel and visits only that one identifier model. The six dedicated HMAC KEY
+names replace the two global SALT names. The maintenance freeze is scoped to the selected
+realm/channel; no cross-realm write or global rotation is implied.
 
 Amended on 2026-10-08 under the owner's explicit limited-DDL and maintenance authorization:
-recalculation uses a separate explicit PostgreSQL maintenance connection and channel-scoped
-SECURITY DEFINER functions, not ordinary model updates. The normal binding writer remains
-immutable. Each function can mutate only its digest column, checks the previous digest while
-holding the Source lock, and inserts an atomic internal audit fact. The scoped definer and caller
-roles are NOLOGIN; the migration creates no login memberships. Definer membership, general
-trigger disabling, owner/PII/binding changes and exception flags are excluded.
+recalculation uses a separate explicit PostgreSQL maintenance connection and channel-scoped SECURITY
+DEFINER functions, not ordinary model updates. The normal binding writer remains immutable. Each
+function can mutate only its digest column, checks the previous digest while holding the Source
+lock, and inserts an atomic internal audit fact. The scoped definer and caller roles are NOLOGIN;
+the migration creates no login memberships. Definer membership, general trigger disabling,
+owner/PII/binding changes and exception flags are excluded.
 
 The internal ledger contains only `id`, `operation_ref`, `channel`, `record_id`, `actor_role` and
-`occurred_at`. It is append-only during normal operation and stores the authenticated session
-role, not PII, digests or keys. Failed audit insertion rolls back the update; unchanged digests
-produce no event. Nonempty audit tables prevent destructive migration rollback until the separate
-retention procedure is resolved. Production role provisioning and secret changes remain outside
-this local implementation authorization. The updated operational runbook describes the dedicated
-command and restricted connection requirements.
+`occurred_at`. It is append-only during normal operation and stores the authenticated session role,
+not PII, digests or keys. Failed audit insertion rolls back the update; unchanged digests produce no
+event. Nonempty audit tables prevent destructive migration rollback until the separate retention
+procedure is resolved. Production role provisioning and secret changes remain outside this local
+implementation authorization. The updated operational runbook describes the dedicated command and
+restricted connection requirements.
 
 ## Context
 
@@ -48,8 +49,9 @@ rotate the HMAC keys used for the digest columns.
 If an identifier HMAC key is exposed or suspected to be exposed, rotation is handled as an emergency
 outage procedure.
 
-The application will stop writes to the affected realm/channel identifier records, replace the exposed HMAC
-key, and overwrite the existing digest columns in place from the encrypted source values.
+The application will stop writes to the affected realm/channel identifier records, replace the
+exposed HMAC key, and overwrite the existing digest columns in place from the encrypted source
+values.
 
 The current design does not add `address_digest_v2`, `number_digest_v2`, or equivalent parallel
 columns for emergency rotation.
@@ -91,3 +93,31 @@ this design.
 
 - `docs/security/identifier-hmac-emergency-rotation.md`
 - `docs/reference/active-record-encryption-rotation.md`
+
+## Authority restoration preparation (2026-11-10)
+
+The owner authorized preparing corrective migrations for the existing APP/ORG maintenance authority
+on 2026-11-10. Development application and rehash execution remain separately approval-gated.
+
+This scope permits PostgreSQL role creation, column/table/sequence/schema ACL statements and
+function ownership statements within the two corrective migrations: Active Record has no schema DSL
+for these PostgreSQL capabilities. This is a bounded exception to the new raw-DDL restriction in
+`generic/rails-change-discipline.mdc`, not a new runtime schema abstraction or permission to change
+function bodies, tables, identifier values or audit records. The logical schema and role format
+remain unchanged.
+
+Restoration MUST verify complete canonical rotation and guard bodies, function attributes, trigger
+attachments and any pre-existing role's attributes, memberships, dependencies, grants and owned
+objects before making authority usable. Roles carried by database templates retain the identities
+embedded in the canonical function bodies. Unexpected authority or body drift requires a separate
+review; restoration does not normalize it silently. Each database's restoration is transactional.
+
+Rollback MUST suspend caller execution while preserving append-only history and the restrictive
+ACLs. It assigns the functions to an independent migration executor so their embedded owner check
+fails closed. It retains the isolated cluster roles and narrow grants because database templates can
+share their dependencies. It does not restore PUBLIC execution, delete roles or erase data. This is
+an operational rollback to unavailable maintenance, not a return to an insecure schema-load ACL.
+Reapplying the corrective migration restores the approved maintenance boundary.
+
+See [authority restoration](../docs/runbooks/identifier-hmac-authority-restoration.md) and the
+[scoped plan](../specs/access-identifier-hmac-credentials/authority-repair.md).

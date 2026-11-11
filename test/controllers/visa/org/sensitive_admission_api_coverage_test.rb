@@ -1,12 +1,9 @@
 # frozen_string_literal: true
 
 require "test_helper"
-require_relative "../../../support/rp_cell_session_helper"
 
 class Visa::Org::SensitiveAdmissionApiCoverageTest < ActionDispatch::IntegrationTest
   self.fixture_table_names = []
-
-  include RpCellSessionHelper
 
   setup do
     @operator = Operator.create!(
@@ -23,21 +20,48 @@ class Visa::Org::SensitiveAdmissionApiCoverageTest < ActionDispatch::Integration
       root_login_established_at: Time.current,
       established_authentication_method: "passkey",
     )
-    @token_response =
-      as_rp_cell("base-org-ww") do
-        sign_in_rp_cell("base-org-ww", actor: @operator, root_token: @root_token).first
-      end
     @host = visa_host_for_test_surface(:org)
     https!
     host! @host
+    @client = OidcClientRegistry.find!("base-org-ww")
+    @grant = OpOrgGrant.create!(
+      authentication_epoch: @root_token.authentication_epoch,
+      operator_token: @root_token,
+      oidc_client_id: @client.client_id,
+      oidc_scope: "openid",
+      oidc_jti: SecureRandom.uuid,
+      oidc_nonce: SecureRandom.hex(16),
+      oidc_auth_time: Time.current,
+      refresh_token_expires_at: 1.hour.from_now,
+    )
+    @access_token = AuthenticationTokenService.encode(
+      @operator,
+      host: @host,
+      resource_type: "operator",
+      session_public_id: @root_token.public_id,
+      base_session_public_id: @root_token.public_id,
+      oidc_sid: @grant.public_id,
+      oidc_jti: @grant.oidc_jti,
+      expires_at: 5.minutes.from_now,
+      scopes: %w(openid),
+      issuer: OidcIssuer.for_client(@client),
+      audiences: [@client.aud],
+      subject: OidcSubject.for(@operator, resource_type: "operator"),
+      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(@client),
+      client_id: @client.client_id,
+    )
   end
 
-  test "ORG admission creation reaches its validation boundary for an authenticated Base caller" do
+  test "ORG admission creation reaches validation with an authenticated registered client" do
     before = [OperatorVisaSensitiveAdmission.count, OperatorAuthAdmissionBinding.count]
 
-    post "/api/v0/sensitive_admissions", params: {}, headers: authenticated_headers_for(
-      "/api/v0/sensitive_admissions",
-    )
+    post "/api/v0/sensitive_admissions", params: {}, headers: {
+      "Authorization" => "Bearer #{@access_token}",
+      "X-Client-Assertion" => OidcClientAssertionJwt.issue(
+        client_id: @client.client_id,
+        token_url: "https://#{@host}/api/v0/sensitive_admissions",
+      ),
+    }
 
     assert_response :bad_request
     assert_equal "invalid_request", response.parsed_body.fetch("error")
@@ -47,24 +71,16 @@ class Visa::Org::SensitiveAdmissionApiCoverageTest < ActionDispatch::Integration
   test "ORG browser confirmation rejects missing binding evidence without changing the admission" do
     before = [OperatorVisaSensitiveAdmission.count, OperatorAuthAdmissionBinding.count]
 
-    post "/api/v0/sensitive_admission_confirmation", params: {}, headers: authenticated_headers_for(
-      "/api/v0/sensitive_admission_confirmation",
-    )
+    post "/api/v0/sensitive_admission_confirmation", params: {}, headers: {
+      "Authorization" => "Bearer #{@access_token}",
+      "X-Client-Assertion" => OidcClientAssertionJwt.issue(
+        client_id: @client.client_id,
+        token_url: "https://#{@host}/api/v0/sensitive_admission_confirmation",
+      ),
+    }
 
     assert_response :bad_request
     assert_equal "invalid_request", response.parsed_body.fetch("error")
     assert_equal before, [OperatorVisaSensitiveAdmission.count, OperatorAuthAdmissionBinding.count]
-  end
-
-  private
-
-  def authenticated_headers_for(path)
-    {
-      "Authorization" => "Bearer #{@token_response.fetch(:access_token)}",
-      "X-Client-Assertion" => OidcClientAssertionJwt.issue(
-        client_id: "base-org-ww",
-        token_url: "https://#{@host}#{path}",
-      ),
-    }
   end
 end

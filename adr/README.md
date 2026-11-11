@@ -37,6 +37,12 @@ Current Inertia decision:
 
 Current OP/Auth/RP responsibility decision:
 
+- [Access Is a Pure OpenID Provider](access-is-a-pure-openid-provider.md) — **Accepted (2026-11-10),
+  architecture only.** Access does sign-in and sign-out only: OIDC/OAuth endpoints, ceremony
+  screens, credentials, OP sessions and tokens. Profiles, avatars, settings and all other data live
+  in Governance or relying parties; allow-list tests keep Access from growing. Amends the split
+  record's decision 12.
+
 - [OP, Auth, and RP Authentication Responsibility Separation](op-auth-rp-authentication-responsibility-separation.md)
   — **Accepted (2026-10-22), architecture only.** Sign In uses RP → OP → Auth → OP → RP;
   authenticated method management uses Base → Auth → Base; step-up uses RP → Auth → RP. Base becomes

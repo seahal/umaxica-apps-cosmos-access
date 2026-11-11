@@ -154,7 +154,7 @@ class TokenStatusManagementTest < ActiveSupport::TestCase
       purge_eligible_at: 2.days.from_now,
     )
     rotated_refresh = rotated_source.rotate_refresh_token!
-    SignRefreshTokenIssuer.call(refresh_token: rotated_refresh)
+    AuthRefreshTokenIssuer.call(refresh_token: rotated_refresh)
 
     results = ClientToken.active_status
 
@@ -206,7 +206,7 @@ class TokenStatusManagementTest < ActiveSupport::TestCase
       purge_eligible_at: 2.days.from_now,
     )
     rotated_refresh = rotated_source.rotate_refresh_token!
-    SignRefreshTokenIssuer.call(refresh_token: rotated_refresh)
+    AuthRefreshTokenIssuer.call(refresh_token: rotated_refresh)
 
     results = ClientToken.not_revoked
 

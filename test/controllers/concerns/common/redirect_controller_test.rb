@@ -4,23 +4,7 @@
 require "test_helper"
 # require "helpers/global_test_support"
 
-class TestRedirectController < ApplicationController
-  include CommonRedirect
-end
-
 class CommonRedirectControllerTest < ActionDispatch::IntegrationTest
-  setup do
-    @controller = TestRedirectController.new
-  end
-
-  test "allowed_hosts returns array of hosts" do
-    hosts = @controller.allowed_hosts
-
-    assert_kind_of Array, hosts
-    # Should include at least some hosts from environment variables
-    assert hosts.all? { |h| h.is_a?(String) }
-  end
-
   test "normalize_host strips scheme from URL" do
     result = CommonRedirect.normalize_host("http://example.com/path")
 

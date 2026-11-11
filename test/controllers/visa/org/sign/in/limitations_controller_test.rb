@@ -31,11 +31,31 @@ class Visa::Org::Sign::In::LimitationsControllerTest < ActionController::TestCas
       authentication_event_at: reference_now,
       authentication_context: AuthenticationContextValue::NORMAL_KEY,
     )
+    client_id = "core-org-jp"
+    client = OidcClientRegistry.find!(client_id)
+    oidc_issuance = OidcAuthorizationTransactionCoordinator.issue!(
+      surface: "org", intent: "sign_in",
+      params: {
+        response_type: "code",
+        client_id: client_id,
+        redirect_uri: client.redirect_uris.first,
+        scope: "openid profile",
+        state: SecureRandom.hex(16),
+        nonce: SecureRandom.hex(16),
+        code_challenge: SecureRandom.urlsafe_base64(32),
+        code_challenge_method: "S256",
+      },
+    )
+    @oidc_transaction = OidcAuthorizationTransactionCoordinator.register_result!(
+      surface: "org", login_challenge: oidc_issuance.transaction.login_challenge,
+      actor: @actor, session_ref: nil, auth_method: "passkey", authentication_event_at: reference_now,
+    ).transaction
     @binding = SecureRandom.urlsafe_base64(32)
     @issuance = OperatorSessionLimitResolutionTransaction.issue!(
       actor: @actor,
       sign_in_flow: @flow,
       browser_binding_digest: OperatorSessionLimitResolutionTransaction.digest_challenge(@binding),
+      oidc_authorization_transaction: @oidc_transaction,
     )
     @resolution = @issuance.transaction
     @gate = {
@@ -144,7 +164,7 @@ class Visa::Org::Sign::In::LimitationsControllerTest < ActionController::TestCas
     patch :update, params: { ri: "jp", session_ref: SessionLimitResolutionTokenRef.issue(@existing) },
                    session: { SessionLimitGate::GATE_SESSION_KEY => @gate }
 
-    assert_response :see_other
+    assert_response :found
     assert_predicate @existing.reload, :revoked?
     assert_predicate @flow.reload, :sign_in_completed?
     assert_predicate @resolution.reload, :resolved?
@@ -162,7 +182,7 @@ class Visa::Org::Sign::In::LimitationsControllerTest < ActionController::TestCas
     post :update, params: { ri: "jp", continue: "1" },
                   session: { SessionLimitGate::GATE_SESSION_KEY => @gate }
 
-    assert_response :see_other
+    assert_response :found
     assert_predicate @flow.reload, :sign_in_completed?
     assert_predicate @resolution.reload, :resolved?
     assert_predicate @existing.reload, :revoked?
@@ -257,18 +277,45 @@ class Visa::Org::Sign::In::LimitationsControllerTest < ActionController::TestCas
     assert_equal state, callback_params.fetch("state")
   end
 
-  test "cancelling ends the pending operator flow without revoking its session" do
+  test "a non-OIDC resolution cannot redirect out of the Visa ceremony" do
+    actor = Operator.create!(
+      security_mode_id: SecurityModeConfigurable::ADVANCED,
+      status_id: OperatorStatus::ACTIVE,
+      visibility_id: OperatorVisibility::STAFF,
+    )
+    reference_now = OperatorSignInFlow.database_now
+    flow = OperatorSignInFlow.create!(
+      principal_id: actor.id,
+      state_id: OperatorSignInFlow.state_id_for("SESSION_ISSUANCE_PENDING"),
+      nonce_digest: OperatorSignInFlow.digest_nonce(SecureRandom.urlsafe_base64(32)),
+      issued_at: reference_now,
+      expires_at: reference_now + 5.minutes,
+      authentication_method: "passkey",
+      authentication_event_at: reference_now,
+      authentication_context: AuthenticationContextValue::NORMAL_KEY,
+    )
+    binding = SecureRandom.urlsafe_base64(32)
+    resolution = OperatorSessionLimitResolutionTransaction.issue!(
+      actor: actor,
+      sign_in_flow: flow,
+      browser_binding_digest: OperatorSessionLimitResolutionTransaction.digest_challenge(binding),
+    )
     @request.headers["Origin"] = "http://#{@request.host}"
     @request.headers["Sec-Fetch-Site"] = "same-origin"
 
-    delete :destroy, params: { ri: "jp" }, session: { SessionLimitGate::GATE_SESSION_KEY => @gate }
+    delete :destroy, params: { ri: "jp" }, session: {
+      SessionLimitGate::GATE_SESSION_KEY => @gate.merge(
+        "flow" => flow.public_id,
+        "resolution_challenge" => resolution.challenge,
+        "resolution_binding" => binding,
+      ),
+    }
 
-    assert_redirected_to base_org_sign_show_path(ri: "jp")
-    assert_predicate @flow.reload, :sign_in_cancelled?
-    assert_predicate @resolution.reload, :cancelled?
+    assert_response :gone
+    assert_predicate flow.reload, :sign_in_session_issuance_pending?
+    assert_predicate resolution.transaction.reload, :open?
     assert_predicate @existing.reload, :active_status?
-    assert_nil session[:org_sign_in_flow_locator]
-    assert session[:inertia_clear_history]
+    assert_nil response.location
   end
 
   test "cancelling an OIDC resolution returns to the protocol cancellation page" do

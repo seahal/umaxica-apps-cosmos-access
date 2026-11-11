@@ -15,7 +15,9 @@ class CsrfAcceptanceOverrideInvariantTest < ActiveSupport::TestCase
     /skip_before_action\s+:verify_authenticity_token/,
     /protect_from_forgery\s+with:\s+:null_session/,
   )
-  PERMITTED_SKIPS = { "app/controllers/concerns/csp_violation_report.rb" => 1 }.freeze
+  PERMITTED_SKIPS = {
+    "app/controllers/concerns/csp_violation_report.rb" => 1,
+  }.freeze
 
   test "no class redefines verified-request or Origin acceptance" do
     offenders =

@@ -23,7 +23,8 @@ Use this format when adding or refining a term:
 ### Term
 
 - Definition: The shared domain meaning of the term.
-- Context: Where this term is used, such as `app`, `org`, `com`, or a bounded context.
+- Context: Where this term is used, such as `app`, `org`, a retained data realm, or a bounded
+  context.
 - Notes: Important constraints, alternative names, or implementation references.
 - Status: `draft`, `accepted`, or `deprecated`.
 ```
@@ -31,7 +32,7 @@ Use this format when adding or refining a term:
 ## Rules
 
 - Prefer domain language over framework or database terminology.
-- Do not mix terms across the `app`, `org`, and `com` surfaces unless a shared abstraction already
-  exists.
+- Keep terms for the retained `app` and `org` surfaces separate unless a shared abstraction already
+  exists. Describe legacy data realms as storage concepts, not served surfaces.
 - Mark uncertain definitions as `draft` instead of presenting them as settled.
 - Promote stable, accepted terms here when they affect product behavior or implementation.

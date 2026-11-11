@@ -57,7 +57,9 @@ module Visa
 
             @payload = auth.payload
             @actor = auth.resource
-            @grant = OpOrgGrant.find_by(public_id: @payload["sid"], oidc_client_id: CLIENT_ID)
+            @grant = OpOrgGrant.includes(:operator_token).find_by(
+              public_id: @payload["sid"], oidc_client_id: CLIENT_ID,
+            )
             return render(json: { error: "invalid_token" }, status: :unauthorized) unless @grant&.active?
 
             @root_token = @grant.operator_token

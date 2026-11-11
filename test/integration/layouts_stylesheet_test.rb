@@ -7,44 +7,24 @@ class StylesheetTagsTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
   APPLICATION_LAYOUTS = {
-    "app/views/layouts/base/app/application.html.erb" => "entrypoints/base/app",
-    "app/views/layouts/base/com/application.html.erb" => "entrypoints/base/com",
-    "app/views/layouts/base/org/application.html.erb" => "entrypoints/base/org",
-    "app/views/layouts/auth/app/application.html.erb" => "entrypoints/sign/app",
-    "app/views/layouts/auth/org/application.html.erb" => "entrypoints/sign/org",
+    "app/views/layouts/auth/app/application.html.erb" => "entrypoints/application",
+    "app/views/layouts/auth/org/application.html.erb" => "entrypoints/application",
+    "app/views/layouts/visa/app/application.html.erb" => "entrypoints/application",
+    "app/views/layouts/visa/org/application.html.erb" => "entrypoints/application",
   }.freeze
+
+  CHROME_APPLICATION_LAYOUTS = APPLICATION_LAYOUTS.keys.grep(%r{layouts/auth/}).freeze
 
   # One Inertia layout per user-facing FQDN, each loading only its own surface entrypoint.
   INERTIA_LAYOUTS = %w(
-    base/app base/com base/org
     auth/app auth/org
-    warp/app warp/com warp/org
-    core/app core/org
-    palm/app
+    visa/app visa/org
   ).to_h do |surface|
     family, boundary = surface.split("/")
     ["app/views/layouts/#{surface}/inertia.html.erb", "entrypoints/inertia/#{family}_#{boundary}.tsx"]
   end.freeze
 
-  # The chrome-free application layouts (Warp, core, jump, palm). They carry no shared header or
-  # footer, but they load the Propshaft baseline stylesheet exactly like the chrome-bearing ones,
-  # so a missing app/assets/stylesheets/application.css 500s them the same way.
-  MINIMAL_APPLICATION_LAYOUTS = %w(
-    app/views/layouts/warp/app/application.html.erb
-    app/views/layouts/warp/com/application.html.erb
-    app/views/layouts/warp/org/application.html.erb
-    app/views/layouts/core/app/application.html.erb
-    app/views/layouts/core/org/application.html.erb
-    app/views/layouts/jump/app/application.html.erb
-    app/views/layouts/jump/com/application.html.erb
-    app/views/layouts/jump/org/application.html.erb
-    app/views/layouts/palm/app/application.html.erb
-  ).freeze
-
   TURNSTILE_LAYOUTS = %w(
-    app/views/layouts/base/app/application.html.erb
-    app/views/layouts/base/com/application.html.erb
-    app/views/layouts/base/org/application.html.erb
     app/views/layouts/auth/app/application.html.erb
     app/views/layouts/auth/org/application.html.erb
   ).freeze
@@ -111,7 +91,7 @@ class StylesheetTagsTest < ActiveSupport::TestCase
   end
 
   test "every importmap application layout loads the Propshaft baseline stylesheet and it resolves" do
-    (APPLICATION_LAYOUTS.keys + MINIMAL_APPLICATION_LAYOUTS).each do |path|
+    APPLICATION_LAYOUTS.each_key do |path|
       contents = Rails.root.join(path).read
 
       assert_includes contents, 'stylesheet_link_tag "application"',
@@ -129,26 +109,22 @@ class StylesheetTagsTest < ActiveSupport::TestCase
            %(Propshaft must resolve application.css for stylesheet_link_tag "application")
   end
 
-  test "target layouts include shared chrome and semantic landmarks" do
-    APPLICATION_LAYOUTS.each_key do |path|
+  test "Auth layouts include procedure chrome and semantic landmarks without navigation" do
+    CHROME_APPLICATION_LAYOUTS.each do |path|
       contents = Rails.root.join(path).read
 
       assert_includes contents, "<header>", "layout #{path} must include a header"
-      assert_includes contents, "<nav aria-label=", "layout #{path} must label navigation"
+      assert_not_includes contents, "<nav", "layout #{path} must not add navigation outside its procedure"
       assert_includes contents, 'id="main"', "layout #{path} must place content in main#main"
       assert_includes contents, "<footer>", "layout #{path} must include a footer"
       assert_includes contents, 'render "layouts/shared/flash_messages"', "layout #{path} must render flash messages"
       assert_includes contents, 'render "layouts/shared/current_banner"', "layout #{path} must render the banner"
-      assert_includes contents, 'render "layouts/shared/footer_cookie_controls"',
-                      "layout #{path} must render cookie controls"
-      assert_includes contents, 'render "layouts/shared/footer_theme_controls"',
-                      "layout #{path} must render theme controls"
       assert_includes contents, 'render "layouts/shared/copyright"',
                       "layout #{path} must render copyright"
     end
   end
 
-  test "sign and base application layouts own turnstile api loading" do
+  test "Auth application layouts own Turnstile API loading" do
     TURNSTILE_LAYOUTS.each do |path|
       contents = Rails.root.join(path).read
 
@@ -167,7 +143,10 @@ class StylesheetTagsTest < ActiveSupport::TestCase
   end
 
   test "application layouts keep the turbo refresh contract" do
-    APPLICATION_LAYOUTS.each_key do |path|
+    %w(
+      app/views/layouts/auth/app/application.html.erb
+      app/views/layouts/auth/org/application.html.erb
+    ).each do |path|
       contents = Rails.root.join(path).read
 
       assert_includes contents, 'meta name="turbo-refresh-method" content="morph"',

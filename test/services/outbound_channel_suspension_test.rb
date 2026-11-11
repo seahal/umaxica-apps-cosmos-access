@@ -18,7 +18,6 @@ class OutboundChannelSuspensionTest < ActiveSupport::TestCase
   test "an unset feature leaves the channel running" do
     assert_not OutboundChannelSuspension.new(flipper: StubFlipper.new({})).suspended?(:sms)
     assert_not OutboundChannelSuspension.new(flipper: StubFlipper.new({})).suspended?(:email)
-    assert_not OutboundChannelSuspension.new(flipper: StubFlipper.new({})).suspended?(:promotional_email)
   end
 
   test "an enabled feature suspends only its own channel" do
@@ -28,19 +27,10 @@ class OutboundChannelSuspensionTest < ActiveSupport::TestCase
     assert_not suspension.suspended?(:email)
   end
 
-  test "suspending email also suspends promotional email" do
+  test "suspending email stops email delivery" do
     suspension = OutboundChannelSuspension.new(flipper: StubFlipper.new(outbound_email_suspended: true))
 
     assert suspension.suspended?(:email)
-    assert suspension.suspended?(:promotional_email)
-  end
-
-  test "suspending promotional email leaves transactional email running" do
-    suspension =
-      OutboundChannelSuspension.new(flipper: StubFlipper.new(outbound_promotional_email_suspended: true))
-
-    assert suspension.suspended?(:promotional_email)
-    assert_not suspension.suspended?(:email)
   end
 
   test "an unknown channel is rejected rather than treated as running" do

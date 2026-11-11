@@ -193,10 +193,9 @@ class OidcEndSessionRequestTest < ActiveSupport::TestCase
 
   test "rejects post logout redirect uri registered for another realm" do
     install_actor_context!
-    staff_host = Rails.configuration.x.boot_config.fetch(:hosts).core_staff.host
     cross_realm_uri =
       OidcClientRegistry.find!("core-org-jp").post_logout_redirect_uris.find do |uri|
-        URI.parse(uri).host == staff_host
+        URI.parse(uri).host == URI.parse(@client.post_logout_redirect_uris.first).host
       end
 
     assert_not_nil cross_realm_uri, "core-org-jp should register an org-realm post_logout uri"

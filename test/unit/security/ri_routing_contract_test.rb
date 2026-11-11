@@ -31,43 +31,12 @@ class RiRoutingContractTest < ActiveSupport::TestCase
 
   CONTROLLER_ROOT = "app/controllers"
 
-  # Targets that serve regional HTML and therefore owe the `ri` contract described in
-  # docs/architecture/preference.md:197.
-  RI_PARTICIPATING_TARGETS = %w(
-    auth/app auth/org
-    base/app base/com base/org
-    core/app core/org
-    edit/org
-    warp/app warp/com warp/org
-    palm/app
-    tech/org
-    visa/app visa/org
-  ).freeze
+  # Owned Auth and Visa surfaces that serve regional HTML and therefore owe the `ri` contract.
+  RI_PARTICIPATING_TARGETS = %w(auth/app auth/org visa/app visa/org).freeze
 
-  # Visa's browser-facing authority pages intentionally reuse the root-session Authority base from
-  # the matching Base realm. They must inherit PreferenceGlobal and set_region, but do not own a
-  # second ApplicationController: creating one would blur the OP/RP boundary described by two.md
-  # V3. The source-level contract below therefore resolves AuthorityController for these targets.
+  # Visa's browser-facing authority pages intentionally reuse the root-session authority. Resolve
+  # its effective callback chain instead of requiring a second ApplicationController.
   RI_SHARED_AUTHORITY_TARGETS = %w(visa/app visa/org).freeze
-
-  # Targets deliberately outside the contract. An unexplained absence is indistinguishable from the
-  # oversight this test exists to catch, so every exemption is grouped under a stated reason.
-
-  # Infrastructure editions: health probes, CSP sinks and root stubs only. They serve no regional
-  # HTML and are not reachable by ordinary users.
-  RI_EXEMPT_INFRASTRUCTURE_TARGETS = %w(base/dev base/net core/dev core/net guid/net).freeze
-
-  # Publishing content surfaces. Their language comes from the published document
-  # (PublishingContentRendering), not from request context, so they do not carry `ri`.
-  RI_EXEMPT_CONTENT_TARGETS = %w(
-    docs/app docs/com docs/org
-    help/app help/com help/org
-    info/app info/com info/org
-    news/app news/com news/org
-  ).freeze
-
-  RI_EXEMPT_TARGETS =
-    (RI_EXEMPT_INFRASTRUCTURE_TARGETS + RI_EXEMPT_CONTENT_TARGETS).freeze
 
   # Controllers inside a participating target that legitimately do not run `set_region`. Every entry
   # is a machine-to-machine endpoint: protocol redirects and token/cookie transports that must not
@@ -78,57 +47,23 @@ class RiRoutingContractTest < ActiveSupport::TestCase
   RI_SKIP_ALLOWLIST = %w(
     app/controllers/auth/app/omniauth/omniauth_callbacks_controller.rb
     app/controllers/auth/org/omniauth/omniauth_callbacks_controller.rb
-    app/controllers/base/app/oidc/callbacks_controller.rb
-    app/controllers/base/app/sign/interruptions_controller.rb
-    app/controllers/base/org/oidc/callbacks_controller.rb
-    app/controllers/base/org/sign/interruptions_controller.rb
-    app/controllers/core/app/oidc/callbacks_controller.rb
-    app/controllers/core/app/sign/interruptions_controller.rb
-    app/controllers/core/org/oidc/callbacks_controller.rb
-    app/controllers/core/org/sign/interruptions_controller.rb
-    app/controllers/edit/org/oidc/callbacks_controller.rb
-    app/controllers/edit/org/sign/interruptions_controller.rb
-    app/controllers/palm/app/oidc/callbacks_controller.rb
-    app/controllers/palm/app/sign/interruptions_controller.rb
-    app/controllers/tech/org/oidc/callbacks_controller.rb
-    app/controllers/tech/org/sign/interruptions_controller.rb
     app/controllers/visa/app/authorization_base_controller.rb
     app/controllers/visa/org/authorization_base_controller.rb
-    app/controllers/warp/app/oidc/callbacks_controller.rb
-    app/controllers/warp/app/sign/interruptions_controller.rb
-    app/controllers/warp/org/oidc/callbacks_controller.rb
-    app/controllers/warp/org/sign/interruptions_controller.rb
   ).freeze
 
-  # Controllers that render HTML on a participating target and still run without region
-  # enforcement.
-  #
-  # Preference email unsubscribe pages are reached by a token URL sent in an email, not by
-  # in-surface navigation: the page carries a one-click form back to itself and generates no
-  # regional link, and a canonicalization redirect there would rewrite a URL the recipient
-  # received out of band.
-  #
-  # Base.Org Publishing CMS controllers inherited BareController and skipped the preference
-  # pipeline entirely. They now inherit Base::Org::ApplicationController (`:private`
-  # authentication, `authenticate_operator!`) like every other staff management surface, so
-  # `set_region` runs like it does for `accounts`, `audit`, and the rest -- this exemption no
-  # longer applies to them.
-  RI_HTML_EXEMPT_CONTROLLERS = %w(
-    base/app/preference/emails
-    base/org/preference/emails
-  ).freeze
+  RI_HTML_EXEMPT_CONTROLLERS = [].freeze
 
   SKIP_SET_REGION_PATTERN = /^\s*skip_before_action\s+.*\bset_region\b/
   INCLUDE_PREFERENCE_GLOBAL_PATTERN = /^\s*include\s+::?PreferenceGlobal\b/
   BEFORE_ACTION_SET_REGION_PATTERN = /^\s*before_action\s+:set_region\b/
 
   test "every routing target is classified as participating in or exempt from the ri contract" do
-    classified = (RI_PARTICIPATING_TARGETS + RI_EXEMPT_TARGETS).sort
+    classified = RI_PARTICIPATING_TARGETS.sort
 
     assert_equal classified, discovered_targets,
                  "Routing targets changed. Every <family>/<edition> that serves requests must be " \
                  "listed in RI_PARTICIPATING_TARGETS (it renders regional HTML and owes the ri " \
-                 "contract) or in RI_EXEMPT_TARGETS with a stated reason. Leaving a new surface " \
+                 "contract). Leaving a new surface " \
                  "unclassified is how a surface silently ships without region routing.\n" \
                  "unclassified: #{(discovered_targets - classified).inspect}\n" \
                  "stale entry:  #{(classified - discovered_targets).inspect}"

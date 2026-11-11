@@ -19,8 +19,6 @@ module Jit
           @preference_app_legacy_key = OpenSSL::PKey::EC.generate("secp384r1")
           @preference_org_key = OpenSSL::PKey::EC.generate("secp384r1")
           @preference_org_legacy_key = OpenSSL::PKey::EC.generate("secp384r1")
-          @preference_com_key = OpenSSL::PKey::EC.generate("secp384r1")
-          @preference_com_legacy_key = OpenSSL::PKey::EC.generate("secp384r1")
           @surface_key = OpenSSL::PKey::EC.generate("secp384r1")
         end
 
@@ -39,8 +37,6 @@ module Jit
             assert_equal ["app"], issuers.fetch("preference_app").audiences
             assert_equal "pref-org-kid", issuers.fetch("preference_org").current_kid
             assert_equal ["org"], issuers.fetch("preference_org").audiences
-            assert_equal "pref-com-kid", issuers.fetch("preference_com").current_kid
-            assert_equal ["com"], issuers.fetch("preference_com").audiences
             assert_equal "sign-app-kid", issuers.fetch("surface:AUTH_APP").current_kid
             assert_predicate issuers.fetch("surface:AUTH_APP").jwks.fetch(:keys), :present?
             assert_equal JitSecurityJwtRegistry::OIDC_CLIENT_NAMESPACES.size,
@@ -48,52 +44,6 @@ module Jit
             assert JitSecurityJwtRegistry.public_key_for("auth", "auth-legacy-kid")
             assert JitSecurityJwtRegistry.public_key_for("preference_app", "pref-app-legacy-kid")
             assert JitSecurityJwtRegistry.public_key_for("preference_org", "pref-org-legacy-kid")
-            assert JitSecurityJwtRegistry.public_key_for("preference_com", "pref-com-legacy-kid")
-          end
-        end
-
-        test "com preference public keyset works without a private key" do
-          public_only_key = OpenSSL::PKey::EC.generate("secp384r1")
-          jwk = JitSecurityJwtRegistry.export_public_jwk(public_only_key, kid: "com-public-only")
-          with_registry_inputs(
-            "PREFERENCE_COM_JWT_ACTIVE_KID" => "com-public-only",
-            "PREFERENCE_COM_JWT_PRIVATE_KEYSET" => nil,
-            "PREFERENCE_COM_JWT_PUBLIC_KEYSET" => JSON.generate(keys: [jwk]),
-            "PREFERENCE_COM_JWT_ISSUER" => "https://www.umaxica.com",
-            "PREFERENCE_COM_JWT_AUDIENCE" => "com",
-          ) do
-            issuer = JitSecurityJwtRegistry.reload!.fetch("preference_com")
-
-            assert_nil issuer.current_key.private_key
-            assert_predicate issuer.public_key_for("com-public-only"), :present?
-            snapshot = {
-              "theme" => "system",
-              "language" => "ja",
-              "timezone" => "Asia/Tokyo",
-              "currency" => "jpy",
-              "date_format" => "iso",
-              "time_format" => "24",
-              "motion" => "standard",
-              "density" => "standard",
-              "page_size" => "20",
-            }
-            now = Time.current
-            claims = {
-              "iss" => "https://www.umaxica.com",
-              "sub" => "row",
-              "aud" => "com",
-              "iat" => now.to_i,
-              "exp" => now.to_i + 400.days.to_i,
-              "jti" => "generation",
-              "preferences" => snapshot,
-            }
-            token = JWT.encode(claims, public_only_key, "ES384", { kid: "com-public-only", typ: "JWT" })
-
-            assert_predicate SecurityJwtPreferenceTokenCodec.decode(token, host: "www.umaxica.com"), :present?
-            assert_nil SecurityJwtPreferenceTokenCodec.encode(
-              snapshot, host: "www.umaxica.com", preference_type: "ComPreference", issued_at: now,
-                        public_id: "row", jti: "generation",
-            )
           end
         end
 
@@ -302,8 +252,8 @@ module Jit
 
         test "allows empty optional surface records without issuer or audiences" do
           record = JitSecurityJwtIssuerRecord.new(
-            id: "surface:BASE_APP",
-            namespace: "BASE_APP",
+            id: "surface:AUTH_APP",
+            namespace: "AUTH_APP",
             issuer: nil,
             audiences: [],
             current_kid: nil,
@@ -335,25 +285,21 @@ module Jit
           end
         end
 
-        test "a non-Jump surface record keeps its fixed issuer metadata" do
-          with_registry_inputs do
-            assert_equal "https://www.umaxica.app", JitSecurityJwtRegistry.reload!.fetch("surface:ACME_APP").issuer
-          end
-        end
-
         test "an unsafe Jump issuer origin fails registry configuration at boot instead of at request time" do
-          with_registry_inputs("PUBLIC_BASE_SERVICE_URL" => "base.app.localhost") do
+          with_registry_inputs("PUBLIC_AUTH_SERVICE_URL" => "auth.app.localhost") do
             error = assert_raises(JitSecurityJwtRegistry::ConfigurationError) { JitSecurityJwtRegistry.reload! }
 
-            assert_match(/PUBLIC_BASE_SERVICE_URL/, error.message)
+            assert_match(/PUBLIC_AUTH_SERVICE_URL/, error.message)
           end
         end
 
         test "a missing Jump issuer origin fails registry configuration" do
-          with_registry_inputs("PUBLIC_PALM_SERVICE_URL" => nil) do
-            error = assert_raises(JitSecurityJwtRegistry::ConfigurationError) { JitSecurityJwtRegistry.reload! }
+          with_registry_inputs("PUBLIC_AUTH_SERVICE_URL" => nil) do
+            Rails.env.stub(:local?, false) do
+              error = assert_raises(JitSecurityJwtRegistry::ConfigurationError) { JitSecurityJwtRegistry.reload! }
 
-            assert_match(/PUBLIC_PALM_SERVICE_URL is required/, error.message)
+              assert_match(/PUBLIC_AUTH_SERVICE_URL is required/, error.message)
+            end
           end
         end
 
@@ -411,9 +357,6 @@ module Jit
             "AUTH_JWT_ISSUER" => "auth-test-issuer",
             "PREFERENCE_APP_JWT_ACTIVE_KID" => "pref-app-kid",
             "PREFERENCE_ORG_JWT_ACTIVE_KID" => "pref-org-kid",
-            "PREFERENCE_COM_JWT_ACTIVE_KID" => "pref-com-kid",
-            "PREFERENCE_COM_JWT_ISSUER" => "https://www.umaxica.com",
-            "PREFERENCE_COM_JWT_AUDIENCE" => "com",
             "JWT_AUTH_APP_ACTIVE_KID" => "sign-app-kid",
             "JWT_AUTH_APP_PUBLIC_KEYSET" => JSON.generate([legacy_jwk]),
             "OIDC_CLIENT_WARP_APP_JP_ACTIVE_KID" => "warp-app-kid",
@@ -453,8 +396,6 @@ module Jit
                                  @preference_app_legacy_key,],
             "PREFERENCE_ORG" => ["pref-org-kid", "pref-org-legacy-kid", @preference_org_key,
                                  @preference_org_legacy_key,],
-            "PREFERENCE_COM" => ["pref-com-kid", "pref-com-legacy-kid", @preference_com_key,
-                                 @preference_com_legacy_key,],
           }
           preference_keysets.each do |prefix, (default_kid, legacy_kid, key, legacy_key)|
             active_kid = env.fetch("#{prefix}_JWT_ACTIVE_KID", default_kid)

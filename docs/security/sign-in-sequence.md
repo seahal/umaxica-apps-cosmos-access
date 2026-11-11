@@ -1,20 +1,19 @@
 # Sign-In Sequence
 
-The canonical Sign In admission also receives completed App/Com registration. The rationale and
+The canonical Sign In admission also receives completed App registration. The rationale and
 failure-domain contract are documented in
 [Sign In First: Registration Handoff](sign-in-first-registration-handoff.md) and
 [ADR D13](../../adr/sign-in-first-and-sign-up-handoff.md).
 
-> **Authority-boundary supersession (2026-10-24):** This document retains the earlier
-> `sign/id`–`acme/www` migration vocabulary for historical context. The current Rails contract is
-> Visa as the sole OIDC Provider/authority on `visa.umaxica.*`, Auth as the credential ceremony
-> surface, and Base as the `www.umaxica.*` browser RP. Each first-party browser RP uses its own
-> registered client. In particular, do not reintroduce `base-rails-rp`, `sign-rp`, or
-> `side-rails-rp` from the historical examples below. See `adr/visa-op-host.md`.
+> **Current scope (2026-11-10):** Visa APP/ORG is the sole local OpenID Provider and session
+> authority; Auth APP/ORG owns credential ceremonies. External RPs retain their approved Visa
+> registrations but own their callbacks, browser sessions, and post-auth pages in their
+> repositories. Access has no local RP callback or dashboard route. Older `sign/id`–`acme/www`
+> sections are migration history.
 
 > **Reading rule:** The sections below retain the earlier `sign/id`–`acme/www` vocabulary as a
-> migration record. They are not a description of the current Rails authority boundary. For the
-> active result contract, use the current section immediately below and the Base/Auth ADR.
+> migration record. They are not a description of the current Access route boundary. For the active
+> result contract, use the current section immediately below and the Auth/Visa ownership contract.
 
 > **Lifecycle vocabulary:** Status, event, and result names in this document are current runtime
 > vocabulary. Future canonical lifecycle terminology (`ACTIVE`, `COMPLETED`, `CANCELLED`, `EXPIRED`,
@@ -25,10 +24,10 @@ failure-domain contract are documented in
 ## Current Rails result contract
 
 Auth owns credential ceremony continuity and authentication evidence only. Visa owns the OIDC
-authorization transaction, Root Session, authorization code, and authority token issuance. Base owns
-its browser RP callback, RP Session and local state; each other RP owns its own RP Session and local
-state. Base's self-RP participates through its registered client without acquiring authority over
-other RPs' databases.
+authorization transaction, Root Session, authorization code, and authority token issuance. Visa's
+client-scoped grant and token records remain in Access; each external RP owns its callback, browser
+session, and product state in its own repository. Registrations do not give Access authority over an
+external RP's database.
 
 The Auth-to-Visa result is a short-lived opaque Valkey transport capability. Its digest, generation,
 expiry, and Visa finalization references are stored on the matching surface-local PostgreSQL
@@ -127,7 +126,7 @@ must not carry authentication result facts. The signed ceremony result is the se
 The old sign-in state-machine vocabulary remains useful only as ceremony or compatibility routing
 vocabulary:
 
-| Vocabulary                   | Current meaning                                                                     |
+| Vocabulary                   | Historical meaning                                                                  |
 | ---------------------------- | ----------------------------------------------------------------------------------- |
 | Primary credential           | The first credential ceremony executed by sign/id.                                  |
 | MFA challenge during sign-in | Additional credential ceremony before sign returns evidence to acme.                |
@@ -144,28 +143,27 @@ not make sign the session authority.
 
 The supported credential methods remain surface-aware:
 
-| Surface | sign/id ceremony methods                                            | acme-owned commit                                            |
+| Surface | Auth ceremony methods                                               | Visa-owned commit                                            |
 | ------- | ------------------------------------------------------------------- | ------------------------------------------------------------ |
 | `app`   | email OTP, passkey, TOTP where implemented, passcode, Google, Apple | Client session, account/session state, OIDC/token issuance   |
-| `com`   | no sign-in; public pages are anonymous                              | no authenticated session, actor, or token                    |
 | `org`   | passkey, passcode                                                   | Operator session, account/session state, OIDC/token issuance |
 
 Org production sign-in does not use external social providers. Google, Apple, Microsoft, and other
 external social providers are not org sign-in methods.
 
-## App Sign-In Route Matrix
+## Auth APP Sign-In Route Matrix
 
-Current `app` sign-in routes share the same completion gate. Route-local controllers verify the
-credential or provider response, then hand off to `establish_signed_in_session!` and the shared
-`SignInResult` adapter when a session is actually issued.
+Current Auth APP sign-in routes share the same ceremony completion gate. Route-local controllers
+verify the credential or provider response, then return evidence to Visa. Visa performs the
+session-issuance and OIDC authority transition.
 
-| route family                        | controller path                                                                                 | credential / provider                | state object                        | completion gate                                         | notes                                                                                                                    |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------ | ----------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Email OTP                           | `Sign::App::Sign::In::EmailsController`                                                         | email + OTP                          | `SignAppInEmailAuthenticationState` | `establish_signed_in_session!`                          | `create` issues real or dummy OTP; `update` verifies OTP and returns success, MFA, session-limit pending, or hard reject |
-| Google social                       | `Sign::App::Social::AuthenticationsController` + `Sign::App::Auth::OmniauthCallbacksController` | Google OAuth / OmniAuth              | social auth intent + callback state | `establish_signed_in_session!`                          | callback validates state, provider assertion, and callback replay before completion                                      |
-| Apple social                        | `Sign::App::Social::AuthenticationsController` + `Sign::App::Auth::OmniauthCallbacksController` | Apple OAuth / OmniAuth               | social auth intent + callback state | `establish_signed_in_session!`                          | Apple-specific form-post callback handling is delegated to the provider integration                                      |
-| Passkey / WebAuthn                  | `Sign::App::Sign::In::PasskeysController` + `Sign::App::Sign::In::Passkey::*`                   | WebAuthn credential                  | passkey challenge state             | `establish_signed_in_session!`                          | options and verification controllers already route through the shared gate                                               |
-| TOTP / passcode / secret credential | `Sign::App::Sign::In::SecretCredentialsController` + `Sign::App::Sign::In::Challenge::*`        | TOTP, passcode, or secret credential | pending MFA state                   | `establish_signed_in_session!` or `finalize_mfa_login!` | direct login and MFA follow-up branches both converge on the same session completion rules                               |
+| route family                        | controller path                                | credential / provider                | state object                        | completion gate                 | notes                                                                                  |
+| ----------------------------------- | ---------------------------------------------- | ------------------------------------ | ----------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------- |
+| Email OTP                           | `Auth::App::Sign::In::EmailsController`        | email + OTP                          | Email sign-in flow                  | Visa authorization finalization | `create` issues real or dummy OTP; `update` verifies OTP and returns ceremony evidence |
+| Google social                       | Auth APP social entry and callback controllers | Google OAuth / OmniAuth              | social auth intent + callback state | Visa authorization finalization | callback validates state, provider assertion, and callback replay                      |
+| Apple social                        | Auth APP social entry and callback controllers | Apple OAuth / OmniAuth               | social auth intent + callback state | Visa authorization finalization | Apple form-post callback handling is delegated to the provider integration             |
+| Passkey / WebAuthn                  | Auth APP passkey and verification controllers  | WebAuthn credential                  | passkey challenge state             | Visa authorization finalization | options and verification remain bound to the admitted ceremony                         |
+| TOTP / passcode / secret credential | Auth APP secret and challenge controllers      | TOTP, passcode, or secret credential | pending MFA state                   | Visa authorization finalization | direct login and MFA follow-up branches return evidence to the same Visa transaction   |
 
 The route families above must not create `ClientToken`, `ClientDeviceSession`, or auth cookies
 directly in controller code.
@@ -177,16 +175,10 @@ adapter. The current result shape includes `success`, `mfa_required`, `session_l
 
 ## One RP sign-in per browser (D-155; current RP contract)
 
-Decided 2026-10-22 (D-155, `adr/rp-oidc-state-and-return-target.md`) and represented by the RP
-pending-flow limit. A browser runs one sign-in at a time per RP: the RP cookie session holds one
-pending entry, and each `POST /sign` replaces it, so the last start wins. An earlier tab is not
-told; it can continue through Auth and the OP (OTP mails, Passkey, even an issued authorization
-code) and is refused only at the RP callback, which lands on `GET /sign/interruption`. This is the
-intended behavior, not a defect. When the earlier tab was a Sign Up, its registration is still saved
-and only its sign-in handoff is refused — at the OP, because the browser already holds a Root
-Session, or at the RP; the person signs in with the new account later. The rule is per browser:
-different browsers have separate cookies and are independent; only the account's session limit
-applies (`ClientToken::MAX_SESSIONS_PER_USER` 2, `OperatorToken` 1).
+The accepted external RP contract limits each RP browser session to one pending sign-in. Access does
+not implement those RP pending-flow cookies or interruption pages. Each RP must apply its registered
+callback, state, nonce, and return-target checks in its own repository. Visa session limits are
+enforced independently at the OP for APP and ORG.
 
 ## Timing And Enumeration Mitigation
 
@@ -223,24 +215,23 @@ purge repeatedly is safe because each job scopes deletion to currently purgeable
 
 ## Signed-In Re-Entry
 
-If a browser already has an acme session, sign/id may introspect or consume that fact only to decide
-whether a credential ceremony is needed. It must not create a second sign-owned session, redirect to
-a sign dashboard as authority, or mutate acme session state.
+If a browser already has a Visa session, Auth may inspect an admitted transaction only to decide
+whether a credential ceremony is needed. Auth must not create a general session, redirect to a local
+product dashboard, or mutate Visa session state.
 
 ## OIDC And Token Authority
 
-OIDC survives, but OIDC is acme authority.
+OIDC authority belongs to Visa.
 
-Protocol endpoints or route namespaces may remain in compatibility locations during migration. That
-does not make sign/id the token authority. Acme owns OIDC authorization, token issuance, ID tokens,
-access tokens, refresh tokens, JWKS authority, and downstream token issuance.
+Visa owns OIDC authorization, token issuance, ID tokens, access tokens, refresh tokens, JWKS, and
+downstream token issuance. External RPs own their local callback and session implementation.
 
 ## Local sign-in phase admission
 
-Local app sign-in requests that use a DB-backed `SignInFlow` carry a server-generated,
-purpose-bound signed binding for the expected surface, flow public identifier, phase, and immutable
-flow generation. This binding is an admission check; it is not a replacement for the locked flow
-row, actor binding, expiry, provider correlation, or the existing session-issuance boundary.
+Local app sign-in requests that use a DB-backed `SignInFlow` carry a server-generated, purpose-bound
+signed binding for the expected surface, flow public identifier, phase, and immutable flow
+generation. This binding is an admission check; it is not a replacement for the locked flow row,
+actor binding, expiry, provider correlation, or the existing session-issuance boundary.
 
 Same-phase reload is allowed. A GET or HEAD with a missing, malformed, expired, cross-surface,
 cross-flow, or contradictory phase binding returns HTTP `409 Conflict` as plain text with the exact
@@ -272,8 +263,8 @@ client-side History API or browser Back detector participates in this security d
 
 ## Delivered current sequence (2026-10-06)
 
-The active sequence is Base authorization or the Auth admitted ceremony, canonical sign-in flow and
-ordinary session-limit resolution, then committed session issuance and derived return routing.
-Completion is not a dashboard handoff state. Stale, cancelled, expired, conflicting and replayed
-requests are refused or redirected through their explicit terminal transition. The historical
-sign/id/acme vocabulary above is not an active authority contract.
+The active sequence is Visa authorization, an Auth admitted ceremony where needed, Visa
+session-limit resolution, and committed Visa session issuance before Visa returns to the registered
+external RP. Stale, cancelled, expired, conflicting, and replayed requests are refused or completed
+through their explicit terminal transition. The historical sign/id/acme vocabulary above is not an
+active authority contract.

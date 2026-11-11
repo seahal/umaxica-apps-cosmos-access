@@ -224,15 +224,15 @@ class OidcAccessTokenAuthenticatorTest < ActiveSupport::TestCase
         browser_result = AuthenticationCurrentResourceResolver.new(
           access_token: jwt_access_token_for(
             user,
-            host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
+            host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
             session_public_id: root.public_id,
             resource_type: "client",
           ),
-          request_host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
+          request_host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
           resource_type: "client",
           resource_class: Client,
           token_class: ClientToken,
-          jwt_issuer_id: "surface:BASE_APP",
+          jwt_issuer_id: "surface:AUTH_APP",
         ).call
 
         assert_equal :authentication_epoch_stale, browser_result.failure_reason
@@ -257,7 +257,7 @@ class OidcAccessTokenAuthenticatorTest < ActiveSupport::TestCase
             jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type("client"), client_id: client.client_id,
     )
     browser_token = jwt_access_token_for(
-      user, host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"), session_public_id: root.public_id, resource_type: "client",
+      user, host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL"), session_public_id: root.public_id, resource_type: "client",
     )
     roles = []
     lookup =
@@ -276,9 +276,9 @@ class OidcAccessTokenAuthenticatorTest < ActiveSupport::TestCase
         end
         assert_raises(ActiveRecord::ConnectionNotEstablished) do
           AuthenticationCurrentResourceResolver.new(
-            access_token: browser_token, request_host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
+            access_token: browser_token, request_host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
             resource_type: "client", resource_class: Client, token_class: ClientToken,
-            jwt_issuer_id: "surface:BASE_APP",
+            jwt_issuer_id: "surface:AUTH_APP",
           ).call
         end
       end

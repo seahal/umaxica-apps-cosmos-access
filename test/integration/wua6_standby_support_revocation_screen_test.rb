@@ -6,7 +6,7 @@ class Wua6StandbySupportRevocationScreenTest < ActionDispatch::IntegrationTest
   self.fixture_table_names = []
 
   test "ORG read-only owner screens deny Standby and allow Normal with fresh matching Step-Up" do
-    host = ENV.fetch("PUBLIC_BASE_STAFF_URL")
+    host = ENV.fetch("PUBLIC_AUTH_STAFF_URL")
     operator = Operator.create!(
       security_mode_id: SecurityModeTestDefault.id_for(Operator),
       status_id: OperatorStatus::ACTIVE,

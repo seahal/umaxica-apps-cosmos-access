@@ -334,7 +334,6 @@ class Auth::App::VerificationsControllerTest < ActionDispatch::IntegrationTest
         )
         admission_auth_host = {
           "app" => ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
-          "com" => ENV.fetch("PUBLIC_AUTH_CORPORATE_URL"),
           "org" => ENV.fetch("PUBLIC_AUTH_STAFF_URL"),
         }.fetch(admission_issuance.transaction.surface)
         admission_cookie_name = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"

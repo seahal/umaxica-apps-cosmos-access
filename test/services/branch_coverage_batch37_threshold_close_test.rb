@@ -13,35 +13,6 @@ class BranchCoverageBatch37ThresholdCloseTest < ActiveSupport::TestCase
     assert_not AppleOnlyCredentialStatus.new(false).call
   end
 
-  test "OrgOperatorLifecycleApprove rejects non-pending requests" do
-    request = Object.new
-    request.define_singleton_method(:pending?) { false }
-    actor = Object.new
-    result = OrgOperatorLifecycleApprove.call(request: request, actor: actor)
-
-    assert_not result.success
-    assert_match(/pending/i, result.error.to_s)
-  end
-
-  test "Publishing ArchiveEntryOperation refuses active publications" do
-    publications = Object.new
-    publications.define_singleton_method(:active) { publications }
-    publications.define_singleton_method(:exists?) { true }
-
-    entry = Object.new
-    entry.define_singleton_method(:archived?) { false }
-    entry.define_singleton_method(:publications) { publications }
-    entry.define_singleton_method(:with_lock) { |&block| block.call }
-
-    result = Publishing::ArchiveEntryOperation.new(
-      entry: entry,
-      reason: "cleanup",
-      operator_public_id: "op-1",
-    ).call
-
-    assert_not result.ok?
-    assert_match(/published entry cannot be archived/i, result.errors[:base].to_s)
-  end
 
   test "OperatorPreferenceDensityOption name covers STANDARD id" do
     option = OperatorPreferenceDensityOption.allocate
@@ -93,56 +64,5 @@ class BranchCoverageBatch37ThresholdCloseTest < ActiveSupport::TestCase
       assert_nil result[:provider_name]
       assert_nil result[:metadata_source]
     end
-  end
-end
-
-class BranchCoverageBatch37ControllerArmsTest < ActiveSupport::TestCase
-  self.fixture_table_names = []
-
-  test "BirthdatesController show props with birthdate present" do
-    controller = Base::App::Identity::BirthdatesController.new
-    client = Object.new
-    client.define_singleton_method(:birthdate) { Date.new(1999, 12, 31) }
-    controller.define_singleton_method(:current_client) { client }
-    controller.define_singleton_method(:t) { |*_a, **_k| "t" }
-    controller.define_singleton_method(:params) { ActionController::Parameters.new(ri: "jp") }
-    controller.define_singleton_method(:base_app_identity_path) { |**_| "/identity" }
-
-    captured = nil
-    controller.define_singleton_method(:render) do |**kwargs|
-      captured = kwargs[:props]
-    end
-    controller.show
-
-    assert_equal "1999-12-31", captured[:birthdate]
-  end
-
-  test "AppealReviewsController create raises when appeal missing" do
-    # The appeal review logic lives at the Enforcement owner since R5-WU12.
-    controller = Base::Org::Api::V0::Support::EnforcementCases::AppealReviewsController.new
-    enforcement_case = Object.new
-    enforcement_case.define_singleton_method(:appeal) { nil }
-    controller.instance_variable_set(:@enforcement_case, enforcement_case)
-    controller.define_singleton_method(:authorize!) { |*_a, **_k| true }
-    controller.define_singleton_method(:require_enforcement_step_up!) { true }
-    controller.define_singleton_method(:params) { ActionController::Parameters.new(resolution_code: "uphold") }
-
-    assert_raises(ActiveRecord::RecordNotFound) { controller.create }
-  end
-
-  test "ErasuresController new returns early when already performed" do
-    controller = Base::App::Identity::Privacy::ErasuresController.new
-    subject = Object.new
-    controller.define_singleton_method(:current_withdrawal_subject) { subject }
-    controller.define_singleton_method(:render_privacy_erasure_new) { |_s| true }
-    controller.define_singleton_method(:performed?) { true }
-    rendered = false
-    controller.define_singleton_method(:render) { |*_a, **_k| rendered = true }
-    controller.define_singleton_method(:params) { ActionController::Parameters.new(ri: "jp") }
-    controller.define_singleton_method(:base_app_identity_privacy_erasure_path) { |**_| "/erasure" }
-
-    controller.new
-
-    assert_not rendered
   end
 end

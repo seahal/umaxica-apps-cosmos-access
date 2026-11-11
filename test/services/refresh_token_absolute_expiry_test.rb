@@ -25,7 +25,7 @@ class RefreshTokenAbsoluteExpiryTest < ActiveSupport::TestCase
 
         result =
           model.stub(:database_now, database_time) do
-            AcmeRefreshTokenIssuer.call(refresh_token: refresh_token)
+            AuthRefreshTokenIssuer.call(refresh_token: refresh_token)
           end
 
         assert_predicate result, :success?
@@ -50,7 +50,7 @@ class RefreshTokenAbsoluteExpiryTest < ActiveSupport::TestCase
 
         result =
           model.stub(:database_now, absolute_expiry + 1.second) do
-            AcmeRefreshTokenIssuer.call(refresh_token: refresh_token)
+            AuthRefreshTokenIssuer.call(refresh_token: refresh_token)
           end
 
         assert_not_predicate result, :success?

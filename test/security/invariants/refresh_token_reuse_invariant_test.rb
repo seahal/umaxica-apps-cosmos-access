@@ -27,7 +27,7 @@ module Security
           purge_eligible_at: 2.days.from_now,
         )
         reused_refresh = original.rotate_refresh_token!
-        rotated = SignRefreshTokenIssuer.call(refresh_token: reused_refresh).fetch(:token)
+        rotated = AuthRefreshTokenIssuer.call(refresh_token: reused_refresh).fetch(:token)
 
         other_family = ClientToken.create!(
           authentication_epoch: 0,
@@ -37,7 +37,7 @@ module Security
         )
         other_family.rotate_refresh_token!
 
-        result = SignRefreshTokenIssuer.call(refresh_token: reused_refresh)
+        result = AuthRefreshTokenIssuer.call(refresh_token: reused_refresh)
 
         assert_not result.success?
         assert_equal :refresh_token_reuse_detected, result.reason
@@ -48,7 +48,7 @@ module Security
                    "Reuse detection must not be confused with ordinary logout or revoke unrelated families"
       end
 
-      # The two tests above cover SignRefreshTokenIssuer, the browser-session path.
+      # The two tests above cover AuthRefreshTokenIssuer, the browser-session path.
       # OAuth-issued refresh tokens rotate through OidcRefreshTokenIssuer, which was
       # not covered here and had no reuse detection at all: a replayed token simply
       # returned :invalid_digest and the evidence stored in
@@ -117,7 +117,7 @@ module Security
           purge_eligible_at: 2.days.from_now,
         )
         refresh = current.rotate_refresh_token!
-        sibling = SignRefreshTokenIssuer.call(refresh_token: refresh).fetch(:token)
+        sibling = AuthRefreshTokenIssuer.call(refresh_token: refresh).fetch(:token)
 
         current.revoke!
 
@@ -331,7 +331,7 @@ class Security::Invariants::RefreshTokenReuseInvariantTest
   end
 
   def seed_social_auth_session(provider:, intent: "login", user: nil, entry: nil, ri: "jp", rt: nil, referer: nil)
-    host = configured_host(:sign_service)
+    host = configured_host(:auth_service)
     host!(host) if respond_to?(:host!)
     normalized_provider = SocialIdentifiable.normalize_provider(provider)
     continue_path =

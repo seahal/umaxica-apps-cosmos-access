@@ -17,7 +17,6 @@ export type OrgSignUpEntryProps = {
   description: string | null;
   recruit: { prompt: string; label: string; href: string } | null;
   sign_in_link: SignUpLink | null;
-  cancel_link: SignUpLink | null;
 };
 
 export default function OrgSignUpEntry({
@@ -25,7 +24,6 @@ export default function OrgSignUpEntry({
   description,
   recruit,
   sign_in_link: signInLink,
-  cancel_link: cancelLink,
 }: OrgSignUpEntryProps) {
   return (
     <Page
@@ -49,16 +47,6 @@ export default function OrgSignUpEntry({
             tone="muted"
           >
             {signInLink.label}
-          </TextLink>
-        </p>
-      ) : null}
-      {cancelLink ? (
-        <p className="text-base">
-          <TextLink
-            href={cancelLink.href}
-            tone="muted"
-          >
-            {cancelLink.label}
           </TextLink>
         </p>
       ) : null}

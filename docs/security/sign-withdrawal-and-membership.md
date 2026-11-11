@@ -1,31 +1,26 @@
 # Sign Withdrawal And Membership
 
-> **Deprecated / partially superseded by Identity Authority inversion:** `acme/www` is the Session,
-> Token, Account, Preference, Authorization, and downstream-token Authority. `sign/id` is
-> ceremony-only: it may host credential entry points and execute delegated credential ceremonies,
-> but it must not own sessions, refresh tokens, preference writes, dashboards, account lifecycle,
-> token issuance, logout, or step-up freshness. Existing sign-side physical tables/models do not
-> imply sign-side authority. Do not use this document to reintroduce sign-side sessions, refresh,
-> preference, dashboard, account lifecycle, token issuance, logout, or step-up freshness.
+> **Historical withdrawal record:** The former Base app self-service withdrawal routes are retired.
+> Current local product routes are Auth APP/ORG and Visa APP/ORG; external relying parties own their
+> callbacks and browser sessions. Persisted withdrawal models and audit history remain subject to
+> the deferred model/database report; this document does not define a current route writer.
 
-The com Visitor authentication surface and its withdrawal/recovery routes were retired on
-2026-11-07. The remaining app withdrawal contract is described below; passages that name Visitor or
-the former app/com implementation are historical and do not authorize an active com workflow.
+The Visitor authentication surface and withdrawal/recovery routes were retired. The former app and
+com withdrawal contract below is retained as model and security history, not as an active workflow.
 Persisted Visitor records remain outside this route change. This document is not the lifecycle
-contract for Persona or Organization resources. The
-adopted resource lifecycle, once enabled, is documented separately in
-`docs/architecture/persona-organization-authority.md`; the recovery behavior below must not be
-copied to those resources. Until the required authority migration and lifecycle integration are
-complete, this document records the existing principal withdrawal contract and its explicit recovery
-window.
+contract for Persona or Organization resources. The adopted resource lifecycle, once enabled, is
+documented separately in `docs/architecture/persona-organization-authority.md`; the recovery
+behavior below must not be copied to those resources. Until the required authority migration and
+lifecycle integration are complete, this document records the existing principal withdrawal contract
+and its explicit recovery window.
 
 ## Surface Policy
 
-| Surface | Actor      | Self-service withdrawal | Membership handling                                |
-| ------- | ---------- | ----------------------- | -------------------------------------------------- |
-| `app`   | `Client`   | Yes                     | Client-controlled account lifecycle                |
-| `com`   | —          | No; authentication routes retired | No active membership workflow                       |
-| `org`   | `Operator` | No                      | Direct-message request handled by another operator |
+| Surface | Actor      | Self-service withdrawal           | Membership handling                                |
+| ------- | ---------- | --------------------------------- | -------------------------------------------------- |
+| `app`   | `Client`   | Yes                               | Client-controlled account lifecycle                |
+| `com`   | —          | No; authentication routes retired | No active membership workflow                      |
+| `org`   | `Operator` | No                                | Direct-message request handled by another operator |
 
 ## Historical App And Com Withdrawal Behavior
 
@@ -54,7 +49,8 @@ The user-visible sequence is distinct from the state-machine status names.
    - A withdrawal cycle is created and records `began_at`.
    - This means the actor entered the withdrawal flow, not that the account has been scheduled for
      withdrawal.
-   - `withdrawal_started_at`, `deactivated_at`, `discard_at`, and `purge_eligible_at` are not changed.
+   - `withdrawal_started_at`, `deactivated_at`, `discard_at`, and `purge_eligible_at` are not
+     changed.
    - Other sessions are not revoked.
    - The configuration history can show that the withdrawal process was opened.
 
@@ -80,9 +76,10 @@ The user-visible sequence is distinct from the state-machine status names.
 
 3''. Recovery
 
-- Recovery is available only after one hour has elapsed from `discard_at` and before `purge_eligible_at`.
-- Recovery clears the withdrawal scheduling timestamps and restores `discard_at` and `purge_eligible_at`
-  to the retention sentinel values.
+- Recovery is available only after one hour has elapsed from `discard_at` and before
+  `purge_eligible_at`.
+- Recovery clears the withdrawal scheduling timestamps and restores `discard_at` and
+  `purge_eligible_at` to the retention sentinel values.
 
 4. Scheduled termination and anonymization
    - Retention jobs pick up actors whose `purge_eligible_at` has elapsed.
@@ -100,8 +97,8 @@ step-up scope as scheduling and recovery.
 ### App And Com State Machine
 
 The withdrawal cycle status tracks the withdrawal procedure. The actor row remains the source of
-truth for access and retention through `withdrawal_started_at`, `discard_at`, `purge_eligible_at`, and
-`terminated_at`.
+truth for access and retention through `withdrawal_started_at`, `discard_at`, `purge_eligible_at`,
+and `terminated_at`.
 
 The status reference tables are surface-specific, not shared:
 
@@ -110,15 +107,15 @@ The status reference tables are surface-specific, not shared:
 
 The intended status IDs are:
 
-| Status       | ID  | Meaning                                                 |
-| ------------ | --- | ------------------------------------------------------- |
-| `NOTHING`    | 0   | Placeholder / no meaningful procedure state             |
-| `REQUESTED`  | 10  | The actor entered the withdrawal flow                   |
-| `CLOSING`    | 20  | The actor explicitly confirmed withdrawal scheduling    |
+| Status       | ID  | Meaning                                                         |
+| ------------ | --- | --------------------------------------------------------------- |
+| `NOTHING`    | 0   | Placeholder / no meaningful procedure state                     |
+| `REQUESTED`  | 10  | The actor entered the withdrawal flow                           |
+| `CLOSING`    | 20  | The actor explicitly confirmed withdrawal scheduling            |
 | `DISCARDED`  | 30  | Logical deletion is active and `purge_eligible_at` is scheduled |
 | `RECOVERED`  | 40  | The actor recovered before `purge_eligible_at`                  |
-| `TERMINATED` | 100 | The actor has been anonymized and cannot recover        |
-| `FAILED`     | 900 | The withdrawal procedure failed                         |
+| `TERMINATED` | 100 | The actor has been anonymized and cannot recover                |
+| `FAILED`     | 900 | The withdrawal procedure failed                                 |
 
 The intended transitions are:
 

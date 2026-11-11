@@ -482,7 +482,7 @@ approved by the internal architecture owner.
 | --------------------------------- | ---------------------------------------------------------------------------- |
 | Policy framework                  | ActionPolicy 0.7.6                                                           |
 | Authoritative guide               | `docs/authorization_guide.md` (ActionPolicy version)                         |
-| Stale / non-authoritative         | `docs/spec/authorization_guide.md` (Pundit version — do not use)             |
+| Stale / non-authoritative         | the retired Pundit authorization guide (do not use)                          |
 | Default policy                    | `ApplicationPolicy`: all actions return `false` (deny-all)                   |
 | Audience gating                   | Domain/audience gating enforced at policy layer                              |
 | `enforce_access_policy!`          | Cannot be skipped (`skip_before_action` raises `SkipNotAllowedError`)        |
@@ -698,7 +698,7 @@ This document may be shared with SIer in RFI with the following conditions:
    SIer contact (DEC-001).
 4. `docs/vendor/identity/08_threat-model.md` is shareable in RFI as **context only / not normative /
    subject to internal approval** (DEC-010).
-5. `docs/spec/authorization_guide.md` **MUST NOT** be included. Use `docs/authorization_guide.md`
+5. The retired Pundit authorization guide **MUST NOT** be used. Use `docs/authorization_guide.md`
    (DEC-007).
 
 ## RFP Stage

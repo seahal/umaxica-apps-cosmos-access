@@ -4,13 +4,13 @@
 require "test_helper"
 
 # The final session issuance boundary (AuthenticationBase#log_in) is shared by app and org.
-# Each surface is exercised through its real Base application controller so the surface's own token
+# Each surface is exercised through its real Visa authority controller so the surface's own token
 # table, limit, and cookies are used (adr/root-login-establishment-boundary.md).
 class AuthSessionIssuanceBoundarySurfacesTest < ActiveSupport::TestCase
   SURFACES = {
     app: {
-      controller: Base::App::AuthorityController,
-      host: "PUBLIC_BASE_SERVICE_URL",
+      controller: Visa::App::AuthorityController,
+      host: "PUBLIC_VISA_SERVICE_URL",
       token_class: ClientToken,
       foreign_key: :user_id,
       limit: ClientToken::MAX_SESSIONS_PER_USER,
@@ -23,8 +23,8 @@ class AuthSessionIssuanceBoundarySurfacesTest < ActiveSupport::TestCase
       },
     },
     org: {
-      controller: Base::Org::AuthorityController,
-      host: "PUBLIC_BASE_STAFF_URL",
+      controller: Visa::Org::AuthorityController,
+      host: "PUBLIC_VISA_STAFF_URL",
       token_class: OperatorToken,
       foreign_key: :staff_id,
       limit: OperatorToken::MAX_SESSIONS_PER_STAFF,
@@ -44,11 +44,11 @@ class AuthSessionIssuanceBoundarySurfacesTest < ActiveSupport::TestCase
       birthdate: "2000-01-01",
     )
     request = ActionDispatch::TestRequest.create
-    request.host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    request.host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
     request.session = ActionController::TestSession.new
-    controller = Base::App::AuthorityController.new
+    controller = Visa::App::AuthorityController.new
     controller.set_request!(request)
-    controller.set_response!(Base::App::AuthorityController.make_response!(request))
+    controller.set_response!(Visa::App::AuthorityController.make_response!(request))
 
     assert_no_difference -> { ClientToken.where(user_id: actor.id).count } do
       OpBaseAppRecord.transaction(requires_new: true) do
@@ -69,12 +69,12 @@ class AuthSessionIssuanceBoundarySurfacesTest < ActiveSupport::TestCase
       [Client.create!(
         security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE, birthdate: "2000-01-01",
       ),
-       ClientSignInFlow, ClientToken, :user_id, Base::App::AuthorityController, ENV.fetch("PUBLIC_BASE_SERVICE_URL"),],
+       ClientSignInFlow, ClientToken, :user_id, Visa::App::AuthorityController, ENV.fetch("PUBLIC_VISA_SERVICE_URL"),],
       [Operator.create!(
         security_mode_id: SecurityModeConfigurable::ADVANCED, status_id: OperatorStatus::ACTIVE, visibility_id: OperatorVisibility::STAFF,
       ),
-       OperatorSignInFlow, OperatorToken, :staff_id, Base::Org::AuthorityController,
-       ENV.fetch("PUBLIC_BASE_STAFF_URL"),],
+       OperatorSignInFlow, OperatorToken, :staff_id, Visa::Org::AuthorityController,
+       ENV.fetch("PUBLIC_VISA_STAFF_URL"),],
     ].each do |actor, model, token_model, owner_key, controller_class, host|
       now = model.database_now
       flow = model.create!(

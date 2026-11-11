@@ -9,12 +9,11 @@ class Auth::App::Sign::In::CheckpointsControllerTest < ActionDispatch::Integrati
   fixtures :clients, :client_tokens
 
   setup do
-    @host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL", "auth.app.localhost")
+    @host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     @user = clients(:one)
   end
 
   test "checkpoint and OIDC handoff refuse an actor blocked after successful email OTP authentication" do
-    base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
     auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     visa_host = Rails.configuration.x.boot_config.fetch(:hosts).visa_service.host
     jump = Rails.configuration.x.boot_config.fetch(:jump)
@@ -29,21 +28,25 @@ class Auth::App::Sign::In::CheckpointsControllerTest < ActionDispatch::Integrati
     )
     contact.finalize_binding!
     browser = open_session
-    browser.host!(base_host)
+    browser.host!(visa_host)
     browser.https!
     navigation = { "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document" }
-    browser.get(base_app_sign_show_path(ri: "jp"), headers: navigation)
-
-    assert_equal 200, browser.response.status
-    form = browser.response.parsed_body.at_css("form")
-    fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-    browser.post(
-      form["action"], params: fields,
-                      headers: { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" },
+    client = OidcClientRegistry.find!("core-app-jp")
+    browser.get(
+      "/oauth/authorize", params: {
+        response_type: "code",
+        client_id: client.client_id,
+        redirect_uri: client.redirect_uris_by_realm.fetch("client").first,
+        scope: "openid profile",
+        state: SecureRandom.urlsafe_base64(32),
+        nonce: SecureRandom.urlsafe_base64(32),
+        code_challenge: OidcTestEntry::CODE_CHALLENGE,
+        code_challenge_method: "S256",
+      }, headers: navigation,
     )
 
     assert_equal 303, browser.response.status
-    current_host = base_host
+    current_host = visa_host
     entry_ref = nil
     20.times do
       if browser.response.redirect?
@@ -51,7 +54,7 @@ class Auth::App::Sign::In::CheckpointsControllerTest < ActionDispatch::Integrati
         target = URI.parse("https://#{current_host}#{target}") unless target.host
         if target.host == jump_host
           rt = Rack::Utils.parse_nested_query(target.query).fetch("rt")
-          namespace = { base_host => "BASE_APP", visa_host => "VISA_APP", auth_host => "AUTH_APP" }.fetch(current_host)
+          namespace = { visa_host => "VISA_APP", auth_host => "AUTH_APP" }.fetch(current_host)
           issuer = JitSecurityJwtRegistry.surface(namespace)
           payload, = JWT.decode(
             rt, JitSecurityJwtRegistry.public_key_for(issuer.id, issuer.current_kid), true,
@@ -62,7 +65,7 @@ class Auth::App::Sign::In::CheckpointsControllerTest < ActionDispatch::Integrati
         end
 
         assert_equal "https", target.scheme
-        assert_includes [base_host, visa_host, auth_host], target.host
+        assert_includes [visa_host, auth_host], target.host
         entry_ref ||= Rack::Utils.parse_nested_query(target.query.to_s)["entry_ref"]
         browser.host!(target.host)
         browser.get(target.request_uri, headers: navigation.merge("Sec-Fetch-Site" => "cross-site"))
@@ -70,7 +73,7 @@ class Auth::App::Sign::In::CheckpointsControllerTest < ActionDispatch::Integrati
         next
       end
 
-      confirmation = browser.response.parsed_body.at_css("form#base-ceremony-binding-confirmation-form")
+      confirmation = browser.response.parsed_body.at_css("form#visa-app-ceremony-binding-confirmation-form")
       break unless confirmation
 
       fields = confirmation.css("input[name]").to_h { |input| [input["name"], input["value"]] }

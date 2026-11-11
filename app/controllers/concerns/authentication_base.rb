@@ -773,7 +773,7 @@ module AuthenticationBase
       refresh_public_id,
     ) unless refresh_dpop_allowed?(token_record) && refresh_binding_allowed?(token_record)
 
-    result = AcmeRefreshTokenIssuer.call(refresh_token: refresh_plain)
+    result = AuthRefreshTokenIssuer.call(refresh_token: refresh_plain)
     return handle_invalid_refresh_token_result(result, refresh_public_id, token_record) unless result.success?
 
     previous_token_record = result[:previous_token] || token_record
@@ -1700,7 +1700,7 @@ module AuthenticationBase
     return nil if refresh_public_id.blank?
 
     find_logic = -> { token_class.find_by(public_id: refresh_public_id) }
-    token_record_connection_owner.connected_to(role: :reading, &find_logic)
+    token_record_connection_owner.connected_to(role: :writing, prevent_writes: true, &find_logic)
   end
 
   def set_refresh_failure!(status, code)
@@ -2826,13 +2826,7 @@ module AuthenticationBase
   end
 
   def default_after_login_path
-    if respond_to?(:auth_app_root_path, true)
-      auth_app_root_path
-    elsif respond_to?(:auth_org_root_path, true)
-      auth_org_root_path
-    else
-      "/"
-    end
+    raise ActionController::BadRequest, "No relying-party authentication return is available"
   end
 
   def session_limit_gate_pt
@@ -3386,10 +3380,10 @@ module AuthenticationBase
 
   def mfa_entry_path(ri: nil)
     attrs = { ri: ri, **sign_in_mfa_binding_params }
-    if respond_to?(:sign_app_sign_in_challenge_path, true)
-      sign_app_sign_in_challenge_path(**attrs)
-    elsif respond_to?(:sign_org_sign_in_challenge_path, true)
-      sign_org_sign_in_challenge_path(**attrs)
+    if respond_to?(:auth_app_sign_in_challenge_path, true)
+      auth_app_sign_in_challenge_path(**attrs)
+    elsif respond_to?(:auth_org_sign_in_challenge_path, true)
+      auth_org_sign_in_challenge_path(**attrs)
     else
       query = attrs.compact.to_query
       query.present? ? "/sign/in/challenge?#{query}" : "/sign/in/challenge"
@@ -3414,7 +3408,7 @@ module AuthenticationBase
 
   def handle_auth_required_html(options)
     if @current_authentication_failure_reason == :withdrawal_required
-      return redirect_to(withdrawal_required_session_entry_path, allow_other_host: false)
+      return render plain: "WITHDRAWAL_REQUIRED", status: :forbidden
     end
 
     # Presence flags only: they separate an access credential the browser stopped sending from a
@@ -3451,14 +3445,6 @@ module AuthenticationBase
     end
 
     convert_redirect_to_inertia_location!
-  end
-
-  def withdrawal_required_session_entry_path
-    ri = params[AuthIoKeys::Params::RI]
-    return new_base_app_identity_withdrawal_session_path(ri: ri) if controller_path.start_with?("base/app/")
-    return new_base_app_identity_withdrawal_session_path(ri: ri) if controller_path.start_with?("auth/app/")
-
-    new_base_app_identity_withdrawal_session_path(ri: ri)
   end
 
   def handle_guest_only_json(options)

@@ -1,19 +1,24 @@
 ---
 name: surfaces
-description: The app/org/com surfaces are independent boundaries that must never be mixed.
+description: The app and org surfaces are independent boundaries that must never be mixed.
 ---
 
 # Surfaces
 
-This is a multi-surface Ruby on Rails application with three user-facing surfaces:
+This Access application serves two user-facing surfaces:
 
-- `app` — end-user application; Palm is its browser relying party
-- `org` — staff / organization surface; Tech is its global operator relying party
-- `com` — public / corporate surface
+- `app` — the Auth and Visa end-user surface
+- `org` — the Auth and Visa staff / organization surface
 
-Tech and Palm remain independent relying-party boundaries within their respective surfaces. Tech
-uses operator identity and requires its own `tech.access` capability. Palm uses client identity.
-Neither surface inherits another surface's credentials, permissions, or sessions.
+The local `com` user-facing surface is retired by
+[`access-surface-hard-reset`](../../../../specs/access-surface-hard-reset/spec.md). Legacy `Com`
+models and database state remain subject to the separate model and database review. Cross-repository
+OIDC client registrations, including external corporate redirect URIs, do not create local `com`
+routes or controllers.
+
+Tech and Palm remain independent relying-party boundaries for their external clients. Tech uses
+operator identity and requires its own `tech.access` capability. Palm uses client identity. Neither
+boundary inherits another surface's credentials, permissions, or sessions.
 
 Each surface is an independent boundary.
 

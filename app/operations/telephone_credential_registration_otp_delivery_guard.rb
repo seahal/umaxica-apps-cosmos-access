@@ -95,11 +95,17 @@ class TelephoneCredentialRegistrationOtpDeliveryGuard
     return false unless transaction.surface == surface && transaction.operation == "registration" &&
       transaction.purpose == "credential_registration" && transaction.actor_ref == owner.public_id &&
       transaction.telephone_candidate_ref == candidate_ref &&
+      # NOTICE: Compares digests or blind indexes with `==`, not raw secrets.
+      # A timing attack cannot recover a hash preimage; secrets themselves use secure_compare.
+      # Tracked in docs/backlog/2026-11-10-core-security-review-followups.md (item 3).
       transaction.normalized_number_digest == telephone.number_digest
     unless destination.is_a?(String) && destination.encoding.ascii_compatible? && destination.valid_encoding?
       return false
     end
 
+    # NOTICE: Compares digests or blind indexes with `==`, not raw secrets.
+    # A timing attack cannot recover a hash preimage; secrets themselves use secure_compare.
+    # Tracked in docs/backlog/2026-11-10-core-security-review-followups.md (item 3).
     IdentifierBlindIndex.bidx_for_telephone(destination, realm: surface) == telephone.number_digest
   end
 end

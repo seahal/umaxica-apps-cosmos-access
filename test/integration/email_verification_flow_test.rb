@@ -2,9 +2,12 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require_relative "../support/oidc_auth_admission_test_helper"
 # require "helpers/global_test_support"
 
 class EmailVerificationFlowTest < ActionDispatch::IntegrationTest
+  include OidcAuthAdmissionTestHelper
+
   fixtures :client_statuses, :client_visibilities, :client_security_modes,
            :client_mfa_statuses
 
@@ -33,74 +36,7 @@ class EmailVerificationFlowTest < ActionDispatch::IntegrationTest
         flow0_ri = "jp"
         flow0_rt = nil
         flow0_referer = nil
-        unless flow0_intent.to_s == "link"
-          @base_browser = open_session
-          flow0_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-          flow0_auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-          @base_browser.host!(flow0_base_host)
-          @base_browser.https!
-          @base_browser.get("/sign", params: { ri: flow0_ri, pt: "/dashboard?ri=#{flow0_ri}" })
-          flow0_form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-          flow0_fields =
-            flow0_form.css("input[name]").to_h { |flow0_input|
-              [
-                flow0_input["name"],
-                flow0_input["value"],
-              ]
-            }
-          @base_browser.post(
-            flow0_form["action"], params: flow0_fields, headers: {
-              "Origin" => "https://#{flow0_base_host}", "Sec-Fetch-Site" => "same-origin",
-            },
-          )
-          JitSecurityJwtRegistry.surface("BASE_APP")
-          # The Base sign entry hands the browser to the Visa OP authorize endpoint, which
-          # relays an unauthenticated browser to the Auth sign-in entry. The Auth admission
-          # then runs its ceremony-binding confirmation on Visa and redeems the reference,
-          # so the chain must be followed until Auth renders the sign-in page itself.
-          flow0_admission_browser = @base_browser
-          12.times do |flow0_admission_index|
-            raise RuntimeError,
-                  "Social admission stopped before a redirect" unless flow0_admission_browser.response.redirect?
-
-            flow0_target = URI.parse(flow0_admission_browser.response.location)
-            # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-            3.times do
-              break unless flow0_target.host == "jump.umaxica.net"
-
-              flow0_unwrapped = URI.parse(jump_rt_url_from_location_for_test(flow0_target.to_s))
-              break if flow0_unwrapped.to_s == flow0_target.to_s
-
-              flow0_target = flow0_unwrapped
-            end
-            if flow0_admission_index.zero?
-              unless flow0_target.host == visa_host_for_test_base_host(flow0_base_host)
-                raise RuntimeError, "Base authorization host mismatch"
-              end
-            elsif flow0_admission_index == 1
-              raise RuntimeError, "Auth admission host mismatch" unless flow0_target.host == flow0_auth_host
-            end
-            flow0_next_browser =
-              if flow0_target.host.nil?
-                flow0_admission_browser
-              elsif flow0_target.host == flow0_auth_host
-                self
-              else
-                @base_browser
-              end
-            flow0_next_browser.host!(flow0_target.host) if flow0_target.host
-            flow0_next_browser.https!
-            flow0_next_browser.get(
-              flow0_target.request_uri, headers: {
-                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
-              },
-            )
-            flow0_admission_browser = flow0_next_browser
-            break if flow0_next_browser == self && !response.redirect?
-          end
-
-          assert_equal [flow0_auth_host, 200], [request.host, response.status]
-        end
+        bootstrap_auth_sign_in_admission!
         flow0_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
         host!(flow0_host)
         flow0_normalized_provider = SocialIdentifiable.normalize_provider(flow0_provider)
@@ -141,7 +77,7 @@ class EmailVerificationFlowTest < ActionDispatch::IntegrationTest
           flow0_headers = flow0_headers.merge(flow0_user_headers)
         end
         if flow0_entry.to_s == "sign_up" && flow0_intent.to_s != "link"
-          switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+          admit_browser_to_sign_up!(integration_session)
           host!(flow0_host)
         end
         post(flow0_continue_path, headers: flow0_headers)
@@ -170,13 +106,13 @@ class EmailVerificationFlowTest < ActionDispatch::IntegrationTest
     assert_response :redirect
     follow_redirect!
 
-    assert_equal sign_app_sign_up_guard_apple_path, path
+    assert_equal auth_app_sign_up_guard_apple_path, path
 
     assert_nil ClientAppleIdentity.find_by(uid: "flow_uid")
     assert_no_emails do
       assert_no_difference("Client.count") do
         assert_no_difference("ClientAppleIdentity.count") do
-          patch sign_app_sign_up_check_apple_birthdate_url(ri: "jp"),
+          patch auth_app_sign_up_check_apple_birthdate_url(ri: "jp"),
                 params: {
                   requirement: "birthdate",
                   birthdate: "2000-02-03",
@@ -386,34 +322,11 @@ end
 
 # DAMP local route helper aliases for former shared test support.
 class EmailVerificationFlowTest
-  SURFACE_ROUTE_PREFIX_MAP = {
-    "sign_app_" => "auth_app_",
-    "sign_org_" => "auth_org_",
-    "acme_app_" => "base_app_",
-    "acme_org_" => "base_org_",
-  }.freeze unless const_defined?(:SURFACE_ROUTE_PREFIX_MAP, false)
 
   private
 
-  def method_missing(name, ...)
-    aliased_name = aliased_surface_route_helper_name(name)
-    return public_send(aliased_name, ...) if aliased_name && respond_to?(aliased_name, true)
 
-    super
-  end
 
-  def respond_to_missing?(name, include_private = false)
-    aliased_name = aliased_surface_route_helper_name(name)
-    (aliased_name && respond_to?(aliased_name, include_private)) || super
-  end
-
-  def aliased_surface_route_helper_name(name)
-    helper_name = name.to_s
-    self.class::SURFACE_ROUTE_PREFIX_MAP.each do |source_prefix, target_prefix|
-      return helper_name.sub(source_prefix, target_prefix).to_sym if helper_name.start_with?(source_prefix)
-    end
-    nil
-  end
 end
 
 # DAMP local helper copy on the test class.

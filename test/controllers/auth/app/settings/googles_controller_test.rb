@@ -9,9 +9,10 @@ module Auth::App::Settings
     fixtures :clients, :client_statuses
 
     setup do
-      host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL", "auth.app.localhost")
+      auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+      host! auth_host
       @user = clients(:one)
-      @headers = as_user_headers(@user, host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL", "auth.app.localhost"))
+      @headers = as_user_headers(@user, host: auth_host)
     end
 
     test "show is read only" do
@@ -19,7 +20,7 @@ module Auth::App::Settings
 
       assert_response :success
       assert_equal "auth/app/settings/googles/show", inertia_component
-      assert_equal auth_app_settings_path(ri: "jp"), inertia_props.fetch("back_link").fetch("href")
+      assert_equal auth_app_sign_in_path(ri: "jp"), inertia_props.fetch("back_link").fetch("href")
       assert_equal(
         edit_auth_app_settings_google_path(ri: "jp"),
         inertia_props.fetch("edit_link").fetch("href"),
@@ -28,10 +29,11 @@ module Auth::App::Settings
       assert_not inertia_props.key?("connect")
     end
 
-    test "show redirects when not logged in" do
+    test "show refuses an anonymous request without an RP sign-in return" do
       get auth_app_settings_google_url(ri: "jp")
 
-      assert_response :redirect
+      assert_response :bad_request
+      assert_nil response.location
     end
 
     test "edit redirects to verification when step-up is missing" do
@@ -402,7 +404,7 @@ class Auth::App::Settings::GooglesControllerTest
   end
 
   def seed_social_auth_session(provider:, intent: "login", user: nil, entry: nil, ri: "jp", rt: nil, referer: nil)
-    host = configured_host(:sign_service)
+    host = configured_host(:auth_service)
     host!(host) if respond_to?(:host!)
     normalized_provider = SocialIdentifiable.normalize_provider(provider)
     continue_path =

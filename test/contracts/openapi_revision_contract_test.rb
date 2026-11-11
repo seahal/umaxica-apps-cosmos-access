@@ -3,8 +3,8 @@
 require "test_helper"
 require_relative "../support/openapi_contract"
 
-# Validates the machine-readable deployment identifier `GET /api/v0/revision.json` against each
-# surface description.
+# Validates the machine-readable deployment identifier `GET /api/v0/revision.json` against the
+# retained Auth surface descriptions.
 #
 # The text `GET /revision` endpoint answers `text/plain` and is not described: only this JSON
 # representation is a contract. Both derive the same value from `Rails.application.revision`.
@@ -14,9 +14,8 @@ class OpenapiRevisionContractTest < ActionDispatch::IntegrationTest
   REVISION = "0123456789abcdef0123456789abcdef01234567"
 
   SURFACE_HOSTS = {
-    "app" => ENV.fetch("PRIVATE_CORE_SERVICE_URL"),
-    "com" => ENV.fetch("PUBLIC_BASE_CORPORATE_URL"),
-    "org" => ENV.fetch("PRIVATE_CORE_STAFF_URL"),
+    "app" => ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
+    "org" => ENV.fetch("PUBLIC_AUTH_STAFF_URL"),
   }.freeze
 
   SURFACE_HOSTS.each do |surface, host|

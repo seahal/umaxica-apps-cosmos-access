@@ -70,6 +70,9 @@ class EmailCredentialRegistrationBootstrapGuard
   def browser_matches?(session, binding, now)
     session.status == "PENDING" && session.discard_at > now && binding.base_token_id == token.id &&
       binding.purpose == "bootstrap_handoff" && !binding.retired? && !binding.switched? &&
+      # NOTICE: Compares digests or blind indexes with `==`, not raw secrets.
+      # A timing attack cannot recover a hash preimage; secrets themselves use secure_compare.
+      # Tracked in docs/backlog/2026-11-10-core-security-review-followups.md (item 3).
       binding.base_browser_digest == AuthAdmissionBinding.browser_digest(
         surface: surface, entry_ref: binding.entry_ref, nonce: browser_nonce,
       )

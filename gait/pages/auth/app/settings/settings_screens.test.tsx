@@ -23,14 +23,9 @@ vi.mock("@inertiajs/react", () => ({
 
 const { default: SocialLinkStatus } = await import("@/features/auth/settings/SocialLinkStatus");
 const { default: SocialLinkManage } = await import("@/features/auth/settings/SocialLinkManage");
-const { default: PasskeysIndex } = await import("@/pages/base/app/identity/passkeys/index");
-const { default: PasskeysShow } = await import("@/pages/base/app/identity/passkeys/show");
 const { default: PasskeysNew } =
   await import("@/pages/auth/app/verification/registration/passkeys/new");
-const { default: PasskeysEdit } = await import("@/pages/base/app/identity/passkeys/show");
-const { default: TotpsIndex } = await import("@/pages/base/app/identity/totps/index");
 const { default: TotpsNew } = await import("@/pages/auth/app/settings/totps/new");
-const { default: TotpsEdit } = await import("@/pages/base/app/identity/totps/show");
 
 const turnstile = {
   site_key: "site-key",
@@ -122,112 +117,6 @@ describe("social link screens", () => {
 });
 
 describe("passkey settings screens", () => {
-  const indexProps = {
-    title: "Passkeys",
-    description: "Manage passkeys",
-    back_link: { label: "もどる", href: "/settings" },
-    new_link: { label: "追加", href: "/settings/passkeys/new?ri=jp" },
-    remove_label: "削除",
-    remove_confirm: "削除しますか",
-    empty_message: "登録がありません",
-  };
-
-  it("lists every registered passkey with its actions", () => {
-    const html = renderToStaticMarkup(
-      <PasskeysIndex
-        {...indexProps}
-        passkeys={[
-          {
-            public_id: "pk_1",
-            description: "MacBook",
-            created_at: "2026/01/01",
-            last_used_at: "-",
-            show_href: "/settings/passkeys/pk_1?ri=jp",
-            destroy_action: "/settings/passkeys/pk_1?ri=jp",
-          },
-        ]}
-      />,
-    );
-
-    expect(html).toContain("MacBook");
-    expect(html).toContain('href="/settings/passkeys/pk_1?ri=jp"');
-    expect(html).toContain("削除");
-    expect(html).not.toContain("登録がありません");
-  });
-
-  it("explains an empty list", () => {
-    const html = renderToStaticMarkup(
-      <PasskeysIndex
-        {...indexProps}
-        passkeys={[]}
-      />,
-    );
-
-    expect(html).toContain("登録がありません");
-  });
-
-  it("shows one passkey in detail without offering removal", () => {
-    const html = renderToStaticMarkup(
-      <PasskeysShow
-        title="Passkey"
-        description="登録済みのPasskey"
-        back_link={{ label: "もどる", href: "/settings/passkeys?ri=jp" }}
-        passkey={{
-          public_id: "pk_1",
-          description: "",
-          created_at: "2026/01/01",
-          last_used_at: "-",
-        }}
-        form={{
-          action: "/settings/passkeys/pk_1?ri=jp",
-          description: "",
-          label: "名前",
-          submit_label: "保存",
-        }}
-        destroy={{
-          action: "/settings/passkeys/pk_1?ri=jp",
-          label: "削除",
-          confirm: "削除しますか",
-        }}
-        error={null}
-      />,
-    );
-
-    expect(html).toContain("Created: 2026/01/01");
-    expect(html).toContain("保存");
-    expect(html).toContain("削除");
-  });
-
-  it("names the passkey when the server sent a description", () => {
-    const html = renderToStaticMarkup(
-      <PasskeysShow
-        title="Passkey"
-        description="登録済みのPasskey"
-        back_link={{ label: "もどる", href: "/settings/passkeys?ri=jp" }}
-        passkey={{
-          public_id: "pk_1",
-          description: "MacBook",
-          created_at: null,
-          last_used_at: null,
-        }}
-        form={{
-          action: "/settings/passkeys/pk_1?ri=jp",
-          description: "MacBook",
-          label: "名前",
-          submit_label: "保存",
-        }}
-        destroy={{
-          action: "/settings/passkeys/pk_1?ri=jp",
-          label: "削除",
-          confirm: "削除しますか",
-        }}
-        error={null}
-      />,
-    );
-
-    expect(html).toContain("MacBook");
-  });
-
   it("frames the registration ceremony", () => {
     const html = renderToStaticMarkup(
       <PasskeysNew
@@ -250,83 +139,9 @@ describe("passkey settings screens", () => {
     expect(html).toContain("登録");
     expect(html).toContain('placeholder="MacBook"');
   });
-
-  it("shows the rename form together with the validation errors", () => {
-    const html = renderToStaticMarkup(
-      <PasskeysEdit
-        title="Passkeyの編集"
-        description="名前を変更します"
-        back_link={{ label: "もどる", href: "/settings/passkeys?ri=jp" }}
-        passkey={{
-          public_id: "pk_1",
-          description: "MacBook",
-          created_at: null,
-          last_used_at: null,
-        }}
-        form={{
-          action: "/settings/passkeys/pk_1?ri=jp",
-          description: "MacBook",
-          label: "名前",
-          submit_label: "保存",
-        }}
-        destroy={{
-          action: "/settings/passkeys/pk_1?ri=jp",
-          label: "削除",
-          confirm: "削除しますか",
-        }}
-        error="名前を入力してください"
-      />,
-    );
-
-    expect(html).toContain("名前を入力してください");
-    expect(html).toContain("保存");
-  });
 });
 
 describe("totp settings screens", () => {
-  const indexProps = {
-    title: "Totps",
-    description: "Manage authenticator apps",
-    back_link: { label: "もどる", href: "/settings" },
-    new_link: { label: "追加", href: "/settings/totps/new?ri=jp" },
-    columns: { title: "名前", last_otp_at: "最終利用", status: "状態", actions: "Actions" },
-    empty_message: "登録がありません",
-    edit_label: "編集",
-  };
-
-  it("lists every registered authenticator", () => {
-    const html = renderToStaticMarkup(
-      <TotpsIndex
-        {...indexProps}
-        totps={[
-          {
-            public_id: "totp_1",
-            title: "iPhone",
-            last_otp_at: "-",
-            status: "有効",
-            show_href: "/settings/totps/totp_1?ri=jp",
-          },
-        ]}
-      />,
-    );
-
-    expect(html).toContain("iPhone");
-    expect(html).toContain("有効");
-    expect(html).toContain('href="/settings/totps/totp_1?ri=jp"');
-    expect(html).not.toContain("登録がありません");
-  });
-
-  it("explains an empty list", () => {
-    const html = renderToStaticMarkup(
-      <TotpsIndex
-        {...indexProps}
-        totps={[]}
-      />,
-    );
-
-    expect(html).toContain("登録がありません");
-  });
-
   it("shows the provisioning code and the enrolment form", () => {
     const html = renderToStaticMarkup(
       <TotpsNew
@@ -479,32 +294,5 @@ describe("totp settings screens", () => {
 
     expect(html).toContain("1件のエラー");
     expect(html).toContain("確認コードが正しくありません");
-  });
-
-  it("shows the rename form and the removal action", () => {
-    const html = renderToStaticMarkup(
-      <TotpsEdit
-        title="認証アプリ"
-        description="名前を変更します"
-        back_link={{ label: "もどる", href: "/settings/totps?ri=jp" }}
-        totp={{ public_id: "totp_1", title: "iPhone", last_otp_at: "-", status: "有効" }}
-        form={{
-          action: "/settings/totps/totp_1?ri=jp",
-          title: "iPhone",
-          label: "名前",
-          submit_label: "保存",
-        }}
-        destroy={{
-          action: "/settings/totps/totp_1?ri=jp",
-          label: "削除",
-          confirm: "削除しますか",
-        }}
-        error={null}
-      />,
-    );
-
-    expect(html).toMatch(/type="submit"[^>]*>保存<|value="保存"/u);
-    expect(html).toContain("削除");
-    expect(html).not.toContain('name="cf-turnstile-response"');
   });
 });

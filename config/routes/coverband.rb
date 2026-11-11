@@ -4,7 +4,7 @@
 require_relative "../../lib/diagnostic_surface_credentials"
 
 # Coverband owns the runtime code-execution report (Coverband::Reporters::Web), on its own
-# dedicated host. Public canonical host: coverband.umaxica.dev.
+# dedicated host. Public canonical host: coverband-access.umaxica.dev.
 # Development host: coverband.core.dev.localhost.
 constraints host: [ENV["PUBLIC_COVERBAND_URL"], ENV["PRIVATE_COVERBAND_URL"],
                    "coverband.core.dev.localhost",].compact do

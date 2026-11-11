@@ -7,10 +7,6 @@ require "test_helper"
 class BranchCoverageBatch27ValuesLibEasyArmsTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
-  test "AccountStanding refuses unsupported level" do
-    assert_raises(ArgumentError) { AccountStanding.new(level: :nope, decisions: {}) }
-  end
-
   test "ExternalAuthentication Failure refuses unsupported provider" do
     code = ExternalAuthentication::Failure::CODES.first
     reason = ExternalAuthentication::Failure::SAFE_REASONS.first
@@ -80,14 +76,6 @@ class BranchCoverageBatch27ValuesLibEasyArmsTest < ActiveSupport::TestCase
     end
   end
 
-  test "IdentityTelephoneCeremonyContract blank return_to early return" do
-    assert_nil IdentityTelephoneCeremonyContract.validate_return_to!({ "return_to" => "" })
-  end
-
-  test "McpSurfaceIdentity refuses unsupported surface" do
-    assert_raises(ArgumentError) { McpSurfaceIdentity.new(realm: "base", surface: "nope") }
-  end
-
   test "SecurityJwtAuthAccessTokenCodec resource type blank arm" do
     assert_nil SecurityJwtAuthAccessTokenCodec.extract_resource_type({})
   end
@@ -140,11 +128,6 @@ class BranchCoverageBatch27ValuesLibEasyArmsTest < ActiveSupport::TestCase
     end
   end
 
-  test "lib ChainSeal and ObservabilityRedactor easy arms" do
-    assert_not ChainSeal.respond_to?(:ensure_ready!, true)
-    assert_equal "[FILTERED]", ObservabilityRedactor.scrub(password: "secret")[:password]
-  end
-
   test "lib LocalEnvironment and ConfigValuesOriginValue arms" do
     assert_not LocalEnvironment.respond_to?(:enabled?)
     assert_equal "https://example.com", ConfigValues.build("example.com").to_s
@@ -155,22 +138,6 @@ class BranchCoverageBatch27ValuesLibEasyArmsTest < ActiveSupport::TestCase
     result = JitSecurityTurnstileVerifier.verify(token: "", remote_ip: "127.0.0.1")
 
     assert_equal "missing cf-turnstile-response", result["error"]
-  end
-
-  test "Publishing form validation blank arms" do
-    assert_predicate Publishing::PublishEntryForm.new, :valid?
-
-    [Publishing::ArchiveEntryForm, Publishing::EndPublicationForm].each do |form_class|
-      form = form_class.new
-      outcome =
-        begin
-          form.valid? ? :valid : :invalid
-        rescue I18n::MissingTranslationData
-          :translation_missing
-        end
-
-      assert_not_equal :valid, outcome
-    end
   end
 
   test "BlindIndexUniquenessValidator and AssociatedRecordLimitValidator edges" do

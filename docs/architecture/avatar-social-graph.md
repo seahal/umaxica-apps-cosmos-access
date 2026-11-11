@@ -1,5 +1,9 @@
 # Avatar Social Graph
 
+> Persisted model and domain history only. The surface reset removed local Avatar product routes;
+> Avatar data and models remain subject to the deferred model/database report. This document does
+> not establish an active local route writer.
+
 ## Purpose
 
 Avatar is the SNS actor boundary in this repository. Follow, block, and mute are Avatar-to-Avatar

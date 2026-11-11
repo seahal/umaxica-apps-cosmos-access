@@ -11,11 +11,6 @@ class RpBaseAppSession < RpBaseAppRecord
   include PublicId
 
   belongs_to :op_session_binding, class_name: "RpBaseAppOpSessionBinding", inverse_of: :sessions
-  has_many :step_up_states,
-           class_name: "RpStepUpState",
-           foreign_key: :rp_session_id,
-           inverse_of: :rp_session,
-           dependent: :restrict_with_error
   has_one :actor_selection,
           class_name: "RpBaseAppSessionSelection",
           foreign_key: :rp_session_id,

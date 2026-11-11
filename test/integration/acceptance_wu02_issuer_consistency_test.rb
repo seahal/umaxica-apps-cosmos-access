@@ -21,14 +21,11 @@ class AcceptanceWu02IssuerConsistencyTest < ActiveSupport::TestCase
       )
       issuer = OidcDiscoveryDocument.for_resource_type(resource_type).fetch(:issuer)
       token = OidcIdTokenIssuer.call(resource: actor, client: client, nonce: grant.oidc_nonce, sid: grant.public_id)
-      id_result = OidcIdTokenVerifier.call(
-        id_token: token, client_id: client.client_id, resource_type: resource_type,
-        expected_nonce: grant.oidc_nonce, issuer: issuer,
-        jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
-      )
+      id_claims, id_header = decode_op_id_token_for_test(token, resource_type:)
 
-      assert_predicate id_result, :success?, realm
-      assert_equal issuer, id_result.payload.fetch("iss"), realm
+      assert_equal "id-token+jwt", id_header.fetch("typ"), realm
+      assert_equal issuer, id_claims.fetch("iss"), realm
+      assert_equal grant.oidc_nonce, id_claims.fetch("nonce"), realm
       callback = OidcAuthorizeCoordinator.error_redirect_url(
         redirect_uri: client.redirect_uris_by_realm.fetch(resource_type).first,
         resource_type: resource_type, error: "access_denied", state: "state",
@@ -46,16 +43,20 @@ class AcceptanceWu02IssuerConsistencyTest < ActiveSupport::TestCase
       )
       participant = participant_class.find_by!(grant_id: grant.id)
       logout_token = OpLogoutTokenIssuer.call(participant: participant, realm: realm)
-      jwks = JitSecurityJwtRegistry.jwks_for(OidcIssuer.jwt_issuer_id_for_resource_type(resource_type)).to_json
-      logout_result = OidcOpLogoutTokenVerifier.new(
-        logout_token: logout_token, client_id: client.client_id, issuer: issuer,
-        jwks_client: OidcOpJwksClient.new(
-          jwks_uri: "https://#{realm}.example.test/jwks", fetcher: -> { jwks }, clock: -> { Time.current },
-        ),
-      ).call
+      issuer_id = OidcIssuer.jwt_issuer_id_for_resource_type(resource_type)
+      published_jwks = JitSecurityJwtRegistry.jwks_for(issuer_id)
+      logout_header = JitSecurityJwtKeyring.parse_header(logout_token)
+      signing_jwk = published_jwks.fetch(:keys).find { |jwk| jwk.fetch("kid") == logout_header.fetch("kid") }
+      logout_claims, verified_header = JWT.decode(
+        logout_token, JitSecurityJwtJwk.import_public_key(signing_jwk), true, { algorithms: ["ES384"] },
+      )
 
-      assert_predicate logout_result, :success?, realm
-      assert_equal issuer, logout_result.payload.fetch("iss"), realm
+      assert_equal "logout+jwt", verified_header.fetch("typ"), realm
+      assert_equal issuer, logout_claims.fetch("iss"), realm
+      assert_equal [client.client_id], logout_claims.fetch("aud"), realm
+      assert_equal grant.public_id, logout_claims.fetch("sid"), realm
+      assert_equal({ OpLogoutTokenIssuer::EVENT => {} }, logout_claims.fetch("events"), realm)
+      assert_not logout_claims.key?("nonce"), realm
     end
   end
 end

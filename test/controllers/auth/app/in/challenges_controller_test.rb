@@ -45,9 +45,7 @@ class Auth::App::Sign::In::ChallengesControllerTest < ActionDispatch::Integratio
 
       assert_response :conflict
 
-      restart_url = base_app_sign_show_url(host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"), protocol: "https", ri: "jp")
-
-      assert_includes response.body, restart_url
+      assert_not_includes response.body, "base.app.localhost"
       assert_nil response.headers["Location"]
       assert_includes response.headers["Cache-Control"], "no-store"
       assert_equal before, flow.reload.attributes
@@ -278,7 +276,11 @@ class Auth::App::Sign::In::ChallengesControllerTest < ActionDispatch::Integratio
     assert_empty inertia_props.fetch("methods")
     assert_predicate inertia_props.fetch("no_methods_notice"), :present?
     assert_not inertia_props.key?("back_link")
-    assert_equal "delete", inertia_props.fetch("cancel").fetch("method")
+    cancel = inertia_props.fetch("cancel")
+
+    assert_equal URI.parse(auth_app_sign_cancellation_path(ri: "jp")).path,
+                 URI.parse(cancel.fetch("action")).path
+    assert_equal "post", cancel.fetch("method")
   end
 
   private

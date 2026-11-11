@@ -23,34 +23,25 @@ class SurfaceDefaultWebRateLimitTest < ActionDispatch::IntegrationTest
   DEFAULT_WEB_QUOTA = 300
 
   SURFACES = {
-    "base app" => ["PUBLIC_BASE_SERVICE_URL", :base_app_root_path],
-    "base com" => ["PUBLIC_BASE_CORPORATE_URL", :base_com_root_path],
-    "base org" => ["PUBLIC_BASE_STAFF_URL", :base_org_root_path],
-    "edit org" => ["PUBLIC_EDIT_STAFF_URL", :edit_org_dashboard_path],
-    "base developer" => [nil, :base_developer_root_path],
-    "auth app" => ["PUBLIC_AUTH_SERVICE_URL", :auth_app_root_path],
-    "auth org" => ["PUBLIC_AUTH_STAFF_URL", :auth_org_root_path],
-    "core app" => ["PUBLIC_CORE_SERVICE_URL", :core_app_api_v0_preferences_theme_path],
-    "core org" => ["PUBLIC_CORE_STAFF_URL", :core_org_api_v0_preferences_theme_path],
-    "warp app" => ["PUBLIC_WARP_SERVICE_URL", :warp_app_dashboard_path],
-    "warp com" => ["PUBLIC_WARP_CORPORATE_URL", :warp_com_root_path],
-    "warp org" => ["PUBLIC_WARP_STAFF_URL", :warp_org_dashboard_path],
-    "palm app" => ["PUBLIC_PALM_SERVICE_URL", :palm_app_sign_out_path],
+    "auth app" => ["PUBLIC_AUTH_SERVICE_URL", "/sign/in?ri=jp"],
+    "auth org" => ["PUBLIC_AUTH_STAFF_URL", "/sign/in?ri=jp"],
+    "visa app" => ["PUBLIC_VISA_SERVICE_URL", "/sign/in/limitation?ri=jp"],
+    "visa org" => ["PUBLIC_VISA_STAFF_URL", "/sign/in/limitation?ri=jp"],
   }.freeze
 
   setup { Rails.configuration.x.rate_limit.fetch(:store).clear }
   teardown { Rails.configuration.x.rate_limit.fetch(:store).clear }
 
-  SURFACES.each do |surface, (env_name, helper)|
+  SURFACES.each do |surface, (env_name, path)|
     test "#{surface} answers the request past its default web quota with a retry hint" do
-      host!(env_name ? ENV.fetch(env_name) : "base.dev.localhost")
+      host! ENV.fetch(env_name)
 
-      DEFAULT_WEB_QUOTA.times { get public_send(helper, ri: "jp") }
+      DEFAULT_WEB_QUOTA.times { get path }
 
       assert_not_equal 429, response.status,
                        "#{surface} refused a request inside its quota of #{DEFAULT_WEB_QUOTA}"
 
-      get public_send(helper, ri: "jp")
+      get path
 
       assert_response :too_many_requests
       assert_equal "60", response.headers["Retry-After"]

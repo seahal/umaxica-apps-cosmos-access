@@ -4,8 +4,7 @@ require "faraday"
 require "rack/mock"
 
 # In the test environment the OP endpoints are served by this same Rails application, so an RP's
-# public-HTTPS call to the OP token endpoint (OidcOpTokenClient, R5-WU05) is delivered in-process
-# instead of over the network. Only the registered Base token endpoints are routed here; every
+# public-HTTPS call to the Visa OP is delivered in-process instead of over the network. Every
 # other outbound request still hits the OutboundHttpGuard and must be stubbed explicitly.
 module TestSupport
   module InProcessOpTransport
@@ -16,7 +15,6 @@ module TestSupport
       /api/v0/sensitive_admissions
       /api/v0/sensitive_admission_session
       /api/v0/sensitive_admission_confirmation
-      /api/v0/tech-capability-checks /api/v0/support
     ).freeze
 
     # Forwards a Faraday request to Rails.application as a Rack request.
@@ -78,17 +76,10 @@ module TestSupport
 
     def op_token_endpoint?(url)
       uri = URI.parse(url.to_s)
-      return false unless OP_PATHS.include?(uri.path) || uri.path.start_with?(
-        "/api/v0/publishing/", "/api/v0/avatar/",
-        "/api/v0/membership/", "/api/v0/iam/", "/api/v0/support/", "/api/v0/identity/",
-      )
+      return false unless OP_PATHS.include?(uri.path)
 
-      # WU-02: protocol endpoints live on Visa; the owner APIs (/api/v0/...) stay on the Base hosts.
-      # The corporate (visitor) identity surface is retired, so only account resource types remain.
       hosts = Rails.configuration.x.boot_config.fetch(:hosts)
-      %w(client operator).any? do |type|
-        [URI.parse(OidcIssuer.for_resource_type(type)).host, hosts.base_for_resource_type(type).host].include?(uri.host)
-      end
+      [hosts.visa_service.host, hosts.visa_staff.host].include?(uri.host)
     rescue URI::InvalidURIError
       false
     end

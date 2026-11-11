@@ -34,6 +34,9 @@ class TelephoneSignUpOtpDeliveryGuard
               next false unless transaction.operation == "sign_up" && transaction.purpose == "sign_up" &&
                 transaction.session_ref == session_ref && transaction.actor_ref == owner.public_id &&
                 transaction.telephone_candidate_ref == telephone.public_id &&
+                # NOTICE: Compares digests or blind indexes with `==`, not raw secrets.
+                # A timing attack cannot recover a hash preimage; secrets themselves use secure_compare.
+                # Tracked in docs/backlog/2026-11-10-core-security-review-followups.md (item 3).
                 transaction.normalized_number_digest == telephone.number_digest &&
                 transaction.expires_at == flow.expires_at
               next false unless destination.is_a?(String) && destination.encoding.ascii_compatible? &&
@@ -41,6 +44,9 @@ class TelephoneSignUpOtpDeliveryGuard
                 IdentifierBlindIndex.bidx_for_telephone(
                   destination,
                   realm: transaction.surface,
+                  # NOTICE: Compares digests or blind indexes with `==`, not raw secrets.
+                  # A timing attack cannot recover a hash preimage; secrets themselves use secure_compare.
+                  # Tracked in docs/backlog/2026-11-10-core-security-review-followups.md (item 3).
                 ) == telephone.number_digest
 
               yield

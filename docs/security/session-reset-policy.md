@@ -1,16 +1,13 @@
 # Session Reset Policy
 
-> **Partially superseded by Identity Authority inversion:** The reset-session vocabulary in this
-> document remains useful only where it does not assign session, logout, token, or step-up freshness
-> authority to `sign/id`. `acme/www` is the Session, Token, Account, Preference, Authorization, and
-> downstream-token Authority. `sign/id` is ceremony-only. Existing sign-side physical tables/models
-> do not imply sign-side authority. Do not use this document to reintroduce sign-side sessions,
-> refresh, preference, dashboard, account lifecycle, token issuance, logout, or step-up freshness.
+> **Current scope (2026-11-10):** This reset-session contract applies to retained Auth/Visa APP/ORG
+> request flows. Visa owns local session and token authority; Auth owns credential ceremonies and
+> does not issue general login sessions. External RPs own their browser sessions. Former Base, COM,
+> and other product routes are not current Access behavior.
 
-This document is `app` / `com` / `org` This article describes the current behavior of Rails session
-ID rotation (`reset_session`) as a countermeasure against session fixation attacks, which is common
-to all three surfaces. The background to the design decision See
-`adr/session-reset-on-privilege-transition.md`.
+This document describes Rails session ID rotation (`reset_session`) as a countermeasure against
+session fixation in the retained Auth/Visa APP and ORG flows. See
+`adr/session-reset-on-privilege-transition.md` for the decision background.
 
 ## Purpose
 
@@ -25,11 +22,11 @@ authenticated (defense in depth + temporary state cleaning).
 `reset_session` is limited to the following three privilege transition points and aggregates each
 point into a single choke point that must be passed.
 
-| Transition Point | Single Choke Point                                              | Placement                                          |
-| ---------------- | --------------------------------------------------------------- | -------------------------------------------------- |
-| sign in          | `Authentication::Base#establish_signed_in_session!` → `#log_in` | Inside `log_in` (existing/no detour possible)      |
-| step-up complete | `Sign::VerificationStepUpLifecycle#consume_step_up_session!`    | After DB commit/Before `flash[:notice]` assignment |
-| logout           | `Authentication::Logoutable#logout_current_session!`            | Existing (sample shape)                            |
+| Transition Point | Single Choke Point                                              | Placement                                                      |
+| ---------------- | --------------------------------------------------------------- | -------------------------------------------------------------- |
+| sign in          | `Authentication::Base#establish_signed_in_session!` → `#log_in` | Inside `log_in` (existing/no detour possible)                  |
+| step-up complete | Auth/Visa step-up lifecycle                                     | After the database commit and before any session-backed notice |
+| logout           | `Authentication::Logoutable#logout_current_session!`            | Existing (sample shape)                                        |
 
 Sign-up completion goes through a dedicated sign-in method (`establish_signed_in_session!`), so it
 is covered by the same chokepoint.
@@ -56,12 +53,12 @@ The placement order of `reset_session` upon completion of step-up is a safety re
 
 ## Non-goals
 
-The following routes are outside the scope of this policy. Both go through `log_in`, so
-`reset_session` has already been reached and is safe from fixed attacks.
+The following transitions have distinct ownership or policy and must not be inferred from generic
+Rails session rotation:
 
-- org Social Login (`sign/org/auth/omniauth_callbacks_controller`) `log_in` Direct call (excluded
-  from regular entry aggregation to maintain MFA judgment behavior of existing staff).
-- OIDC Direct call to `log_in` for RP login and passkey registration login.
+- Auth ORG provider callbacks and Visa OIDC session completion retain their explicit admission,
+  callback, and session boundaries.
+- external RP callback and browser-session handling are outside this repository.
 - AAL promotion without going through `consume_step_up_session!` (risk enforcement, self-promotion
   when registering credentials).
 
@@ -87,10 +84,9 @@ The transition record must not contain raw cookies, OTPs, CSRF tokens, recovery 
 tokens, password values, or secret credential values. It records the reason, surface, request id
 when available, and aggregate revoked session / step-up counts.
 
-Password rotation is intentionally disabled for this release. The
-`/identity/secrets/:secret_id/rotation` route returns `403 Forbidden` and does not update a secret,
-does not call `CredentialSecurityTransition`, and does not write a password-change audit event. Full
-password change remains a release blocker for any release that exposes password rotation UI.
+Password rotation is intentionally disabled in the former identity-management design. Access has no
+Base identity route for that operation; any future local credential route requires its own accepted
+contract and implementation.
 
 MFA reset in the self-service settings flow means reset to `NOTHING`: the current session remains
 usable, other active sessions are revoked, and existing step-up freshness is cleared. Operator
@@ -102,7 +98,7 @@ is still usable and the stored scope, AAL, method, purpose, audience, and sessio
 current requirement. After a credential transition, the stored freshness is cleared, so an old grant
 cannot authorize a later sensitive action.
 
-Email verification in the Base app settings flow is a credential-equivalent transition. The
+Email verification in a retained Auth APP settings flow is a credential-equivalent transition. The
 verification completion request retains the completing session, revokes other sessions for the same
 actor, clears old step-up freshness, expires persisted step-up rows, and records a durable
 credential transition audit entry.

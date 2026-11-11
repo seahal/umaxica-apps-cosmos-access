@@ -28,46 +28,6 @@ module Auth::CommonHelper
     I18n.locale.to_s.start_with?("en") ? "en" : "ja"
   end
 
-  def get_region
-    "jp"
-  end
-
-  def get_theme
-    "sy"
-  end
-
-  def preference_language_options(option_class)
-    option_class.order(:id).filter_map do |option|
-      label =
-        case option.name
-        when "ja" then t("languages.japanese")
-        when "en" then t("languages.english")
-        end
-      [label, option.id] if label.present?
-    end
-  end
-
-  def localized_session_timestamp(time)
-    return nil if time.nil?
-
-    short_format = I18n.t("time.formats.short")
-    format_string = short_format.presence || "%Y/%m/%d %H:%M"
-    time.utc.strftime(format_string)
-  end
-
-  def sign_up_birthdate_fields(value, labelledby: nil)
-    format = sign_up_birthdate_date_format
-    parts = sign_up_birthdate_value_parts(value)
-    order = sign_up_birthdate_part_order(format)
-
-    content_tag(:div, role: "group", aria: { labelledby: labelledby }, data: { birthdate_format: format }) do
-      safe_join(
-        order.map { |part| sign_up_birthdate_part_field(part, parts[part]) },
-        sign_up_birthdate_separator(format),
-      )
-    end
-  end
-
   def sign_up_birthdate_date_format
     value = Actor.preferences.date_format if defined?(Actor)
     normalized = value.to_s.downcase
@@ -88,9 +48,8 @@ module Auth::CommonHelper
     end
   end
 
-  # The same fields `sign_up_birthdate_fields` renders, serialized for an Inertia page instead of
-  # built into markup. One implementation of the ordering, the bounds and the labels serves both,
-  # so a surface that has migrated and a surface that has not cannot drift apart.
+  # The birthdate parts serialized for an Inertia page. One implementation of the ordering, bounds
+  # and labels serves the Auth sign-up flow.
   def sign_up_birthdate_prop_parts(value)
     parts = sign_up_birthdate_value_parts(value)
 
@@ -132,29 +91,6 @@ module Auth::CommonHelper
       "month" => format("%02d", today.month),
       "day" => format("%02d", today.day),
     }
-  end
-
-  def sign_up_birthdate_part_field(part, value)
-    content_tag(:label, for: "birthdate_#{part}") do
-      safe_join(
-        [
-          sign_up_birthdate_part_label(part),
-          number_field_tag(
-            "birthdate_#{part}",
-            value,
-            id: "birthdate_#{part}",
-            required: true,
-            autocomplete: "bday-#{part}",
-            inputmode: "numeric",
-            min: sign_up_birthdate_part_min(part),
-            max: sign_up_birthdate_part_max(part),
-            placeholder: sign_up_birthdate_part_placeholder(part),
-            data: { birthdate_part: part },
-          ),
-        ],
-        " ",
-      )
-    end
   end
 
   def sign_up_birthdate_part_label(part)

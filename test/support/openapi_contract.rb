@@ -9,7 +9,7 @@ require "committee/rails/test/methods"
 # Validates a request and the response it produced against the bundled OpenAPI description for the
 # surface under test.
 #
-# The descriptions in `openapi/bundled/openapi.{app,com,org}.yml` are the source of truth for the JSON API
+# The descriptions in `openapi/bundled/openapi.{app,org}.yml` are the source of truth for the JSON API
 # (adr/api-versioning-and-client-conventions.md section 4). Before this module existed nothing read
 # them, so the accuracy requirement in that ADR had no enforcement and the descriptions drifted.
 #
@@ -21,7 +21,7 @@ module OpenapiContract
   extend ActiveSupport::Concern
   include Committee::Rails::Test::Methods
 
-  SURFACES = %w(app com org).freeze
+  SURFACES = %w(app org).freeze
 
   # The one directory every consumer reads the bundled descriptions from: Committee here, Redocly
   # on write (redocly.yaml), and rswag-api when it serves them to Swagger UI
@@ -49,8 +49,7 @@ module OpenapiContract
   end
 
   # Per-test override, for a class that exercises the same endpoint on more than one surface.
-  # `/api/v0/entries` is served by four services on all three surfaces, and one class covering all
-  # twelve is clearer than twelve classes.
+  # Auth and Visa share the app and org host surfaces; one class can exercise each host directly.
   def openapi_surface=(surface)
     @openapi_surface = surface.to_s
     # `schema`, `router`, and `schema_validator` are memoised per test instance and all derive from
@@ -64,7 +63,7 @@ module OpenapiContract
     @openapi_surface || self.class.openapi_surface ||
       raise(
         ArgumentError,
-        "#{self.class.name} must declare `openapi_surface :app | :com | :org`, or set it per test",
+        "#{self.class.name} must declare `openapi_surface :app | :org`, or set it per test",
       )
   end
 

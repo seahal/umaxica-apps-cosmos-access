@@ -67,6 +67,15 @@ class SignAppUpSocialCancellation
   end
 
   def pending_identity?(identity, actor)
+    return cancelable_unlinked_social_actor?(actor) if cycle.pending_contact_id.blank?
+
     identity&.user_id == actor.id
+  end
+
+  def cancelable_unlinked_social_actor?(actor)
+    evidence = cycle.completed_requirements.fetch("social_signup", nil)
+    cycle.pending_contact_type == "social_identity" && pending_actor?(actor) &&
+      evidence.is_a?(Hash) && evidence.fetch("candidate_ref", nil).present? &&
+      !ClientExternalIdentity.exists?(client_id: actor.id)
   end
 end

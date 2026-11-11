@@ -8,7 +8,6 @@
 - [Authorization](authorization.md)
 - [Sign-out](sign-out.md)
 - [Preference lifecycle](preference-lifecycle.md)
-- [Browser RP surfaces](browser-rp.md)
 - [Jump handoff](jump-handoff.md)
 
 Use one document per functional area, stable local IDs and explicit surface applicability. Link to

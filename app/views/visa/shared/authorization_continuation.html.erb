@@ -13,8 +13,8 @@
         <noscript><button type="submit"><%= t("actions.continue") %></button></noscript>
       <% end %>
     </main>
-    <%= javascript_tag nonce: true do %>
+    <script nonce="<%= content_security_policy_nonce %>">
       document.getElementById("visa-authorization-continuation-form").requestSubmit();
-    <% end %>
+    </script>
   </body>
 </html>

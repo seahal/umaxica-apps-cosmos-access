@@ -13,8 +13,9 @@ class OpAuthorityStopSingleWriterInvariantTest < ActiveSupport::TestCase
   # ceremony rows, capability grants (`revoke!(by:)`), and SignRiskEnforcer's actor-side event
   # transition. The latter commits the identity epoch before OP stops are applied.
   NON_AUTHORITY_CALLS = [
-    %r{\Aapp/models/concerns/token_status_management\.rb:\s*ceremony\.revoke!\(},
-    %r{\Aapp/services/credential_security_transition\.rb:\s*ceremony\.revoke!\(},
+    %r{\Aapp/models/concerns/token_status_management\.rb:\s*ceremony\.revoke!(?:\s|$)},
+    %r{\Aapp/services/credential_security_transition\.rb:\s*ceremony\.revoke!(?:\s|$)},
+    %r{\Aapp/operations/oidc_step_up_authorization_completion_committer\.rb:\s*ceremony\.revoke!(?:\s|$)},
     %r{\Aapp/controllers/concerns/auth_ceremony_context\.rb:\s*current_auth_ceremony_session&\.revoke!\z},
     %r{\Aapp/controllers/concerns/withdrawal_ceremony_authentication\.rb:\s*ceremony\.revoke!\z},
     %r{\Aapp/operations/op_identity_event_invalidator\.rb:.*device_session_record&\.revoke!\(reason:},
@@ -22,7 +23,7 @@ class OpAuthorityStopSingleWriterInvariantTest < ActiveSupport::TestCase
     %r{\Aapp/controllers/concerns/authentication_logout_current_session\.rb:\s*SignRiskEnforcer\.revoke!\(actor\)},
     %r{\Aapp/operations/client_secret_revocation_committer\.rb:\s*revoke!\(actor_context,},
     %r{\Aapp/services/sign_risk_enforcer\.rb:\s*revoke!\(resource\)},
-    %r{\Aapp/controllers/base/org/api/v0/iam/grants_controller\.rb:\s*grant\.revoke!\(by:},
+    %r{\Aapp/operations/org_iam_owner_mutation\.rb:\s*current\.revoke!\(by: locked_actor, reason_code:\)},
   ].freeze
 
   test "only the authority-stop primitive revokes OP roots and grants" do

@@ -1,7 +1,7 @@
 // Enrolling a new authenticator app.
 //
 // An enrolment is started once by an explicit POST (`start`); until then the
-// page shows only that start. Cancelling is a DELETE that ends the Base permission. The
+// page shows only that start. Cancelling is a DELETE that ends the registration permission. The
 // form carries the enrolment id so a page from an earlier enrolment cannot confirm the current one.
 //
 // The provisioning QR code is rendered by the server into a data URI, the same image the ERB screen
@@ -26,7 +26,7 @@ import { csrfToken } from "@/lib/csrf";
 type Props = {
   title: string;
   description: string;
-  back_link: SettingsLink;
+  back_link?: SettingsLink | null;
   start: { action: string; label: string } | null;
   qr_code_image: string | null;
   qr_fallback: string;
@@ -79,7 +79,7 @@ export default function TotpsNew({
     <Page
       title={title}
       description={description}
-      up={backLink}
+      up={backLink ?? null}
       width="narrow"
     >
       <ErrorList

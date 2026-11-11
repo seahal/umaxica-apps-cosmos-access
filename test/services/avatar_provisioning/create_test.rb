@@ -9,7 +9,7 @@ class AvatarProvisioningCreateTest < ActiveSupport::TestCase
       security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
       visibility_id: ClientVisibility::USER,
     )
-    bootstrap = BaseSelectorBootstrapAuthority.call(surface: :app, principal: user)
+    bootstrap = IdentityGraphBootstrapAuthority.call(surface: :app, principal: user)
     bootstrap.avatar.current_avatar_persona_binding.revoke!(force: true)
 
     assert_difference -> { Avatar.count }, 1 do
@@ -52,7 +52,7 @@ class AvatarProvisioningCreateTest < ActiveSupport::TestCase
       security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
       visibility_id: ClientVisibility::USER,
     )
-    bootstrap = BaseSelectorBootstrapAuthority.call(surface: :app, principal: user)
+    bootstrap = IdentityGraphBootstrapAuthority.call(surface: :app, principal: user)
     bootstrap.avatar.current_avatar_persona_binding.revoke!(force: true)
 
     AvatarRecord.transaction(joinable: false) do
@@ -90,7 +90,7 @@ class AvatarProvisioningCreateTest < ActiveSupport::TestCase
       security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
       visibility_id: ClientVisibility::USER,
     )
-    bootstrap = BaseSelectorBootstrapAuthority.call(surface: :app, principal: user)
+    bootstrap = IdentityGraphBootstrapAuthority.call(surface: :app, principal: user)
     bootstrap.avatar.current_avatar_persona_binding.revoke!(force: true)
     Handle.create!(handle: "conflict-aaaaaaaa", cooldown_until: Time.current, is_system: false)
 
@@ -118,7 +118,7 @@ class AvatarProvisioningCreateTest < ActiveSupport::TestCase
       security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
       visibility_id: ClientVisibility::USER,
     )
-    bootstrap = BaseSelectorBootstrapAuthority.call(surface: :app, principal: user)
+    bootstrap = IdentityGraphBootstrapAuthority.call(surface: :app, principal: user)
     bootstrap.avatar.current_avatar_persona_binding.revoke!(force: true)
 
     assert_no_difference -> {
@@ -143,7 +143,7 @@ class AvatarProvisioningCreateTest < ActiveSupport::TestCase
       security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
       visibility_id: ClientVisibility::USER,
     )
-    bootstrap = BaseSelectorBootstrapAuthority.call(surface: :app, principal: user)
+    bootstrap = IdentityGraphBootstrapAuthority.call(surface: :app, principal: user)
 
     assert_no_difference -> {
       Avatar.count + Handle.count + AvatarPersonaBinding.count + AvatarOwnershipPeriod.count
@@ -168,7 +168,7 @@ class AvatarProvisioningCreateTest < ActiveSupport::TestCase
       security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
       visibility_id: ClientVisibility::USER,
     )
-    bootstrap = BaseSelectorBootstrapAuthority.call(surface: :app, principal: user)
+    bootstrap = IdentityGraphBootstrapAuthority.call(surface: :app, principal: user)
     bootstrap.avatar.current_avatar_persona_binding.revoke!(force: true)
 
     result = AvatarProvisioning::Create.call(
@@ -194,7 +194,7 @@ class AvatarProvisioningCreateTest < ActiveSupport::TestCase
       security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
       visibility_id: ClientVisibility::USER,
     )
-    bootstrap = BaseSelectorBootstrapAuthority.call(surface: :app, principal: user)
+    bootstrap = IdentityGraphBootstrapAuthority.call(surface: :app, principal: user)
     bootstrap.avatar.current_avatar_persona_binding.revoke!(force: true)
     membership = bootstrap.account.persona_memberships.find_by!(enterprise: bootstrap.collective)
     membership.update!(membership_kind_id: PersonaMembershipKind::MEMBER)

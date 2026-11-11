@@ -166,8 +166,7 @@ class AcceptanceWu12RelayRepeatTest < ActionDispatch::IntegrationTest
       ClientOidcAuthorizationTransaction.stub(:database_now, issued_at) do
         ClientAuthAdmissionBinding.stub(:database_now, issued_at) do
           ClientAuthCeremonySession.stub(:database_now, issued_at) do
-            # This origin's service worker re-fetches navigations, which arrive as `empty`.
-            browser.get(confirmation_path, headers: navigation.merge("Sec-Fetch-Dest" => "empty"))
+            browser.get(confirmation_path, headers: navigation)
           end
         end
       end

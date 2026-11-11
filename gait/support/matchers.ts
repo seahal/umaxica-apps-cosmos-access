@@ -6,9 +6,6 @@
 // the object a spec builds around it stays type-checked.
 import { expect } from "vitest";
 
-/** Matches any function, for the lifecycle callbacks a spec does not otherwise inspect. */
-export const A_FUNCTION: unknown = expect.any(Function);
-
 /** Matches an object carrying at least `shape`. */
 export function containing(shape: Record<string, unknown>): unknown {
   return expect.objectContaining(shape);

@@ -4,11 +4,25 @@
 require_relative "boot"
 
 require "ipaddr"
-require "rails/all"
+require "rails"
+%w(
+  active_record/railtie
+  action_controller/railtie
+  action_view/railtie
+  action_mailer/railtie
+  active_job/railtie
+  rails/test_unit/railtie
+).each { |railtie| require railtie }
 
 Bundler.require(*Rails.groups)
 
-# `pghero`, `blazer`, the two `rswag` halves, `rails_performance`, and `coverband` are
+if Rails.env.production?
+  # rubocop:disable I18n/RailsI18n/DecorateString
+  raise KeyError, "Production database is not configured; choose a provider before booting production."
+  # rubocop:enable I18n/RailsI18n/DecorateString
+end
+
+# `pghero`, `blazer`, the two `rswag` halves, and `coverband` are
 # `group :development` gems with `require: false` (Gemfile), so Bundler.require never auto-requires
 # them and the gems are not on the load path outside development. They must be required here rather
 # than from config/initializers: an engine only
@@ -20,24 +34,6 @@ if Rails.env.development?
   require "blazer"
   require "rswag/api"
   require "rswag/ui"
-
-  require "rails_performance"
-  # The gem ships one config/routes.rb that draws the engine's own route set and then calls
-  # `Rails.application.routes.draw { mount RailsPerformance::Engine => RailsPerformance.mount_at }`
-  # with no host constraint and no flag to disable it. Left in place, the dashboard answers on
-  # every host this application serves -- every app, com, org, content, and service FQDN -- which
-  # is the leak a dedicated host exists to prevent, and a mount
-  # test/security/invariants/mounted_engine_invariant_test.rb has no way to constrain.
-  #
-  # Dropping the routing path is the only available off switch, and it has to happen here: an
-  # engine contributes its routes through the `add_routing_paths` initializer, which has already
-  # run by the time config/initializers/* load. config/routes/performance.rb draws the engine's own
-  # routes and mounts it behind the host constraint instead.
-  #
-  # On upgrading this gem, re-read its config/routes.rb: the copied route list in
-  # config/routes/performance.rb has to be brought across by hand, and a renamed route shows up
-  # only as a dashboard tab that 404s.
-  RailsPerformance::Engine.paths["config/routes.rb"] = []
 
   # Coverband measures which Ruby lines execute, which is only a meaningful question for the
   # process serving requests. Requiring the gem is what starts it: its railtie hooks
@@ -61,6 +57,7 @@ require_relative "../lib/request_body_size_limit"
 require_relative "../lib/credential_deletion_finalizer"
 require_relative "../lib/auth_phase_refusal_response_boundary"
 require_relative "../lib/visa_csp_report_response_boundary"
+require_relative "../lib/access_personal_response_cache_control"
 require_relative "../lib/trusted_forwarded_headers"
 require_relative "../lib/umaxica/test_environment/database_safety"
 
@@ -99,6 +96,10 @@ module Jit
 
     # Accept JSON messages only; authenticated legacy Marshal payloads are rejected too.
     config.active_support.message_serializer = JSON
+
+    # The application uses Turbo for browser navigation, not Turbo Native's history endpoints.
+    # Keep those framework routes out of the Auth, Visa, and operator host constraints.
+    config.turbo.draw_routes = false
 
     # Raw email content is not application logging data. Keep the Rails delivery
     # mechanism and its notifications intact while disabling ActionMailer's
@@ -156,6 +157,9 @@ module Jit
     config.middleware.insert_before(CredentialDeletionFinalizer, AuthPhaseRefusalResponseBoundary)
     config.middleware.insert_before(0, VisaCspReportResponseBoundary)
     config.x.boot_config = AppConfigLoader.load!
+    config.middleware.insert_before(
+      0, AccessPersonalResponseCacheControl, hosts: config.x.boot_config.fetch(:hosts),
+    )
     # No processor delivery adapter is enabled until its authenticated request/receipt
     # contract is implemented. The empty registry is intentionally fail-closed: a notification
     # cannot become NOTIFIED merely because a processor key exists.

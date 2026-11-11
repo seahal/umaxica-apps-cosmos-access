@@ -27,7 +27,7 @@ class RealmIdentifierDigestTest < ActiveSupport::TestCase
     ENV["EMAIL_ADDRESS_HMAC_SALT"] = "legacy-email-key-must-not-work"
     ENV["TELEPHONE_NUMBER_HMAC_SALT"] = "legacy-telephone-key-must-not-work"
 
-    Rails.app.creds.stub(:option, nil) do
+    Rails.application.credentials.stub(:option, nil) do
       %w(app org).each do |realm|
         email_error =
           assert_raises(KeyError) do
@@ -58,7 +58,7 @@ class RealmIdentifierDigestTest < ActiveSupport::TestCase
       APP_TELEPHONE_NUMBER_HMAC_KEY: "app-telephone-test-key",
       ORG_TELEPHONE_NUMBER_HMAC_KEY: "org-telephone-test-key",
     }
-    Rails.app.creds.stub(:option, ->(key) { keys.fetch(key) }) do
+    Rails.application.credentials.stub(:option, ->(key) { keys.fetch(key) }) do
       %w(app org).each do |realm|
         telephone = IdentifierBlindIndex.bidx_for_telephone("+819012345678", realm: realm)
         wrong_key = keys.fetch(IdentifierBlindIndex::EMAIL_KEYS.fetch(realm))
@@ -83,7 +83,7 @@ class RealmIdentifierDigestTest < ActiveSupport::TestCase
       APP_EMAIL_ADDRESS_HMAC_KEY: "app-email-test-key",
       ORG_EMAIL_ADDRESS_HMAC_KEY: "org-email-test-key",
     }
-    Rails.app.creds.stub(:option, ->(key) { keys.fetch(key) }) do
+    Rails.application.credentials.stub(:option, ->(key) { keys.fetch(key) }) do
       app = IdentifierBlindIndex.bidx_for_email("user@example.com", realm: :app)
       org = IdentifierBlindIndex.bidx_for_email("user@example.com", realm: :org)
 
@@ -98,7 +98,7 @@ class RealmIdentifierDigestTest < ActiveSupport::TestCase
       APP_TELEPHONE_NUMBER_HMAC_KEY: "app-telephone-test-key",
       ORG_TELEPHONE_NUMBER_HMAC_KEY: "org-telephone-test-key",
     }
-    Rails.app.creds.stub(:option, ->(key) { keys.fetch(key) }) do
+    Rails.application.credentials.stub(:option, ->(key) { keys.fetch(key) }) do
       app = IdentifierBlindIndex.bidx_for_telephone("+819012345678", realm: :app)
       org = IdentifierBlindIndex.bidx_for_telephone("+819012345678", realm: :org)
 

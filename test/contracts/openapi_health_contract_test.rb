@@ -13,9 +13,8 @@ class OpenapiHealthContractTest < ActionDispatch::IntegrationTest
   include OpenapiContract
 
   SURFACE_HOSTS = {
-    "app" => ENV.fetch("PUBLIC_BASE_SERVICE_URL", "base.app.localhost"),
-    "com" => ENV.fetch("PUBLIC_BASE_CORPORATE_URL", "base.com.localhost"),
-    "org" => ENV.fetch("PUBLIC_BASE_STAFF_URL", "base.org.localhost"),
+    "app" => ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
+    "org" => ENV.fetch("PUBLIC_AUTH_STAFF_URL"),
   }.freeze
 
   SURFACE_HOSTS.each do |surface, host|

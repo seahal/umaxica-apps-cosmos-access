@@ -193,13 +193,8 @@ class SignUpStuckRegistrationReportQueryTest < ActiveSupport::TestCase
     assert_empty SignUpStuckRegistrationReportQuery.call(surface: :app)
   end
 
-  test "refuses an explicit writing role and an unsupported ORG surface" do
-    ActiveRecord::Base.connected_to(role: :writing) do
-      assert_raises(SignUpStuckRegistrationReportQuery::WritingRoleRefused) do
-        SignUpStuckRegistrationReportQuery.call(surface: :app)
-      end
-    end
-
+  test "reads the APP surface on the primary and rejects an unsupported ORG surface" do
+    assert_empty SignUpStuckRegistrationReportQuery.call(surface: :app)
     assert_raises(KeyError) { SignUpStuckRegistrationReportQuery.call(surface: :org) }
   end
 end

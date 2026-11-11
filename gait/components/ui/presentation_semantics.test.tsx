@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 
 import Card from "@/components/ui/Card";
 import BirthdateFieldset from "@/features/auth/signup/BirthdateFieldset";
-import { AdminNotices } from "@/features/org_admin/AdminContextPanel";
 
 describe("presentation semantics", () => {
   it("keeps an untitled panel a plain group rather than an unnamed section", () => {
@@ -56,25 +55,4 @@ describe("presentation semantics", () => {
     expect(input.getAttribute("aria-describedby")).toBe(hint.id);
     expect(hint.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
-  it("announces administration results through one urgency-appropriate group without competing live regions", () => {
-    render(
-      <AdminNotices
-        notices={[
-          { tone: "info", message: "Information" },
-          { tone: "warning", message: "Review the realm" },
-          { tone: "danger", message: "Cannot continue" },
-        ]}
-      />,
-    );
-    expect(screen.getAllByRole("listitem")).toHaveLength(3);
-    expect(screen.queryAllByRole("alert")).toHaveLength(1);
-    expect(screen.queryAllByRole("status")).toHaveLength(0);
-    expect(screen.getByText("Cannot continue")).toBeTruthy();
-  });
-});
-
-it("announces an information-only administration result politely", () => {
-  render(<AdminNotices notices={[{ tone: "info", message: "Result information" }]} />);
-  expect(screen.getByRole("status").textContent).toContain("Result information");
-  expect(screen.queryByRole("alert")).toBeNull();
 });

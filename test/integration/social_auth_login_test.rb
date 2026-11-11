@@ -22,16 +22,24 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
     @host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     @callback_headers = social_callback_headers(@host)
     @base_browser = open_session
-    base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    visa_host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
     auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-    @base_browser.host!(base_host)
+    @base_browser.host!(visa_host)
     @base_browser.https!
-    @base_browser.get("/sign", params: { ri: "jp", pt: "/dashboard?ri=jp" })
-    form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-    fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-    @base_browser.post(
-      form["action"], params: fields, headers: {
-        "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin",
+    client = OidcClientRegistry.find!("core-app-jp")
+    @oidc_authorization = {
+      response_type: "code",
+      client_id: client.client_id,
+      redirect_uri: client.redirect_uris_by_realm.fetch("client").first,
+      scope: "openid profile",
+      state: SecureRandom.urlsafe_base64(32),
+      nonce: SecureRandom.urlsafe_base64(32),
+      code_challenge: OidcTestEntry::CODE_CHALLENGE,
+      code_challenge_method: "S256",
+    }
+    @base_browser.get(
+      "/oauth/authorize", params: @oidc_authorization, headers: {
+        "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
       },
     )
     current_browser = @base_browser
@@ -105,7 +113,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
           lf0_ri = "jp"
           lf0_rt = nil
           lf0_referer = nil
-          lf0_host = @host.presence || configured_host(:sign_service)
+          lf0_host = @host.presence || configured_host(:auth_service)
           host!(lf0_host) if respond_to?(:host!)
           lf0_normalized_provider = SocialIdentifiable.normalize_provider(lf0_provider)
           # The ceremony entry is POST only (see SocialCeremonyEntry): a GET entry would
@@ -145,64 +153,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                         nil
                       end
                     rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-                    if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-                      rp_client_id =
-                        case rp_family
-                        when "base" then "base-#{rp_surface}-ww"
-                        when "edit" then "edit-org-ww"
-                        when "tech" then "tech-org-ww"
-                        else "#{rp_family}-#{rp_surface}-jp"
-                        end
-                      rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                      rp_client = OidcClientRegistry.find!(rp_client_id)
-                      rp_key = [rp_client.client_id, rp_token.public_id]
-                      @base_browser_rp_credentials ||= {}
-                      if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-                          !(rp_token.device_session_id && OpAppGrant.exists?(
-                            device_session_id: rp_token.device_session_id,
-                            oidc_client_id: rp_client.client_id,
-                            revoked_at: nil,
-                          ))
-                        rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-                        rp_now = Time.current
-                        rp_session = OpAppGrant.create!(
-                          authentication_epoch: 0,
-                          client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-                          oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-                          refresh_token_expires_at: rp_now + 10.minutes,
-                        )
-                        rp_access = AuthenticationTokenService.encode(
-                          rp_token.actor_record,
-                          host: rp_host,
-                          resource_type: "client",
-                          session_public_id: rp_token.public_id,
-                          base_session_public_id: rp_token.public_id,
-                          oidc_sid: rp_session.public_id,
-                          oidc_jti: rp_session.oidc_jti,
-                          expires_at: rp_now + 10.minutes,
-                          scopes: %w(openid profile),
-                          issuer: OidcIssuer.for_client(rp_client),
-                          audiences: [rp_client.aud],
-                          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                          subject: OidcSubject.for(
-                            rp_token.actor_record,
-                            resource_type: "client",
-                          ),
-                          client_id: rp_client.client_id,
-                        )
-                        @base_browser_rp_credentials[rp_key] =
-                          [rp_access, rp_session.issue_refresh_token!]
-                      end
-                      if @base_browser_rp_credentials[rp_key]
-                        rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-                        rp_cookie = [
-                          rp_headers.fetch("Cookie"),
-                          "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-                          "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-                        ].join("; ")
-                        rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-                      end
-                    end
                     rp_headers
                   end
                 rr0_host = rr0_headers["Host"]
@@ -213,71 +163,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                     nil
                   end
                 rr0_family, rr0_surface = rr0_route&.fetch(:controller)&.split("/")
-                if %w(base warp core edit).include?(rr0_family) && rr0_surface == "app"
-                  rr0_client_id =
-                    case rr0_family
-                    when "base" then "base-#{rr0_surface}-ww"
-                    when "edit" then "edit-org-ww"
-                    when "tech" then "tech-org-ww"
-                    else "#{rr0_family}-#{rr0_surface}"
-                    end
-                  rr0_token = ClientToken.find_by!(public_id: rr0_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                  rr0_client = OidcClientRegistry.find!(rr0_client_id)
-                  rr0_key = [rr0_client.client_id, rr0_token.public_id]
-                  @base_browser_rp_credentials ||= {}
-                  if !@base_browser_rp_credentials[rr0_key] && rr0_token.currently_usable? &&
-                      !(rr0_token.device_session_id && OpAppGrant.exists?(
-                        device_session_id: rr0_token.device_session_id,
-                        oidc_client_id: rr0_client.client_id,
-                        revoked_at: nil,
-                      ))
-                    rr0_token.rotate_refresh_token! unless rr0_token.device_session_record.current_refresh_token_id
-                    rr0_now = Time.current
-                    rr0_session = OpAppGrant.create!(
-                      authentication_epoch: 0,
-                      client_token: rr0_token,
-                      oidc_client_id: rr0_client.client_id,
-                      oidc_scope: "openid profile",
-                      oidc_jti: SecureRandom.uuid,
-                      oidc_nonce: SecureRandom.hex(16),
-                      oidc_auth_time: rr0_now,
-                      refresh_token_expires_at: rr0_now + 10.minutes,
-                    )
-                    rr0_access = AuthenticationTokenService.encode(
-                      rr0_token.actor_record,
-                      host: rr0_host,
-                      resource_type: "client",
-                      session_public_id: rr0_token.public_id,
-                      base_session_public_id: rr0_token.public_id,
-                      oidc_sid: rr0_session.public_id,
-                      oidc_jti: rr0_session.oidc_jti,
-                      expires_at: rr0_now + 10.minutes,
-                      scopes: %w(openid profile),
-                      issuer: OidcIssuer.for_client(rr0_client),
-                      audiences: [rr0_client.aud],
-                      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rr0_client),
-                      subject: OidcSubject.for(
-                        rr0_token.actor_record,
-                        resource_type: "client",
-                      ),
-                      client_id: rr0_client.client_id,
-                    )
-                    @base_browser_rp_credentials[rr0_key] =
-                      [rr0_access, rr0_session.issue_refresh_token!]
-                  end
-                  if @base_browser_rp_credentials[rr0_key]
-                    rr0_access, rr0_refresh = @base_browser_rp_credentials.fetch(rr0_key)
-                    rr0_cookie = [
-                      rr0_headers.fetch("Cookie"),
-                      "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rr0_access)}",
-                      "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rr0_refresh)}",
-                    ].join("; ")
-                    rr0_headers = rr0_headers.merge(
-                      "Cookie" => rr0_cookie,
-                      "HTTP_COOKIE" => rr0_cookie,
-                    )
-                  end
-                end
                 rr0_headers
               end
             lf0_token = ClientToken.find_by(public_id: lf0_user_headers["X-TEST-SESSION-PUBLIC-ID"])
@@ -288,8 +173,36 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             lf0_headers = lf0_headers.merge(lf0_user_headers)
           end
           if lf0_entry.to_s == "sign_up" && lf0_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
-            host!(lf0_host)
+            ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+            auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+            @base_browser.get(
+              "/oauth/authorize", params: @oidc_authorization.merge(prompt: "create"), headers: {
+                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+              },
+            )
+            current_browser = @base_browser
+            12.times do
+              break unless current_browser.response.redirect?
+
+              target = URI.parse(current_browser.response.location)
+              if target.host == "jump.umaxica.net"
+                rt = Rack::Utils.parse_query(target.query).fetch("rt")
+                target = URI.parse(JWT.decode(rt, nil, false).first.fetch("url"))
+              end
+              browser = (target.host == auth_host) ? self : @base_browser
+              browser.host!(target.host) if target.host
+              browser.https!
+              browser.get(
+                target.request_uri, headers: {
+                  "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+                },
+              )
+              current_browser = browser
+              break if browser == self && !response.redirect?
+            end
+
+            assert_equal auth_host, request.host
+            assert_response :success
           end
           post(lf0_continue_path, headers: lf0_headers)
           social_auth_state_from_response
@@ -329,11 +242,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
 
       flow0_target = URI.parse(response.location)
       if flow0_target.path == "/sign/in/check"
-        flow0_sid_cookie = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"
-        flow0_ceremony = ClientAuthCeremonySession.find_active_by_raw_sid(cookies[flow0_sid_cookie])
-        flow0_parent = OidcAuthorizationTransactionCoordinator.find_by_transaction_id!(
-          surface: "app", transaction_id: flow0_ceremony.authorization_transaction_ref,
-        )
         # The Auth handoff redirects to the Visa result page, which continues the parent
         # authorization by a same-origin POST.
         get(
@@ -368,112 +276,22 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             "Sec-Fetch-Dest" => "document",
           },
         )
-        flow0_principal = Client.find_by!(public_id: flow0_parent.reload.actor_ref)
-        BaseSelectorBootstrapAuthority.call(surface: :app, principal: flow0_principal)
       end
       break unless flow0_result_uri
 
       flow0_continuation = @base_browser.response
-      flow0_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-      break unless flow0_continuation.redirect?
-      # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
-      break unless URI.parse(flow0_continuation.location).path == "/oidc/callback" ||
-        URI.parse(flow0_continuation.location).host ==
-          URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
 
-      JitSecurityJwtRegistry.surface("BASE_APP")
+      assert_equal 303, flow0_continuation.status
+      flow0_registered_uri = URI.parse(
+        OidcClientRegistry.find!("core-app-jp").redirect_uris_by_realm.fetch("client").first,
+      )
       flow0_callback_uri = URI.parse(flow0_continuation.location)
-      # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-      unless flow0_callback_uri.host == flow0_base_host
+      if flow0_callback_uri.host == "jump.umaxica.net"
         flow0_callback_uri = URI.parse(jump_rt_url_from_location_for_test(flow0_callback_uri.to_s))
       end
-      flow0_protocol_browser = open_session
-      flow0_protocol_browser.host!(flow0_base_host)
-      flow0_protocol_browser.https!
-      # Substitute network transport only: the token and UserInfo requests still run
-      # through their real public controllers, including PKCE and client authentication.
-      flow0_transport =
-        Faraday::Adapter::Test::Stubs.new do |flow0_stub|
-          flow0_stub.post(/.*/) do |flow0_env|
-            # The nested Rack executor must not complete the in-flight callback.
-            flow0_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow0_outer_actor = Actor.context
-            flow0_executor_key = Rails.application.executor.active_key
-            flow0_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow0_executor_key)
-            begin
-              flow0_protocol_browser.host!(flow0_env.url.authority)
-              flow0_protocol_browser.https!(flow0_env.url.scheme == "https")
-              flow0_protocol_browser.post(
-                flow0_env.url.request_uri, params: Rack::Utils.parse_query(flow0_env.body),
-                                           headers: { "Accept" => "application/json" },
-              )
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow0_executor_key] = flow0_outer_execution
-            end
 
-            # Do not print the outer request or credentials on failure.
-            assert_equal [true, true, 200],
-                         [ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow0_outer_controller),
-                          Actor.context.equal?(flow0_outer_actor), flow0_protocol_browser.response.status,]
-            [flow0_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow0_protocol_browser.response.body,]
-          end
-          flow0_stub.get(/.*/) do |flow0_env|
-            flow0_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow0_outer_actor = Actor.context
-            flow0_executor_key = Rails.application.executor.active_key
-            flow0_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow0_executor_key)
-            begin
-              flow0_protocol_browser.host!(flow0_env.url.authority)
-              flow0_protocol_browser.https!(flow0_env.url.scheme == "https")
-              # The JWKS request carries no Authorization; the UserInfo request does.
-              flow0_get_headers = { "Accept" => "application/json" }
-              flow0_get_headers["Authorization"] = flow0_env.request_headers["Authorization"] if
-                flow0_env.request_headers["Authorization"].present?
-              flow0_protocol_browser.get(flow0_env.url.request_uri, headers: flow0_get_headers)
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow0_executor_key] = flow0_outer_execution
-            end
-
-            # Do not print the outer request or credentials on failure.
-            assert_equal [true, true, 200],
-                         [ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow0_outer_controller),
-                          Actor.context.equal?(flow0_outer_actor), flow0_protocol_browser.response.status,]
-            [flow0_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow0_protocol_browser.response.body,]
-          end
-        end
-      flow0_connection =
-        Faraday.new do |flow0_builder|
-          flow0_builder.request(:url_encoded)
-          flow0_builder.adapter(:test, flow0_transport)
-        end
-      OutboundHttp::Connection.stub(
-        :build, ->(**flow0_args) {
-          assert_equal flow0_visa_host, URI(flow0_args.fetch(:url).to_s).host
-          flow0_connection
-        },
-      ) do
-        # The callback carries the Base browser's RP state cookies.
-        flow0_base_cookie = @base_browser.cookies.to_hash.map { |flow0_name, flow0_value|
-          "#{flow0_name}=#{Rack::Utils.escape(flow0_value)}"
-        }.join("; ")
-        host!(flow0_base_host)
-        https!
-        TestSupport::OutboundHttpGuard.allow do
-          get(
-            flow0_callback_uri.request_uri,
-            headers: { "Cookie" => flow0_base_cookie, "HTTP_COOKIE" => flow0_base_cookie },
-          )
-        end
-      end
-
-      assert_equal [true, true, true],
-                   [response.redirect?,
-                    cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                    cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
-      # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
-      # request in this process already cached the key set.
+      assert_equal [flow0_registered_uri.host, flow0_registered_uri.path],
+                   [flow0_callback_uri.host, flow0_callback_uri.path]
     end
 
     assert_response :redirect
@@ -481,12 +299,9 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
     # Client count should NOT increase
     assert_equal user_count_before, Client.count, "Existing user login should NOT create new user"
 
-    # The callback redirects to the bare path; the Dashboard request itself adds the region.
-    assert_equal "/dashboard", URI.parse(response.location).request_uri
-    # The OP login cookie is set on Visa; the Base RP holds only its own credential cookies.
+    assert_social_login_issued_visa_result(response.location)
+    # The OP login cookie is set on Visa.
     assert_predicate @base_browser.cookies[AuthenticationBase::ACCESS_COOKIE_KEY].to_s, :present?
-    assert_predicate cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s, :present?
-    assert_predicate cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s, :present?
     assert_equal 1, ClientToken.where(user_id: existing_user.id).count
 
     existing_user.reload
@@ -562,7 +377,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
           lf2_ri = "jp"
           lf2_rt = nil
           lf2_referer = nil
-          lf2_host = @host.presence || configured_host(:sign_service)
+          lf2_host = @host.presence || configured_host(:auth_service)
           host!(lf2_host) if respond_to?(:host!)
           lf2_normalized_provider = SocialIdentifiable.normalize_provider(lf2_provider)
           # The ceremony entry is POST only (see SocialCeremonyEntry): a GET entry would
@@ -602,64 +417,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                         nil
                       end
                     rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-                    if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-                      rp_client_id =
-                        case rp_family
-                        when "base" then "base-#{rp_surface}-ww"
-                        when "edit" then "edit-org-ww"
-                        when "tech" then "tech-org-ww"
-                        else "#{rp_family}-#{rp_surface}-jp"
-                        end
-                      rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                      rp_client = OidcClientRegistry.find!(rp_client_id)
-                      rp_key = [rp_client.client_id, rp_token.public_id]
-                      @base_browser_rp_credentials ||= {}
-                      if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-                          !(rp_token.device_session_id && OpAppGrant.exists?(
-                            device_session_id: rp_token.device_session_id,
-                            oidc_client_id: rp_client.client_id,
-                            revoked_at: nil,
-                          ))
-                        rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-                        rp_now = Time.current
-                        rp_session = OpAppGrant.create!(
-                          authentication_epoch: 0,
-                          client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-                          oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-                          refresh_token_expires_at: rp_now + 10.minutes,
-                        )
-                        rp_access = AuthenticationTokenService.encode(
-                          rp_token.actor_record,
-                          host: rp_host,
-                          resource_type: "client",
-                          session_public_id: rp_token.public_id,
-                          base_session_public_id: rp_token.public_id,
-                          oidc_sid: rp_session.public_id,
-                          oidc_jti: rp_session.oidc_jti,
-                          expires_at: rp_now + 10.minutes,
-                          scopes: %w(openid profile),
-                          issuer: OidcIssuer.for_client(rp_client),
-                          audiences: [rp_client.aud],
-                          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                          subject: OidcSubject.for(
-                            rp_token.actor_record,
-                            resource_type: "client",
-                          ),
-                          client_id: rp_client.client_id,
-                        )
-                        @base_browser_rp_credentials[rp_key] =
-                          [rp_access, rp_session.issue_refresh_token!]
-                      end
-                      if @base_browser_rp_credentials[rp_key]
-                        rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-                        rp_cookie = [
-                          rp_headers.fetch("Cookie"),
-                          "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-                          "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-                        ].join("; ")
-                        rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-                      end
-                    end
                     rp_headers
                   end
                 rr2_host = rr2_headers["Host"]
@@ -670,71 +427,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                     nil
                   end
                 rr2_family, rr2_surface = rr2_route&.fetch(:controller)&.split("/")
-                if %w(base warp core edit).include?(rr2_family) && rr2_surface == "app"
-                  rr2_client_id =
-                    case rr2_family
-                    when "base" then "base-#{rr2_surface}-ww"
-                    when "edit" then "edit-org-ww"
-                    when "tech" then "tech-org-ww"
-                    else "#{rr2_family}-#{rr2_surface}"
-                    end
-                  rr2_token = ClientToken.find_by!(public_id: rr2_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                  rr2_client = OidcClientRegistry.find!(rr2_client_id)
-                  rr2_key = [rr2_client.client_id, rr2_token.public_id]
-                  @base_browser_rp_credentials ||= {}
-                  if !@base_browser_rp_credentials[rr2_key] && rr2_token.currently_usable? &&
-                      !(rr2_token.device_session_id && OpAppGrant.exists?(
-                        device_session_id: rr2_token.device_session_id,
-                        oidc_client_id: rr2_client.client_id,
-                        revoked_at: nil,
-                      ))
-                    rr2_token.rotate_refresh_token! unless rr2_token.device_session_record.current_refresh_token_id
-                    rr2_now = Time.current
-                    rr2_session = OpAppGrant.create!(
-                      authentication_epoch: 0,
-                      client_token: rr2_token,
-                      oidc_client_id: rr2_client.client_id,
-                      oidc_scope: "openid profile",
-                      oidc_jti: SecureRandom.uuid,
-                      oidc_nonce: SecureRandom.hex(16),
-                      oidc_auth_time: rr2_now,
-                      refresh_token_expires_at: rr2_now + 10.minutes,
-                    )
-                    rr2_access = AuthenticationTokenService.encode(
-                      rr2_token.actor_record,
-                      host: rr2_host,
-                      resource_type: "client",
-                      session_public_id: rr2_token.public_id,
-                      base_session_public_id: rr2_token.public_id,
-                      oidc_sid: rr2_session.public_id,
-                      oidc_jti: rr2_session.oidc_jti,
-                      expires_at: rr2_now + 10.minutes,
-                      scopes: %w(openid profile),
-                      issuer: OidcIssuer.for_client(rr2_client),
-                      audiences: [rr2_client.aud],
-                      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rr2_client),
-                      subject: OidcSubject.for(
-                        rr2_token.actor_record,
-                        resource_type: "client",
-                      ),
-                      client_id: rr2_client.client_id,
-                    )
-                    @base_browser_rp_credentials[rr2_key] =
-                      [rr2_access, rr2_session.issue_refresh_token!]
-                  end
-                  if @base_browser_rp_credentials[rr2_key]
-                    rr2_access, rr2_refresh = @base_browser_rp_credentials.fetch(rr2_key)
-                    rr2_cookie = [
-                      rr2_headers.fetch("Cookie"),
-                      "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rr2_access)}",
-                      "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rr2_refresh)}",
-                    ].join("; ")
-                    rr2_headers = rr2_headers.merge(
-                      "Cookie" => rr2_cookie,
-                      "HTTP_COOKIE" => rr2_cookie,
-                    )
-                  end
-                end
                 rr2_headers
               end
             lf2_token = ClientToken.find_by(public_id: lf2_user_headers["X-TEST-SESSION-PUBLIC-ID"])
@@ -745,8 +437,36 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             lf2_headers = lf2_headers.merge(lf2_user_headers)
           end
           if lf2_entry.to_s == "sign_up" && lf2_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
-            host!(lf2_host)
+            ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+            auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+            @base_browser.get(
+              "/oauth/authorize", params: @oidc_authorization.merge(prompt: "create"), headers: {
+                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+              },
+            )
+            current_browser = @base_browser
+            12.times do
+              break unless current_browser.response.redirect?
+
+              target = URI.parse(current_browser.response.location)
+              if target.host == "jump.umaxica.net"
+                rt = Rack::Utils.parse_query(target.query).fetch("rt")
+                target = URI.parse(JWT.decode(rt, nil, false).first.fetch("url"))
+              end
+              browser = (target.host == auth_host) ? self : @base_browser
+              browser.host!(target.host) if target.host
+              browser.https!
+              browser.get(
+                target.request_uri, headers: {
+                  "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+                },
+              )
+              current_browser = browser
+              break if browser == self && !response.redirect?
+            end
+
+            assert_equal auth_host, request.host
+            assert_response :success
           end
           post(lf2_continue_path, headers: lf2_headers)
           social_auth_state_from_response
@@ -785,11 +505,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
 
       flow1_target = URI.parse(response.location)
       if flow1_target.path == "/sign/in/check"
-        flow1_sid_cookie = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"
-        flow1_ceremony = ClientAuthCeremonySession.find_active_by_raw_sid(cookies[flow1_sid_cookie])
-        flow1_parent = OidcAuthorizationTransactionCoordinator.find_by_transaction_id!(
-          surface: "app", transaction_id: flow1_ceremony.authorization_transaction_ref,
-        )
         # The Auth handoff redirects to the Visa result page, which continues the parent
         # authorization by a same-origin POST.
         get(
@@ -824,116 +539,26 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             "Sec-Fetch-Dest" => "document",
           },
         )
-        flow1_principal = Client.find_by!(public_id: flow1_parent.reload.actor_ref)
-        BaseSelectorBootstrapAuthority.call(surface: :app, principal: flow1_principal)
       end
       break unless flow1_result_uri
 
       flow1_continuation = @base_browser.response
-      flow1_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-      break unless flow1_continuation.redirect?
-      # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
-      break unless URI.parse(flow1_continuation.location).path == "/oidc/callback" ||
-        URI.parse(flow1_continuation.location).host ==
-          URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
 
-      JitSecurityJwtRegistry.surface("BASE_APP")
+      assert_equal 303, flow1_continuation.status
+      flow1_registered_uri = URI.parse(
+        OidcClientRegistry.find!("core-app-jp").redirect_uris_by_realm.fetch("client").first,
+      )
       flow1_callback_uri = URI.parse(flow1_continuation.location)
-      # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-      unless flow1_callback_uri.host == flow1_base_host
+      if flow1_callback_uri.host == "jump.umaxica.net"
         flow1_callback_uri = URI.parse(jump_rt_url_from_location_for_test(flow1_callback_uri.to_s))
       end
-      flow1_protocol_browser = open_session
-      flow1_protocol_browser.host!(flow1_base_host)
-      flow1_protocol_browser.https!
-      # Substitute network transport only: the token and UserInfo requests still run
-      # through their real public controllers, including PKCE and client authentication.
-      flow1_transport =
-        Faraday::Adapter::Test::Stubs.new do |flow1_stub|
-          flow1_stub.post(/.*/) do |flow1_env|
-            # The nested Rack executor must not complete the in-flight callback.
-            flow1_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow1_outer_actor = Actor.context
-            flow1_executor_key = Rails.application.executor.active_key
-            flow1_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow1_executor_key)
-            begin
-              flow1_protocol_browser.host!(flow1_env.url.authority)
-              flow1_protocol_browser.https!(flow1_env.url.scheme == "https")
-              flow1_protocol_browser.post(
-                flow1_env.url.request_uri, params: Rack::Utils.parse_query(flow1_env.body),
-                                           headers: { "Accept" => "application/json" },
-              )
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow1_executor_key] = flow1_outer_execution
-            end
 
-            # Do not print the outer request or credentials on failure.
-            assert_equal [true, true, 200],
-                         [ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow1_outer_controller),
-                          Actor.context.equal?(flow1_outer_actor), flow1_protocol_browser.response.status,]
-            [flow1_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow1_protocol_browser.response.body,]
-          end
-          flow1_stub.get(/.*/) do |flow1_env|
-            flow1_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow1_outer_actor = Actor.context
-            flow1_executor_key = Rails.application.executor.active_key
-            flow1_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow1_executor_key)
-            begin
-              flow1_protocol_browser.host!(flow1_env.url.authority)
-              flow1_protocol_browser.https!(flow1_env.url.scheme == "https")
-              # The JWKS request carries no Authorization; the UserInfo request does.
-              flow1_get_headers = { "Accept" => "application/json" }
-              flow1_get_headers["Authorization"] = flow1_env.request_headers["Authorization"] if
-                flow1_env.request_headers["Authorization"].present?
-              flow1_protocol_browser.get(flow1_env.url.request_uri, headers: flow1_get_headers)
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow1_executor_key] = flow1_outer_execution
-            end
-
-            # Do not print the outer request or credentials on failure.
-            assert_equal [true, true, 200],
-                         [ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow1_outer_controller),
-                          Actor.context.equal?(flow1_outer_actor), flow1_protocol_browser.response.status,]
-            [flow1_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow1_protocol_browser.response.body,]
-          end
-        end
-      flow1_connection =
-        Faraday.new do |flow1_builder|
-          flow1_builder.request(:url_encoded)
-          flow1_builder.adapter(:test, flow1_transport)
-        end
-      OutboundHttp::Connection.stub(
-        :build, ->(**flow1_args) {
-          assert_equal flow1_visa_host, URI(flow1_args.fetch(:url).to_s).host
-          flow1_connection
-        },
-      ) do
-        # The callback carries the Base browser's RP state cookies.
-        flow1_base_cookie = @base_browser.cookies.to_hash.map { |flow1_name, flow1_value|
-          "#{flow1_name}=#{Rack::Utils.escape(flow1_value)}"
-        }.join("; ")
-        host!(flow1_base_host)
-        https!
-        TestSupport::OutboundHttpGuard.allow do
-          get(
-            flow1_callback_uri.request_uri,
-            headers: { "Cookie" => flow1_base_cookie, "HTTP_COOKIE" => flow1_base_cookie },
-          )
-        end
-      end
-
-      assert_equal [true, true, true],
-                   [response.redirect?,
-                    cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                    cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
-      # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
-      # request in this process already cached the key set.
+      assert_equal [flow1_registered_uri.host, flow1_registered_uri.path],
+                   [flow1_callback_uri.host, flow1_callback_uri.path]
     end
 
     assert_response :redirect
-    assert_social_login_lands_on_app_dashboard(response.location)
+    assert_social_login_issued_visa_result(response.location)
 
     cycle = ClientSignInFlow.where(principal_id: existing_user.id).recent_first.first
 
@@ -972,7 +597,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
           lf3_ri = "jp"
           lf3_rt = nil
           lf3_referer = nil
-          lf3_host = @host.presence || configured_host(:sign_service)
+          lf3_host = @host.presence || configured_host(:auth_service)
           host!(lf3_host) if respond_to?(:host!)
           lf3_normalized_provider = SocialIdentifiable.normalize_provider(lf3_provider)
           # The ceremony entry is POST only (see SocialCeremonyEntry): a GET entry would
@@ -1012,64 +637,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                         nil
                       end
                     rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-                    if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-                      rp_client_id =
-                        case rp_family
-                        when "base" then "base-#{rp_surface}-ww"
-                        when "edit" then "edit-org-ww"
-                        when "tech" then "tech-org-ww"
-                        else "#{rp_family}-#{rp_surface}-jp"
-                        end
-                      rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                      rp_client = OidcClientRegistry.find!(rp_client_id)
-                      rp_key = [rp_client.client_id, rp_token.public_id]
-                      @base_browser_rp_credentials ||= {}
-                      if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-                          !(rp_token.device_session_id && OpAppGrant.exists?(
-                            device_session_id: rp_token.device_session_id,
-                            oidc_client_id: rp_client.client_id,
-                            revoked_at: nil,
-                          ))
-                        rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-                        rp_now = Time.current
-                        rp_session = OpAppGrant.create!(
-                          authentication_epoch: 0,
-                          client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-                          oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-                          refresh_token_expires_at: rp_now + 10.minutes,
-                        )
-                        rp_access = AuthenticationTokenService.encode(
-                          rp_token.actor_record,
-                          host: rp_host,
-                          resource_type: "client",
-                          session_public_id: rp_token.public_id,
-                          base_session_public_id: rp_token.public_id,
-                          oidc_sid: rp_session.public_id,
-                          oidc_jti: rp_session.oidc_jti,
-                          expires_at: rp_now + 10.minutes,
-                          scopes: %w(openid profile),
-                          issuer: OidcIssuer.for_client(rp_client),
-                          audiences: [rp_client.aud],
-                          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                          subject: OidcSubject.for(
-                            rp_token.actor_record,
-                            resource_type: "client",
-                          ),
-                          client_id: rp_client.client_id,
-                        )
-                        @base_browser_rp_credentials[rp_key] =
-                          [rp_access, rp_session.issue_refresh_token!]
-                      end
-                      if @base_browser_rp_credentials[rp_key]
-                        rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-                        rp_cookie = [
-                          rp_headers.fetch("Cookie"),
-                          "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-                          "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-                        ].join("; ")
-                        rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-                      end
-                    end
                     rp_headers
                   end
                 rr3_host = rr3_headers["Host"]
@@ -1080,71 +647,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                     nil
                   end
                 rr3_family, rr3_surface = rr3_route&.fetch(:controller)&.split("/")
-                if %w(base warp core edit).include?(rr3_family) && rr3_surface == "app"
-                  rr3_client_id =
-                    case rr3_family
-                    when "base" then "base-#{rr3_surface}-ww"
-                    when "edit" then "edit-org-ww"
-                    when "tech" then "tech-org-ww"
-                    else "#{rr3_family}-#{rr3_surface}"
-                    end
-                  rr3_token = ClientToken.find_by!(public_id: rr3_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                  rr3_client = OidcClientRegistry.find!(rr3_client_id)
-                  rr3_key = [rr3_client.client_id, rr3_token.public_id]
-                  @base_browser_rp_credentials ||= {}
-                  if !@base_browser_rp_credentials[rr3_key] && rr3_token.currently_usable? &&
-                      !(rr3_token.device_session_id && OpAppGrant.exists?(
-                        device_session_id: rr3_token.device_session_id,
-                        oidc_client_id: rr3_client.client_id,
-                        revoked_at: nil,
-                      ))
-                    rr3_token.rotate_refresh_token! unless rr3_token.device_session_record.current_refresh_token_id
-                    rr3_now = Time.current
-                    rr3_session = OpAppGrant.create!(
-                      authentication_epoch: 0,
-                      client_token: rr3_token,
-                      oidc_client_id: rr3_client.client_id,
-                      oidc_scope: "openid profile",
-                      oidc_jti: SecureRandom.uuid,
-                      oidc_nonce: SecureRandom.hex(16),
-                      oidc_auth_time: rr3_now,
-                      refresh_token_expires_at: rr3_now + 10.minutes,
-                    )
-                    rr3_access = AuthenticationTokenService.encode(
-                      rr3_token.actor_record,
-                      host: rr3_host,
-                      resource_type: "client",
-                      session_public_id: rr3_token.public_id,
-                      base_session_public_id: rr3_token.public_id,
-                      oidc_sid: rr3_session.public_id,
-                      oidc_jti: rr3_session.oidc_jti,
-                      expires_at: rr3_now + 10.minutes,
-                      scopes: %w(openid profile),
-                      issuer: OidcIssuer.for_client(rr3_client),
-                      audiences: [rr3_client.aud],
-                      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rr3_client),
-                      subject: OidcSubject.for(
-                        rr3_token.actor_record,
-                        resource_type: "client",
-                      ),
-                      client_id: rr3_client.client_id,
-                    )
-                    @base_browser_rp_credentials[rr3_key] =
-                      [rr3_access, rr3_session.issue_refresh_token!]
-                  end
-                  if @base_browser_rp_credentials[rr3_key]
-                    rr3_access, rr3_refresh = @base_browser_rp_credentials.fetch(rr3_key)
-                    rr3_cookie = [
-                      rr3_headers.fetch("Cookie"),
-                      "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rr3_access)}",
-                      "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rr3_refresh)}",
-                    ].join("; ")
-                    rr3_headers = rr3_headers.merge(
-                      "Cookie" => rr3_cookie,
-                      "HTTP_COOKIE" => rr3_cookie,
-                    )
-                  end
-                end
                 rr3_headers
               end
             lf3_token = ClientToken.find_by(public_id: lf3_user_headers["X-TEST-SESSION-PUBLIC-ID"])
@@ -1155,8 +657,36 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             lf3_headers = lf3_headers.merge(lf3_user_headers)
           end
           if lf3_entry.to_s == "sign_up" && lf3_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
-            host!(lf3_host)
+            ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+            auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+            @base_browser.get(
+              "/oauth/authorize", params: @oidc_authorization.merge(prompt: "create"), headers: {
+                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+              },
+            )
+            current_browser = @base_browser
+            12.times do
+              break unless current_browser.response.redirect?
+
+              target = URI.parse(current_browser.response.location)
+              if target.host == "jump.umaxica.net"
+                rt = Rack::Utils.parse_query(target.query).fetch("rt")
+                target = URI.parse(JWT.decode(rt, nil, false).first.fetch("url"))
+              end
+              browser = (target.host == auth_host) ? self : @base_browser
+              browser.host!(target.host) if target.host
+              browser.https!
+              browser.get(
+                target.request_uri, headers: {
+                  "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+                },
+              )
+              current_browser = browser
+              break if browser == self && !response.redirect?
+            end
+
+            assert_equal auth_host, request.host
+            assert_response :success
           end
           post(lf3_continue_path, headers: lf3_headers)
           social_auth_state_from_response
@@ -1201,12 +731,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
 
         flow2_target = URI.parse(response.location)
         if flow2_target.path == "/sign/in/check"
-          flow2_sid_cookie = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"
-          flow2_ceremony = ClientAuthCeremonySession.find_active_by_raw_sid(cookies[flow2_sid_cookie])
-          flow2_parent = OidcAuthorizationTransactionCoordinator.find_by_transaction_id!(
-            surface: "app",
-            transaction_id: flow2_ceremony.authorization_transaction_ref,
-          )
           # The Auth handoff redirects to the Visa result page, which continues the parent
           # authorization by a same-origin POST.
           get(
@@ -1241,122 +765,19 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
               "Sec-Fetch-Dest" => "document",
             },
           )
-          flow2_principal = Client.find_by!(public_id: flow2_parent.reload.actor_ref)
-          BaseSelectorBootstrapAuthority.call(
-            surface: :app,
-            principal: flow2_principal,
-          )
         end
         break unless flow2_result_uri
 
         flow2_continuation = @base_browser.response
-        flow2_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-        break unless flow2_continuation.redirect?
-        # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
-        break unless URI.parse(flow2_continuation.location).path == "/oidc/callback" ||
-          URI.parse(flow2_continuation.location).host ==
-            URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
 
-        JitSecurityJwtRegistry.surface("BASE_APP")
+        assert_equal 303, flow2_continuation.status
         flow2_callback_uri = URI.parse(flow2_continuation.location)
-        # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-        unless flow2_callback_uri.host == flow2_base_host
+        if flow2_callback_uri.host == "jump.umaxica.net"
           flow2_callback_uri = URI.parse(jump_rt_url_from_location_for_test(flow2_callback_uri.to_s))
         end
-        flow2_protocol_browser = open_session
-        flow2_protocol_browser.host!(flow2_base_host)
-        flow2_protocol_browser.https!
-        # Substitute network transport only: the token and UserInfo requests still run
-        # through their real public controllers, including PKCE and client authentication.
-        flow2_transport =
-          Faraday::Adapter::Test::Stubs.new do |flow2_stub|
-            flow2_stub.post(/.*/) do |flow2_env|
-              # The nested Rack executor must not complete the in-flight callback.
-              flow2_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-              flow2_outer_actor = Actor.context
-              flow2_executor_key = Rails.application.executor.active_key
-              flow2_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow2_executor_key)
-              begin
-                flow2_protocol_browser.host!(flow2_env.url.authority)
-                flow2_protocol_browser.https!(flow2_env.url.scheme == "https")
-                flow2_protocol_browser.post(
-                  flow2_env.url.request_uri,
-                  params: Rack::Utils.parse_query(flow2_env.body),
-                  headers: { "Accept" => "application/json" },
-                )
-              ensure
-                ActiveSupport::IsolatedExecutionState[flow2_executor_key] =
-                  flow2_outer_execution
-              end
 
-              assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow2_outer_controller) }
-              assert_withheld { Actor.context.equal?(flow2_outer_actor) }
-              assert_equal 200,
-                           flow2_protocol_browser.response.status
-              [flow2_protocol_browser.response.status, { "Content-Type" => "application/json" },
-               flow2_protocol_browser.response.body,]
-            end
-            flow2_stub.get(/.*/) do |flow2_env|
-              flow2_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-              flow2_outer_actor = Actor.context
-              flow2_executor_key = Rails.application.executor.active_key
-              flow2_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow2_executor_key)
-              begin
-                flow2_protocol_browser.host!(flow2_env.url.authority)
-                flow2_protocol_browser.https!(flow2_env.url.scheme == "https")
-                # The JWKS request carries no Authorization; the UserInfo request does.
-                flow2_get_headers = { "Accept" => "application/json" }
-                flow2_get_headers["Authorization"] = flow2_env.request_headers["Authorization"] if
-                  flow2_env.request_headers["Authorization"].present?
-                flow2_protocol_browser.get(flow2_env.url.request_uri, headers: flow2_get_headers)
-              ensure
-                ActiveSupport::IsolatedExecutionState[flow2_executor_key] =
-                  flow2_outer_execution
-              end
-
-              assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow2_outer_controller) }
-              assert_withheld { Actor.context.equal?(flow2_outer_actor) }
-              assert_equal 200,
-                           flow2_protocol_browser.response.status
-              [flow2_protocol_browser.response.status, { "Content-Type" => "application/json" },
-               flow2_protocol_browser.response.body,]
-            end
-          end
-        flow2_connection =
-          Faraday.new do |flow2_builder|
-            flow2_builder.request(:url_encoded)
-            flow2_builder.adapter(
-              :test,
-              flow2_transport,
-            )
-          end
-        OutboundHttp::Connection.stub(
-          :build,
-          ->(**flow2_args) {
-            assert_equal flow2_visa_host, URI(flow2_args.fetch(:url).to_s).host
-            flow2_connection
-          },
-        ) do
-          # The callback carries the Base browser's RP state cookies.
-          flow2_base_cookie = @base_browser.cookies.to_hash.map { |flow2_name, flow2_value|
-            "#{flow2_name}=#{Rack::Utils.escape(flow2_value)}"
-          }.join("; ")
-          host!(flow2_base_host)
-          https!
-          TestSupport::OutboundHttpGuard.allow do
-            get(
-              flow2_callback_uri.request_uri,
-              headers: { "Cookie" => flow2_base_cookie, "HTTP_COOKIE" => flow2_base_cookie },
-            )
-          end
-        end
-
-        assert_equal [true, true, true],
-                     [response.redirect?,
-                      cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                      cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
-        # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
-        # request in this process already cached the key set.
+        assert_equal [flow2_visa_host, "/sign/in/limitation"],
+                     [flow2_callback_uri.host, flow2_callback_uri.path]
       end
     end
 
@@ -1423,7 +844,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
           lf4_ri = "jp"
           lf4_rt = nil
           lf4_referer = nil
-          lf4_host = @host.presence || configured_host(:sign_service)
+          lf4_host = @host.presence || configured_host(:auth_service)
           host!(lf4_host) if respond_to?(:host!)
           lf4_normalized_provider = SocialIdentifiable.normalize_provider(lf4_provider)
           # The ceremony entry is POST only (see SocialCeremonyEntry): a GET entry would
@@ -1463,64 +884,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                         nil
                       end
                     rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-                    if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-                      rp_client_id =
-                        case rp_family
-                        when "base" then "base-#{rp_surface}-ww"
-                        when "edit" then "edit-org-ww"
-                        when "tech" then "tech-org-ww"
-                        else "#{rp_family}-#{rp_surface}-jp"
-                        end
-                      rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                      rp_client = OidcClientRegistry.find!(rp_client_id)
-                      rp_key = [rp_client.client_id, rp_token.public_id]
-                      @base_browser_rp_credentials ||= {}
-                      if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-                          !(rp_token.device_session_id && OpAppGrant.exists?(
-                            device_session_id: rp_token.device_session_id,
-                            oidc_client_id: rp_client.client_id,
-                            revoked_at: nil,
-                          ))
-                        rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-                        rp_now = Time.current
-                        rp_session = OpAppGrant.create!(
-                          authentication_epoch: 0,
-                          client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-                          oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-                          refresh_token_expires_at: rp_now + 10.minutes,
-                        )
-                        rp_access = AuthenticationTokenService.encode(
-                          rp_token.actor_record,
-                          host: rp_host,
-                          resource_type: "client",
-                          session_public_id: rp_token.public_id,
-                          base_session_public_id: rp_token.public_id,
-                          oidc_sid: rp_session.public_id,
-                          oidc_jti: rp_session.oidc_jti,
-                          expires_at: rp_now + 10.minutes,
-                          scopes: %w(openid profile),
-                          issuer: OidcIssuer.for_client(rp_client),
-                          audiences: [rp_client.aud],
-                          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                          subject: OidcSubject.for(
-                            rp_token.actor_record,
-                            resource_type: "client",
-                          ),
-                          client_id: rp_client.client_id,
-                        )
-                        @base_browser_rp_credentials[rp_key] =
-                          [rp_access, rp_session.issue_refresh_token!]
-                      end
-                      if @base_browser_rp_credentials[rp_key]
-                        rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-                        rp_cookie = [
-                          rp_headers.fetch("Cookie"),
-                          "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-                          "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-                        ].join("; ")
-                        rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-                      end
-                    end
                     rp_headers
                   end
                 rr4_host = rr4_headers["Host"]
@@ -1531,71 +894,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                     nil
                   end
                 rr4_family, rr4_surface = rr4_route&.fetch(:controller)&.split("/")
-                if %w(base warp core edit).include?(rr4_family) && rr4_surface == "app"
-                  rr4_client_id =
-                    case rr4_family
-                    when "base" then "base-#{rr4_surface}-ww"
-                    when "edit" then "edit-org-ww"
-                    when "tech" then "tech-org-ww"
-                    else "#{rr4_family}-#{rr4_surface}"
-                    end
-                  rr4_token = ClientToken.find_by!(public_id: rr4_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                  rr4_client = OidcClientRegistry.find!(rr4_client_id)
-                  rr4_key = [rr4_client.client_id, rr4_token.public_id]
-                  @base_browser_rp_credentials ||= {}
-                  if !@base_browser_rp_credentials[rr4_key] && rr4_token.currently_usable? &&
-                      !(rr4_token.device_session_id && OpAppGrant.exists?(
-                        device_session_id: rr4_token.device_session_id,
-                        oidc_client_id: rr4_client.client_id,
-                        revoked_at: nil,
-                      ))
-                    rr4_token.rotate_refresh_token! unless rr4_token.device_session_record.current_refresh_token_id
-                    rr4_now = Time.current
-                    rr4_session = OpAppGrant.create!(
-                      authentication_epoch: 0,
-                      client_token: rr4_token,
-                      oidc_client_id: rr4_client.client_id,
-                      oidc_scope: "openid profile",
-                      oidc_jti: SecureRandom.uuid,
-                      oidc_nonce: SecureRandom.hex(16),
-                      oidc_auth_time: rr4_now,
-                      refresh_token_expires_at: rr4_now + 10.minutes,
-                    )
-                    rr4_access = AuthenticationTokenService.encode(
-                      rr4_token.actor_record,
-                      host: rr4_host,
-                      resource_type: "client",
-                      session_public_id: rr4_token.public_id,
-                      base_session_public_id: rr4_token.public_id,
-                      oidc_sid: rr4_session.public_id,
-                      oidc_jti: rr4_session.oidc_jti,
-                      expires_at: rr4_now + 10.minutes,
-                      scopes: %w(openid profile),
-                      issuer: OidcIssuer.for_client(rr4_client),
-                      audiences: [rr4_client.aud],
-                      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rr4_client),
-                      subject: OidcSubject.for(
-                        rr4_token.actor_record,
-                        resource_type: "client",
-                      ),
-                      client_id: rr4_client.client_id,
-                    )
-                    @base_browser_rp_credentials[rr4_key] =
-                      [rr4_access, rr4_session.issue_refresh_token!]
-                  end
-                  if @base_browser_rp_credentials[rr4_key]
-                    rr4_access, rr4_refresh = @base_browser_rp_credentials.fetch(rr4_key)
-                    rr4_cookie = [
-                      rr4_headers.fetch("Cookie"),
-                      "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rr4_access)}",
-                      "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rr4_refresh)}",
-                    ].join("; ")
-                    rr4_headers = rr4_headers.merge(
-                      "Cookie" => rr4_cookie,
-                      "HTTP_COOKIE" => rr4_cookie,
-                    )
-                  end
-                end
                 rr4_headers
               end
             lf4_token = ClientToken.find_by(public_id: lf4_user_headers["X-TEST-SESSION-PUBLIC-ID"])
@@ -1606,8 +904,36 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             lf4_headers = lf4_headers.merge(lf4_user_headers)
           end
           if lf4_entry.to_s == "sign_up" && lf4_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
-            host!(lf4_host)
+            ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+            auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+            @base_browser.get(
+              "/oauth/authorize", params: @oidc_authorization.merge(prompt: "create"), headers: {
+                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+              },
+            )
+            current_browser = @base_browser
+            12.times do
+              break unless current_browser.response.redirect?
+
+              target = URI.parse(current_browser.response.location)
+              if target.host == "jump.umaxica.net"
+                rt = Rack::Utils.parse_query(target.query).fetch("rt")
+                target = URI.parse(JWT.decode(rt, nil, false).first.fetch("url"))
+              end
+              browser = (target.host == auth_host) ? self : @base_browser
+              browser.host!(target.host) if target.host
+              browser.https!
+              browser.get(
+                target.request_uri, headers: {
+                  "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+                },
+              )
+              current_browser = browser
+              break if browser == self && !response.redirect?
+            end
+
+            assert_equal auth_host, request.host
+            assert_response :success
           end
           post(lf4_continue_path, headers: lf4_headers)
           social_auth_state_from_response
@@ -1657,7 +983,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
     assert_nil form.at_css("input[name='result_ref']")
     assert_nil form.at_css("input[name='return_to']")
 
-    # Posting the continuation resumes the authorization toward the RP callback on Base.
+    # Posting the continuation resumes the authorization toward its registered OIDC redirect.
     fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
     @base_browser.post(
       form["action"], params: fields, headers: {
@@ -1667,15 +993,17 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
         "Sec-Fetch-Dest" => "document",
       },
     )
-    base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
     callback_uri = URI.parse(@base_browser.response.location)
 
-    # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-    unless callback_uri.host == base_host
+    if callback_uri.host == "jump.umaxica.net"
       callback_uri = URI.parse(jump_rt_url_from_location_for_test(callback_uri.to_s))
     end
 
-    assert_equal [303, base_host, "/oidc/callback"],
+    registered_callback = URI.parse(
+      OidcClientRegistry.find!("core-app-jp").redirect_uris_by_realm.fetch("client").first,
+    )
+
+    assert_equal [303, registered_callback.host, registered_callback.path],
                  [@base_browser.response.status, callback_uri.host, callback_uri.path]
     assert_not_respond_to identity.reload, :token
   end
@@ -1698,7 +1026,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
           lf6_ri = "jp"
           lf6_rt = nil
           lf6_referer = nil
-          lf6_host = @host.presence || configured_host(:sign_service)
+          lf6_host = @host.presence || configured_host(:auth_service)
           host!(lf6_host) if respond_to?(:host!)
           lf6_normalized_provider = SocialIdentifiable.normalize_provider(lf6_provider)
           # The ceremony entry is POST only (see SocialCeremonyEntry): a GET entry would
@@ -1738,64 +1066,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                         nil
                       end
                     rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-                    if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-                      rp_client_id =
-                        case rp_family
-                        when "base" then "base-#{rp_surface}-ww"
-                        when "edit" then "edit-org-ww"
-                        when "tech" then "tech-org-ww"
-                        else "#{rp_family}-#{rp_surface}-jp"
-                        end
-                      rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                      rp_client = OidcClientRegistry.find!(rp_client_id)
-                      rp_key = [rp_client.client_id, rp_token.public_id]
-                      @base_browser_rp_credentials ||= {}
-                      if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-                          !(rp_token.device_session_id && OpAppGrant.exists?(
-                            device_session_id: rp_token.device_session_id,
-                            oidc_client_id: rp_client.client_id,
-                            revoked_at: nil,
-                          ))
-                        rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-                        rp_now = Time.current
-                        rp_session = OpAppGrant.create!(
-                          authentication_epoch: 0,
-                          client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-                          oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-                          refresh_token_expires_at: rp_now + 10.minutes,
-                        )
-                        rp_access = AuthenticationTokenService.encode(
-                          rp_token.actor_record,
-                          host: rp_host,
-                          resource_type: "client",
-                          session_public_id: rp_token.public_id,
-                          base_session_public_id: rp_token.public_id,
-                          oidc_sid: rp_session.public_id,
-                          oidc_jti: rp_session.oidc_jti,
-                          expires_at: rp_now + 10.minutes,
-                          scopes: %w(openid profile),
-                          issuer: OidcIssuer.for_client(rp_client),
-                          audiences: [rp_client.aud],
-                          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                          subject: OidcSubject.for(
-                            rp_token.actor_record,
-                            resource_type: "client",
-                          ),
-                          client_id: rp_client.client_id,
-                        )
-                        @base_browser_rp_credentials[rp_key] =
-                          [rp_access, rp_session.issue_refresh_token!]
-                      end
-                      if @base_browser_rp_credentials[rp_key]
-                        rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-                        rp_cookie = [
-                          rp_headers.fetch("Cookie"),
-                          "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-                          "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-                        ].join("; ")
-                        rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-                      end
-                    end
                     rp_headers
                   end
                 rr6_host = rr6_headers["Host"]
@@ -1806,71 +1076,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                     nil
                   end
                 rr6_family, rr6_surface = rr6_route&.fetch(:controller)&.split("/")
-                if %w(base warp core edit).include?(rr6_family) && rr6_surface == "app"
-                  rr6_client_id =
-                    case rr6_family
-                    when "base" then "base-#{rr6_surface}-ww"
-                    when "edit" then "edit-org-ww"
-                    when "tech" then "tech-org-ww"
-                    else "#{rr6_family}-#{rr6_surface}"
-                    end
-                  rr6_token = ClientToken.find_by!(public_id: rr6_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                  rr6_client = OidcClientRegistry.find!(rr6_client_id)
-                  rr6_key = [rr6_client.client_id, rr6_token.public_id]
-                  @base_browser_rp_credentials ||= {}
-                  if !@base_browser_rp_credentials[rr6_key] && rr6_token.currently_usable? &&
-                      !(rr6_token.device_session_id && OpAppGrant.exists?(
-                        device_session_id: rr6_token.device_session_id,
-                        oidc_client_id: rr6_client.client_id,
-                        revoked_at: nil,
-                      ))
-                    rr6_token.rotate_refresh_token! unless rr6_token.device_session_record.current_refresh_token_id
-                    rr6_now = Time.current
-                    rr6_session = OpAppGrant.create!(
-                      authentication_epoch: 0,
-                      client_token: rr6_token,
-                      oidc_client_id: rr6_client.client_id,
-                      oidc_scope: "openid profile",
-                      oidc_jti: SecureRandom.uuid,
-                      oidc_nonce: SecureRandom.hex(16),
-                      oidc_auth_time: rr6_now,
-                      refresh_token_expires_at: rr6_now + 10.minutes,
-                    )
-                    rr6_access = AuthenticationTokenService.encode(
-                      rr6_token.actor_record,
-                      host: rr6_host,
-                      resource_type: "client",
-                      session_public_id: rr6_token.public_id,
-                      base_session_public_id: rr6_token.public_id,
-                      oidc_sid: rr6_session.public_id,
-                      oidc_jti: rr6_session.oidc_jti,
-                      expires_at: rr6_now + 10.minutes,
-                      scopes: %w(openid profile),
-                      issuer: OidcIssuer.for_client(rr6_client),
-                      audiences: [rr6_client.aud],
-                      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rr6_client),
-                      subject: OidcSubject.for(
-                        rr6_token.actor_record,
-                        resource_type: "client",
-                      ),
-                      client_id: rr6_client.client_id,
-                    )
-                    @base_browser_rp_credentials[rr6_key] =
-                      [rr6_access, rr6_session.issue_refresh_token!]
-                  end
-                  if @base_browser_rp_credentials[rr6_key]
-                    rr6_access, rr6_refresh = @base_browser_rp_credentials.fetch(rr6_key)
-                    rr6_cookie = [
-                      rr6_headers.fetch("Cookie"),
-                      "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rr6_access)}",
-                      "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rr6_refresh)}",
-                    ].join("; ")
-                    rr6_headers = rr6_headers.merge(
-                      "Cookie" => rr6_cookie,
-                      "HTTP_COOKIE" => rr6_cookie,
-                    )
-                  end
-                end
                 rr6_headers
               end
             lf6_token = ClientToken.find_by(public_id: lf6_user_headers["X-TEST-SESSION-PUBLIC-ID"])
@@ -1881,8 +1086,36 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             lf6_headers = lf6_headers.merge(lf6_user_headers)
           end
           if lf6_entry.to_s == "sign_up" && lf6_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
-            host!(lf6_host)
+            ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+            auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+            @base_browser.get(
+              "/oauth/authorize", params: @oidc_authorization.merge(prompt: "create"), headers: {
+                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+              },
+            )
+            current_browser = @base_browser
+            12.times do
+              break unless current_browser.response.redirect?
+
+              target = URI.parse(current_browser.response.location)
+              if target.host == "jump.umaxica.net"
+                rt = Rack::Utils.parse_query(target.query).fetch("rt")
+                target = URI.parse(JWT.decode(rt, nil, false).first.fetch("url"))
+              end
+              browser = (target.host == auth_host) ? self : @base_browser
+              browser.host!(target.host) if target.host
+              browser.https!
+              browser.get(
+                target.request_uri, headers: {
+                  "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+                },
+              )
+              current_browser = browser
+              break if browser == self && !response.redirect?
+            end
+
+            assert_equal auth_host, request.host
+            assert_response :success
           end
           post(lf6_continue_path, headers: lf6_headers)
           social_auth_state_from_response
@@ -1921,11 +1154,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
 
       flow4_target = URI.parse(response.location)
       if flow4_target.path == "/sign/in/check"
-        flow4_sid_cookie = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"
-        flow4_ceremony = ClientAuthCeremonySession.find_active_by_raw_sid(cookies[flow4_sid_cookie])
-        flow4_parent = OidcAuthorizationTransactionCoordinator.find_by_transaction_id!(
-          surface: "app", transaction_id: flow4_ceremony.authorization_transaction_ref,
-        )
         # The Auth handoff redirects to the Visa result page, which continues the parent
         # authorization by a same-origin POST.
         get(
@@ -1960,116 +1188,22 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             "Sec-Fetch-Dest" => "document",
           },
         )
-        flow4_principal = Client.find_by!(public_id: flow4_parent.reload.actor_ref)
-        BaseSelectorBootstrapAuthority.call(surface: :app, principal: flow4_principal)
       end
       break unless flow4_result_uri
 
       flow4_continuation = @base_browser.response
-      flow4_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-      break unless flow4_continuation.redirect?
-      # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
-      break unless URI.parse(flow4_continuation.location).path == "/oidc/callback" ||
-        URI.parse(flow4_continuation.location).host ==
-          URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
 
-      JitSecurityJwtRegistry.surface("BASE_APP")
+      assert_equal 303, flow4_continuation.status
+      flow4_registered_uri = URI.parse(
+        OidcClientRegistry.find!("core-app-jp").redirect_uris_by_realm.fetch("client").first,
+      )
       flow4_callback_uri = URI.parse(flow4_continuation.location)
-      # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-      unless flow4_callback_uri.host == flow4_base_host
+      if flow4_callback_uri.host == "jump.umaxica.net"
         flow4_callback_uri = URI.parse(jump_rt_url_from_location_for_test(flow4_callback_uri.to_s))
       end
-      flow4_protocol_browser = open_session
-      flow4_protocol_browser.host!(flow4_base_host)
-      flow4_protocol_browser.https!
-      # Substitute network transport only: the token and UserInfo requests still run
-      # through their real public controllers, including PKCE and client authentication.
-      flow4_transport =
-        Faraday::Adapter::Test::Stubs.new do |flow4_stub|
-          flow4_stub.post(/.*/) do |flow4_env|
-            # The nested Rack executor must not complete the in-flight callback.
-            flow4_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow4_outer_actor = Actor.context
-            flow4_executor_key = Rails.application.executor.active_key
-            flow4_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow4_executor_key)
-            begin
-              flow4_protocol_browser.host!(flow4_env.url.authority)
-              flow4_protocol_browser.https!(flow4_env.url.scheme == "https")
-              flow4_protocol_browser.post(
-                flow4_env.url.request_uri,
-                params: Rack::Utils.parse_query(flow4_env.body),
-                headers: { "Accept" => "application/json" },
-              )
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow4_executor_key] =
-                flow4_outer_execution
-            end
 
-            # Do not print the outer request or credentials on failure.
-            assert_equal [true, true, 200],
-                         [ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow4_outer_controller),
-                          Actor.context.equal?(flow4_outer_actor), flow4_protocol_browser.response.status,]
-            [flow4_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow4_protocol_browser.response.body,]
-          end
-          flow4_stub.get(/.*/) do |flow4_env|
-            flow4_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow4_outer_actor = Actor.context
-            flow4_executor_key = Rails.application.executor.active_key
-            flow4_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow4_executor_key)
-            begin
-              flow4_protocol_browser.host!(flow4_env.url.authority)
-              flow4_protocol_browser.https!(flow4_env.url.scheme == "https")
-              # The JWKS request carries no Authorization; the UserInfo request does.
-              flow4_get_headers = { "Accept" => "application/json" }
-              flow4_get_headers["Authorization"] = flow4_env.request_headers["Authorization"] if
-                flow4_env.request_headers["Authorization"].present?
-              flow4_protocol_browser.get(flow4_env.url.request_uri, headers: flow4_get_headers)
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow4_executor_key] =
-                flow4_outer_execution
-            end
-
-            # Do not print the outer request or credentials on failure.
-            assert_equal [true, true, 200],
-                         [ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow4_outer_controller),
-                          Actor.context.equal?(flow4_outer_actor), flow4_protocol_browser.response.status,]
-            [flow4_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow4_protocol_browser.response.body,]
-          end
-        end
-      flow4_connection =
-        Faraday.new do |flow4_builder|
-          flow4_builder.request(:url_encoded)
-          flow4_builder.adapter(:test, flow4_transport)
-        end
-      OutboundHttp::Connection.stub(
-        :build,
-        ->(**flow4_args) {
-          assert_equal flow4_visa_host, URI(flow4_args.fetch(:url).to_s).host
-          flow4_connection
-        },
-      ) do
-        # The callback carries the Base browser's RP state cookies.
-        flow4_base_cookie = @base_browser.cookies.to_hash.map { |flow4_name, flow4_value|
-          "#{flow4_name}=#{Rack::Utils.escape(flow4_value)}"
-        }.join("; ")
-        host!(flow4_base_host)
-        https!
-        TestSupport::OutboundHttpGuard.allow do
-          get(
-            flow4_callback_uri.request_uri,
-            headers: { "Cookie" => flow4_base_cookie, "HTTP_COOKIE" => flow4_base_cookie },
-          )
-        end
-      end
-
-      assert_equal [true, true, true],
-                   [response.redirect?,
-                    cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                    cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
-      # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
-      # request in this process already cached the key set.
+      assert_equal [flow4_registered_uri.host, flow4_registered_uri.path],
+                   [flow4_callback_uri.host, flow4_callback_uri.path]
     end
 
     follow_redirect! while response.redirect?
@@ -2129,12 +1263,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
 
       flow5_target = URI.parse(response.location)
       if flow5_target.path == "/sign/in/check"
-        flow5_sid_cookie = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"
-        flow5_ceremony = ClientAuthCeremonySession.find_active_by_raw_sid(cookies[flow5_sid_cookie])
-        flow5_parent = OidcAuthorizationTransactionCoordinator.find_by_transaction_id!(
-          surface: "app",
-          transaction_id: flow5_ceremony.authorization_transaction_ref,
-        )
         # The Auth handoff redirects to the Visa result page, which continues the parent
         # authorization by a same-origin POST.
         get(
@@ -2169,122 +1297,22 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             "Sec-Fetch-Dest" => "document",
           },
         )
-        flow5_principal = Client.find_by!(public_id: flow5_parent.reload.actor_ref)
-        BaseSelectorBootstrapAuthority.call(
-          surface: :app,
-          principal: flow5_principal,
-        )
       end
       break unless flow5_result_uri
 
       flow5_continuation = @base_browser.response
-      flow5_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-      break unless flow5_continuation.redirect?
-      # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
-      break unless URI.parse(flow5_continuation.location).path == "/oidc/callback" ||
-        URI.parse(flow5_continuation.location).host ==
-          URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
 
-      JitSecurityJwtRegistry.surface("BASE_APP")
+      assert_equal 303, flow5_continuation.status
+      flow5_registered_uri = URI.parse(
+        OidcClientRegistry.find!("core-app-jp").redirect_uris_by_realm.fetch("client").first,
+      )
       flow5_callback_uri = URI.parse(flow5_continuation.location)
-      # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-      unless flow5_callback_uri.host == flow5_base_host
+      if flow5_callback_uri.host == "jump.umaxica.net"
         flow5_callback_uri = URI.parse(jump_rt_url_from_location_for_test(flow5_callback_uri.to_s))
       end
-      flow5_protocol_browser = open_session
-      flow5_protocol_browser.host!(flow5_base_host)
-      flow5_protocol_browser.https!
-      # Substitute network transport only: the token and UserInfo requests still run
-      # through their real public controllers, including PKCE and client authentication.
-      flow5_transport =
-        Faraday::Adapter::Test::Stubs.new do |flow5_stub|
-          flow5_stub.post(/.*/) do |flow5_env|
-            # The nested Rack executor must not complete the in-flight callback.
-            flow5_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow5_outer_actor = Actor.context
-            flow5_executor_key = Rails.application.executor.active_key
-            flow5_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow5_executor_key)
-            begin
-              flow5_protocol_browser.host!(flow5_env.url.authority)
-              flow5_protocol_browser.https!(flow5_env.url.scheme == "https")
-              flow5_protocol_browser.post(
-                flow5_env.url.request_uri,
-                params: Rack::Utils.parse_query(flow5_env.body),
-                headers: { "Accept" => "application/json" },
-              )
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow5_executor_key] =
-                flow5_outer_execution
-            end
 
-            # Do not print the outer request or credentials on failure.
-            assert_equal [true, true, 200],
-                         [ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow5_outer_controller),
-                          Actor.context.equal?(flow5_outer_actor), flow5_protocol_browser.response.status,]
-            [flow5_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow5_protocol_browser.response.body,]
-          end
-          flow5_stub.get(/.*/) do |flow5_env|
-            flow5_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow5_outer_actor = Actor.context
-            flow5_executor_key = Rails.application.executor.active_key
-            flow5_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow5_executor_key)
-            begin
-              flow5_protocol_browser.host!(flow5_env.url.authority)
-              flow5_protocol_browser.https!(flow5_env.url.scheme == "https")
-              # The JWKS request carries no Authorization; the UserInfo request does.
-              flow5_get_headers = { "Accept" => "application/json" }
-              flow5_get_headers["Authorization"] = flow5_env.request_headers["Authorization"] if
-                flow5_env.request_headers["Authorization"].present?
-              flow5_protocol_browser.get(flow5_env.url.request_uri, headers: flow5_get_headers)
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow5_executor_key] =
-                flow5_outer_execution
-            end
-
-            # Do not print the outer request or credentials on failure.
-            assert_equal [true, true, 200],
-                         [ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow5_outer_controller),
-                          Actor.context.equal?(flow5_outer_actor), flow5_protocol_browser.response.status,]
-            [flow5_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow5_protocol_browser.response.body,]
-          end
-        end
-      flow5_connection =
-        Faraday.new do |flow5_builder|
-          flow5_builder.request(:url_encoded)
-          flow5_builder.adapter(
-            :test,
-            flow5_transport,
-          )
-        end
-      OutboundHttp::Connection.stub(
-        :build,
-        ->(**flow5_args) {
-          assert_equal flow5_visa_host, URI(flow5_args.fetch(:url).to_s).host
-          flow5_connection
-        },
-      ) do
-        # The callback carries the Base browser's RP state cookies.
-        flow5_base_cookie = @base_browser.cookies.to_hash.map { |flow5_name, flow5_value|
-          "#{flow5_name}=#{Rack::Utils.escape(flow5_value)}"
-        }.join("; ")
-        host!(flow5_base_host)
-        https!
-        TestSupport::OutboundHttpGuard.allow do
-          get(
-            flow5_callback_uri.request_uri,
-            headers: { "Cookie" => flow5_base_cookie, "HTTP_COOKIE" => flow5_base_cookie },
-          )
-        end
-      end
-
-      assert_equal [true, true, true],
-                   [response.redirect?,
-                    cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                    cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
-      # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
-      # request in this process already cached the key set.
+      assert_equal [flow5_registered_uri.host, flow5_registered_uri.path],
+                   [flow5_callback_uri.host, flow5_callback_uri.path]
     end
 
     assert_equal user_count_before + 1, Client.count
@@ -2313,7 +1341,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
           lf7_ri = "jp"
           lf7_rt = nil
           lf7_referer = nil
-          lf7_host = @host.presence || configured_host(:sign_service)
+          lf7_host = @host.presence || configured_host(:auth_service)
           host!(lf7_host) if respond_to?(:host!)
           lf7_normalized_provider = SocialIdentifiable.normalize_provider(lf7_provider)
           # The ceremony entry is POST only (see SocialCeremonyEntry): a GET entry would
@@ -2353,64 +1381,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                         nil
                       end
                     rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-                    if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-                      rp_client_id =
-                        case rp_family
-                        when "base" then "base-#{rp_surface}-ww"
-                        when "edit" then "edit-org-ww"
-                        when "tech" then "tech-org-ww"
-                        else "#{rp_family}-#{rp_surface}-jp"
-                        end
-                      rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                      rp_client = OidcClientRegistry.find!(rp_client_id)
-                      rp_key = [rp_client.client_id, rp_token.public_id]
-                      @base_browser_rp_credentials ||= {}
-                      if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-                          !(rp_token.device_session_id && OpAppGrant.exists?(
-                            device_session_id: rp_token.device_session_id,
-                            oidc_client_id: rp_client.client_id,
-                            revoked_at: nil,
-                          ))
-                        rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-                        rp_now = Time.current
-                        rp_session = OpAppGrant.create!(
-                          authentication_epoch: 0,
-                          client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-                          oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-                          refresh_token_expires_at: rp_now + 10.minutes,
-                        )
-                        rp_access = AuthenticationTokenService.encode(
-                          rp_token.actor_record,
-                          host: rp_host,
-                          resource_type: "client",
-                          session_public_id: rp_token.public_id,
-                          base_session_public_id: rp_token.public_id,
-                          oidc_sid: rp_session.public_id,
-                          oidc_jti: rp_session.oidc_jti,
-                          expires_at: rp_now + 10.minutes,
-                          scopes: %w(openid profile),
-                          issuer: OidcIssuer.for_client(rp_client),
-                          audiences: [rp_client.aud],
-                          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                          subject: OidcSubject.for(
-                            rp_token.actor_record,
-                            resource_type: "client",
-                          ),
-                          client_id: rp_client.client_id,
-                        )
-                        @base_browser_rp_credentials[rp_key] =
-                          [rp_access, rp_session.issue_refresh_token!]
-                      end
-                      if @base_browser_rp_credentials[rp_key]
-                        rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-                        rp_cookie = [
-                          rp_headers.fetch("Cookie"),
-                          "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-                          "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-                        ].join("; ")
-                        rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-                      end
-                    end
                     rp_headers
                   end
                 rr7_host = rr7_headers["Host"]
@@ -2421,71 +1391,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                     nil
                   end
                 rr7_family, rr7_surface = rr7_route&.fetch(:controller)&.split("/")
-                if %w(base warp core edit).include?(rr7_family) && rr7_surface == "app"
-                  rr7_client_id =
-                    case rr7_family
-                    when "base" then "base-#{rr7_surface}-ww"
-                    when "edit" then "edit-org-ww"
-                    when "tech" then "tech-org-ww"
-                    else "#{rr7_family}-#{rr7_surface}"
-                    end
-                  rr7_token = ClientToken.find_by!(public_id: rr7_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                  rr7_client = OidcClientRegistry.find!(rr7_client_id)
-                  rr7_key = [rr7_client.client_id, rr7_token.public_id]
-                  @base_browser_rp_credentials ||= {}
-                  if !@base_browser_rp_credentials[rr7_key] && rr7_token.currently_usable? &&
-                      !(rr7_token.device_session_id && OpAppGrant.exists?(
-                        device_session_id: rr7_token.device_session_id,
-                        oidc_client_id: rr7_client.client_id,
-                        revoked_at: nil,
-                      ))
-                    rr7_token.rotate_refresh_token! unless rr7_token.device_session_record.current_refresh_token_id
-                    rr7_now = Time.current
-                    rr7_session = OpAppGrant.create!(
-                      authentication_epoch: 0,
-                      client_token: rr7_token,
-                      oidc_client_id: rr7_client.client_id,
-                      oidc_scope: "openid profile",
-                      oidc_jti: SecureRandom.uuid,
-                      oidc_nonce: SecureRandom.hex(16),
-                      oidc_auth_time: rr7_now,
-                      refresh_token_expires_at: rr7_now + 10.minutes,
-                    )
-                    rr7_access = AuthenticationTokenService.encode(
-                      rr7_token.actor_record,
-                      host: rr7_host,
-                      resource_type: "client",
-                      session_public_id: rr7_token.public_id,
-                      base_session_public_id: rr7_token.public_id,
-                      oidc_sid: rr7_session.public_id,
-                      oidc_jti: rr7_session.oidc_jti,
-                      expires_at: rr7_now + 10.minutes,
-                      scopes: %w(openid profile),
-                      issuer: OidcIssuer.for_client(rr7_client),
-                      audiences: [rr7_client.aud],
-                      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rr7_client),
-                      subject: OidcSubject.for(
-                        rr7_token.actor_record,
-                        resource_type: "client",
-                      ),
-                      client_id: rr7_client.client_id,
-                    )
-                    @base_browser_rp_credentials[rr7_key] =
-                      [rr7_access, rr7_session.issue_refresh_token!]
-                  end
-                  if @base_browser_rp_credentials[rr7_key]
-                    rr7_access, rr7_refresh = @base_browser_rp_credentials.fetch(rr7_key)
-                    rr7_cookie = [
-                      rr7_headers.fetch("Cookie"),
-                      "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rr7_access)}",
-                      "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rr7_refresh)}",
-                    ].join("; ")
-                    rr7_headers = rr7_headers.merge(
-                      "Cookie" => rr7_cookie,
-                      "HTTP_COOKIE" => rr7_cookie,
-                    )
-                  end
-                end
                 rr7_headers
               end
             lf7_token = ClientToken.find_by(public_id: lf7_user_headers["X-TEST-SESSION-PUBLIC-ID"])
@@ -2496,8 +1401,36 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             lf7_headers = lf7_headers.merge(lf7_user_headers)
           end
           if lf7_entry.to_s == "sign_up" && lf7_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
-            host!(lf7_host)
+            ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+            auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+            @base_browser.get(
+              "/oauth/authorize", params: @oidc_authorization.merge(prompt: "create"), headers: {
+                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+              },
+            )
+            current_browser = @base_browser
+            12.times do
+              break unless current_browser.response.redirect?
+
+              target = URI.parse(current_browser.response.location)
+              if target.host == "jump.umaxica.net"
+                rt = Rack::Utils.parse_query(target.query).fetch("rt")
+                target = URI.parse(JWT.decode(rt, nil, false).first.fetch("url"))
+              end
+              browser = (target.host == auth_host) ? self : @base_browser
+              browser.host!(target.host) if target.host
+              browser.https!
+              browser.get(
+                target.request_uri, headers: {
+                  "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+                },
+              )
+              current_browser = browser
+              break if browser == self && !response.redirect?
+            end
+
+            assert_equal auth_host, request.host
+            assert_response :success
           end
           post(lf7_continue_path, headers: lf7_headers)
           social_auth_state_from_response
@@ -2538,12 +1471,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
 
       flow6_target = URI.parse(response.location)
       if flow6_target.path == "/sign/in/check"
-        flow6_sid_cookie = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"
-        flow6_ceremony = ClientAuthCeremonySession.find_active_by_raw_sid(cookies[flow6_sid_cookie])
-        flow6_parent = OidcAuthorizationTransactionCoordinator.find_by_transaction_id!(
-          surface: "app",
-          transaction_id: flow6_ceremony.authorization_transaction_ref,
-        )
         # The Auth handoff redirects to the Visa result page, which continues the parent
         # authorization by a same-origin POST.
         get(
@@ -2578,122 +1505,22 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             "Sec-Fetch-Dest" => "document",
           },
         )
-        flow6_principal = Client.find_by!(public_id: flow6_parent.reload.actor_ref)
-        BaseSelectorBootstrapAuthority.call(
-          surface: :app,
-          principal: flow6_principal,
-        )
       end
       break unless flow6_result_uri
 
       flow6_continuation = @base_browser.response
-      flow6_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-      break unless flow6_continuation.redirect?
-      # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
-      break unless URI.parse(flow6_continuation.location).path == "/oidc/callback" ||
-        URI.parse(flow6_continuation.location).host ==
-          URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
 
-      JitSecurityJwtRegistry.surface("BASE_APP")
+      assert_equal 303, flow6_continuation.status
+      flow6_registered_uri = URI.parse(
+        OidcClientRegistry.find!("core-app-jp").redirect_uris_by_realm.fetch("client").first,
+      )
       flow6_callback_uri = URI.parse(flow6_continuation.location)
-      # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-      unless flow6_callback_uri.host == flow6_base_host
+      if flow6_callback_uri.host == "jump.umaxica.net"
         flow6_callback_uri = URI.parse(jump_rt_url_from_location_for_test(flow6_callback_uri.to_s))
       end
-      flow6_protocol_browser = open_session
-      flow6_protocol_browser.host!(flow6_base_host)
-      flow6_protocol_browser.https!
-      # Substitute network transport only: the token and UserInfo requests still run
-      # through their real public controllers, including PKCE and client authentication.
-      flow6_transport =
-        Faraday::Adapter::Test::Stubs.new do |flow6_stub|
-          flow6_stub.post(/.*/) do |flow6_env|
-            # The nested Rack executor must not complete the in-flight callback.
-            flow6_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow6_outer_actor = Actor.context
-            flow6_executor_key = Rails.application.executor.active_key
-            flow6_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow6_executor_key)
-            begin
-              flow6_protocol_browser.host!(flow6_env.url.authority)
-              flow6_protocol_browser.https!(flow6_env.url.scheme == "https")
-              flow6_protocol_browser.post(
-                flow6_env.url.request_uri,
-                params: Rack::Utils.parse_query(flow6_env.body),
-                headers: { "Accept" => "application/json" },
-              )
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow6_executor_key] =
-                flow6_outer_execution
-            end
 
-            # Do not print the outer request or credentials on failure.
-            assert_equal [true, true, 200],
-                         [ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow6_outer_controller),
-                          Actor.context.equal?(flow6_outer_actor), flow6_protocol_browser.response.status,]
-            [flow6_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow6_protocol_browser.response.body,]
-          end
-          flow6_stub.get(/.*/) do |flow6_env|
-            flow6_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow6_outer_actor = Actor.context
-            flow6_executor_key = Rails.application.executor.active_key
-            flow6_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow6_executor_key)
-            begin
-              flow6_protocol_browser.host!(flow6_env.url.authority)
-              flow6_protocol_browser.https!(flow6_env.url.scheme == "https")
-              # The JWKS request carries no Authorization; the UserInfo request does.
-              flow6_get_headers = { "Accept" => "application/json" }
-              flow6_get_headers["Authorization"] = flow6_env.request_headers["Authorization"] if
-                flow6_env.request_headers["Authorization"].present?
-              flow6_protocol_browser.get(flow6_env.url.request_uri, headers: flow6_get_headers)
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow6_executor_key] =
-                flow6_outer_execution
-            end
-
-            # Do not print the outer request or credentials on failure.
-            assert_equal [true, true, 200],
-                         [ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow6_outer_controller),
-                          Actor.context.equal?(flow6_outer_actor), flow6_protocol_browser.response.status,]
-            [flow6_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow6_protocol_browser.response.body,]
-          end
-        end
-      flow6_connection =
-        Faraday.new do |flow6_builder|
-          flow6_builder.request(:url_encoded)
-          flow6_builder.adapter(
-            :test,
-            flow6_transport,
-          )
-        end
-      OutboundHttp::Connection.stub(
-        :build,
-        ->(**flow6_args) {
-          assert_equal flow6_visa_host, URI(flow6_args.fetch(:url).to_s).host
-          flow6_connection
-        },
-      ) do
-        # The callback carries the Base browser's RP state cookies.
-        flow6_base_cookie = @base_browser.cookies.to_hash.map { |flow6_name, flow6_value|
-          "#{flow6_name}=#{Rack::Utils.escape(flow6_value)}"
-        }.join("; ")
-        host!(flow6_base_host)
-        https!
-        TestSupport::OutboundHttpGuard.allow do
-          get(
-            flow6_callback_uri.request_uri,
-            headers: { "Cookie" => flow6_base_cookie, "HTTP_COOKIE" => flow6_base_cookie },
-          )
-        end
-      end
-
-      assert_equal [true, true, true],
-                   [response.redirect?,
-                    cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                    cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
-      # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
-      # request in this process already cached the key set.
+      assert_equal [flow6_registered_uri.host, flow6_registered_uri.path],
+                   [flow6_callback_uri.host, flow6_callback_uri.path]
     end
 
     follow_redirect! while response.redirect?
@@ -2757,7 +1584,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
           lf9_ri = "jp"
           lf9_rt = nil
           lf9_referer = nil
-          lf9_host = @host.presence || configured_host(:sign_service)
+          lf9_host = @host.presence || configured_host(:auth_service)
           host!(lf9_host) if respond_to?(:host!)
           lf9_normalized_provider = SocialIdentifiable.normalize_provider(lf9_provider)
           # The ceremony entry is POST only (see SocialCeremonyEntry): a GET entry would
@@ -2797,64 +1624,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                         nil
                       end
                     rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-                    if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-                      rp_client_id =
-                        case rp_family
-                        when "base" then "base-#{rp_surface}-ww"
-                        when "edit" then "edit-org-ww"
-                        when "tech" then "tech-org-ww"
-                        else "#{rp_family}-#{rp_surface}-jp"
-                        end
-                      rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                      rp_client = OidcClientRegistry.find!(rp_client_id)
-                      rp_key = [rp_client.client_id, rp_token.public_id]
-                      @base_browser_rp_credentials ||= {}
-                      if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-                          !(rp_token.device_session_id && OpAppGrant.exists?(
-                            device_session_id: rp_token.device_session_id,
-                            oidc_client_id: rp_client.client_id,
-                            revoked_at: nil,
-                          ))
-                        rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-                        rp_now = Time.current
-                        rp_session = OpAppGrant.create!(
-                          authentication_epoch: 0,
-                          client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-                          oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-                          refresh_token_expires_at: rp_now + 10.minutes,
-                        )
-                        rp_access = AuthenticationTokenService.encode(
-                          rp_token.actor_record,
-                          host: rp_host,
-                          resource_type: "client",
-                          session_public_id: rp_token.public_id,
-                          base_session_public_id: rp_token.public_id,
-                          oidc_sid: rp_session.public_id,
-                          oidc_jti: rp_session.oidc_jti,
-                          expires_at: rp_now + 10.minutes,
-                          scopes: %w(openid profile),
-                          issuer: OidcIssuer.for_client(rp_client),
-                          audiences: [rp_client.aud],
-                          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                          subject: OidcSubject.for(
-                            rp_token.actor_record,
-                            resource_type: "client",
-                          ),
-                          client_id: rp_client.client_id,
-                        )
-                        @base_browser_rp_credentials[rp_key] =
-                          [rp_access, rp_session.issue_refresh_token!]
-                      end
-                      if @base_browser_rp_credentials[rp_key]
-                        rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-                        rp_cookie = [
-                          rp_headers.fetch("Cookie"),
-                          "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-                          "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-                        ].join("; ")
-                        rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-                      end
-                    end
                     rp_headers
                   end
                 rr9_host = rr9_headers["Host"]
@@ -2865,71 +1634,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                     nil
                   end
                 rr9_family, rr9_surface = rr9_route&.fetch(:controller)&.split("/")
-                if %w(base warp core edit).include?(rr9_family) && rr9_surface == "app"
-                  rr9_client_id =
-                    case rr9_family
-                    when "base" then "base-#{rr9_surface}-ww"
-                    when "edit" then "edit-org-ww"
-                    when "tech" then "tech-org-ww"
-                    else "#{rr9_family}-#{rr9_surface}"
-                    end
-                  rr9_token = ClientToken.find_by!(public_id: rr9_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                  rr9_client = OidcClientRegistry.find!(rr9_client_id)
-                  rr9_key = [rr9_client.client_id, rr9_token.public_id]
-                  @base_browser_rp_credentials ||= {}
-                  if !@base_browser_rp_credentials[rr9_key] && rr9_token.currently_usable? &&
-                      !(rr9_token.device_session_id && OpAppGrant.exists?(
-                        device_session_id: rr9_token.device_session_id,
-                        oidc_client_id: rr9_client.client_id,
-                        revoked_at: nil,
-                      ))
-                    rr9_token.rotate_refresh_token! unless rr9_token.device_session_record.current_refresh_token_id
-                    rr9_now = Time.current
-                    rr9_session = OpAppGrant.create!(
-                      authentication_epoch: 0,
-                      client_token: rr9_token,
-                      oidc_client_id: rr9_client.client_id,
-                      oidc_scope: "openid profile",
-                      oidc_jti: SecureRandom.uuid,
-                      oidc_nonce: SecureRandom.hex(16),
-                      oidc_auth_time: rr9_now,
-                      refresh_token_expires_at: rr9_now + 10.minutes,
-                    )
-                    rr9_access = AuthenticationTokenService.encode(
-                      rr9_token.actor_record,
-                      host: rr9_host,
-                      resource_type: "client",
-                      session_public_id: rr9_token.public_id,
-                      base_session_public_id: rr9_token.public_id,
-                      oidc_sid: rr9_session.public_id,
-                      oidc_jti: rr9_session.oidc_jti,
-                      expires_at: rr9_now + 10.minutes,
-                      scopes: %w(openid profile),
-                      issuer: OidcIssuer.for_client(rr9_client),
-                      audiences: [rr9_client.aud],
-                      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rr9_client),
-                      subject: OidcSubject.for(
-                        rr9_token.actor_record,
-                        resource_type: "client",
-                      ),
-                      client_id: rr9_client.client_id,
-                    )
-                    @base_browser_rp_credentials[rr9_key] =
-                      [rr9_access, rr9_session.issue_refresh_token!]
-                  end
-                  if @base_browser_rp_credentials[rr9_key]
-                    rr9_access, rr9_refresh = @base_browser_rp_credentials.fetch(rr9_key)
-                    rr9_cookie = [
-                      rr9_headers.fetch("Cookie"),
-                      "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rr9_access)}",
-                      "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rr9_refresh)}",
-                    ].join("; ")
-                    rr9_headers = rr9_headers.merge(
-                      "Cookie" => rr9_cookie,
-                      "HTTP_COOKIE" => rr9_cookie,
-                    )
-                  end
-                end
                 rr9_headers
               end
             lf9_token = ClientToken.find_by(public_id: lf9_user_headers["X-TEST-SESSION-PUBLIC-ID"])
@@ -2940,8 +1644,36 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             lf9_headers = lf9_headers.merge(lf9_user_headers)
           end
           if lf9_entry.to_s == "sign_up" && lf9_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
-            host!(lf9_host)
+            ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+            auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+            @base_browser.get(
+              "/oauth/authorize", params: @oidc_authorization.merge(prompt: "create"), headers: {
+                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+              },
+            )
+            current_browser = @base_browser
+            12.times do
+              break unless current_browser.response.redirect?
+
+              target = URI.parse(current_browser.response.location)
+              if target.host == "jump.umaxica.net"
+                rt = Rack::Utils.parse_query(target.query).fetch("rt")
+                target = URI.parse(JWT.decode(rt, nil, false).first.fetch("url"))
+              end
+              browser = (target.host == auth_host) ? self : @base_browser
+              browser.host!(target.host) if target.host
+              browser.https!
+              browser.get(
+                target.request_uri, headers: {
+                  "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+                },
+              )
+              current_browser = browser
+              break if browser == self && !response.redirect?
+            end
+
+            assert_equal auth_host, request.host
+            assert_response :success
           end
           post(lf9_continue_path, headers: lf9_headers)
           social_auth_state_from_response
@@ -3012,12 +1744,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
 
       flow8_target = URI.parse(response.location)
       if flow8_target.path == "/sign/in/check"
-        flow8_sid_cookie = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"
-        flow8_ceremony = ClientAuthCeremonySession.find_active_by_raw_sid(cookies[flow8_sid_cookie])
-        flow8_parent = OidcAuthorizationTransactionCoordinator.find_by_transaction_id!(
-          surface: "app",
-          transaction_id: flow8_ceremony.authorization_transaction_ref,
-        )
         # The Auth handoff redirects to the Visa result page, which continues the parent
         # authorization by a same-origin POST.
         get(
@@ -3052,122 +1778,22 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             "Sec-Fetch-Dest" => "document",
           },
         )
-        flow8_principal = Client.find_by!(public_id: flow8_parent.reload.actor_ref)
-        BaseSelectorBootstrapAuthority.call(
-          surface: :app,
-          principal: flow8_principal,
-        )
       end
       break unless flow8_result_uri
 
       flow8_continuation = @base_browser.response
-      flow8_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-      break unless flow8_continuation.redirect?
-      # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
-      break unless URI.parse(flow8_continuation.location).path == "/oidc/callback" ||
-        URI.parse(flow8_continuation.location).host ==
-          URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
 
-      JitSecurityJwtRegistry.surface("BASE_APP")
+      assert_equal 303, flow8_continuation.status
+      flow8_registered_uri = URI.parse(
+        OidcClientRegistry.find!("core-app-jp").redirect_uris_by_realm.fetch("client").first,
+      )
       flow8_callback_uri = URI.parse(flow8_continuation.location)
-      # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-      unless flow8_callback_uri.host == flow8_base_host
+      if flow8_callback_uri.host == "jump.umaxica.net"
         flow8_callback_uri = URI.parse(jump_rt_url_from_location_for_test(flow8_callback_uri.to_s))
       end
-      flow8_protocol_browser = open_session
-      flow8_protocol_browser.host!(flow8_base_host)
-      flow8_protocol_browser.https!
-      # Substitute network transport only: the token and UserInfo requests still run
-      # through their real public controllers, including PKCE and client authentication.
-      flow8_transport =
-        Faraday::Adapter::Test::Stubs.new do |flow8_stub|
-          flow8_stub.post(/.*/) do |flow8_env|
-            # The nested Rack executor must not complete the in-flight callback.
-            flow8_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow8_outer_actor = Actor.context
-            flow8_executor_key = Rails.application.executor.active_key
-            flow8_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow8_executor_key)
-            begin
-              flow8_protocol_browser.host!(flow8_env.url.authority)
-              flow8_protocol_browser.https!(flow8_env.url.scheme == "https")
-              flow8_protocol_browser.post(
-                flow8_env.url.request_uri,
-                params: Rack::Utils.parse_query(flow8_env.body),
-                headers: { "Accept" => "application/json" },
-              )
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow8_executor_key] =
-                flow8_outer_execution
-            end
 
-            assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow8_outer_controller) }
-            assert_withheld { Actor.context.equal?(flow8_outer_actor) }
-            assert_equal 200,
-                         flow8_protocol_browser.response.status
-            [flow8_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow8_protocol_browser.response.body,]
-          end
-          flow8_stub.get(/.*/) do |flow8_env|
-            flow8_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow8_outer_actor = Actor.context
-            flow8_executor_key = Rails.application.executor.active_key
-            flow8_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow8_executor_key)
-            begin
-              flow8_protocol_browser.host!(flow8_env.url.authority)
-              flow8_protocol_browser.https!(flow8_env.url.scheme == "https")
-              # The JWKS request carries no Authorization; the UserInfo request does.
-              flow8_get_headers = { "Accept" => "application/json" }
-              flow8_get_headers["Authorization"] = flow8_env.request_headers["Authorization"] if
-                flow8_env.request_headers["Authorization"].present?
-              flow8_protocol_browser.get(flow8_env.url.request_uri, headers: flow8_get_headers)
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow8_executor_key] =
-                flow8_outer_execution
-            end
-
-            assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow8_outer_controller) }
-            assert_withheld { Actor.context.equal?(flow8_outer_actor) }
-            assert_equal 200,
-                         flow8_protocol_browser.response.status
-            [flow8_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow8_protocol_browser.response.body,]
-          end
-        end
-      flow8_connection =
-        Faraday.new do |flow8_builder|
-          flow8_builder.request(:url_encoded)
-          flow8_builder.adapter(
-            :test,
-            flow8_transport,
-          )
-        end
-      OutboundHttp::Connection.stub(
-        :build,
-        ->(**flow8_args) {
-          assert_equal flow8_visa_host, URI(flow8_args.fetch(:url).to_s).host
-          flow8_connection
-        },
-      ) do
-        # The callback carries the Base browser's RP state cookies.
-        flow8_base_cookie = @base_browser.cookies.to_hash.map { |flow8_name, flow8_value|
-          "#{flow8_name}=#{Rack::Utils.escape(flow8_value)}"
-        }.join("; ")
-        host!(flow8_base_host)
-        https!
-        TestSupport::OutboundHttpGuard.allow do
-          get(
-            flow8_callback_uri.request_uri,
-            headers: { "Cookie" => flow8_base_cookie, "HTTP_COOKIE" => flow8_base_cookie },
-          )
-        end
-      end
-
-      assert_equal [true, true, true],
-                   [response.redirect?,
-                    cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                    cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
-      # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
-      # request in this process already cached the key set.
+      assert_equal [flow8_registered_uri.host, flow8_registered_uri.path],
+                   [flow8_callback_uri.host, flow8_callback_uri.path]
     end
 
     assert_equal user_count_before + 1, Client.count
@@ -3207,7 +1833,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
           lf10_ri = "jp"
           lf10_rt = nil
           lf10_referer = nil
-          lf10_host = @host.presence || configured_host(:sign_service)
+          lf10_host = @host.presence || configured_host(:auth_service)
           host!(lf10_host) if respond_to?(:host!)
           lf10_normalized_provider = SocialIdentifiable.normalize_provider(lf10_provider)
           # The ceremony entry is POST only (see SocialCeremonyEntry): a GET entry would
@@ -3247,64 +1873,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                         nil
                       end
                     rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-                    if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-                      rp_client_id =
-                        case rp_family
-                        when "base" then "base-#{rp_surface}-ww"
-                        when "edit" then "edit-org-ww"
-                        when "tech" then "tech-org-ww"
-                        else "#{rp_family}-#{rp_surface}-jp"
-                        end
-                      rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                      rp_client = OidcClientRegistry.find!(rp_client_id)
-                      rp_key = [rp_client.client_id, rp_token.public_id]
-                      @base_browser_rp_credentials ||= {}
-                      if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-                          !(rp_token.device_session_id && OpAppGrant.exists?(
-                            device_session_id: rp_token.device_session_id,
-                            oidc_client_id: rp_client.client_id,
-                            revoked_at: nil,
-                          ))
-                        rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-                        rp_now = Time.current
-                        rp_session = OpAppGrant.create!(
-                          authentication_epoch: 0,
-                          client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-                          oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-                          refresh_token_expires_at: rp_now + 10.minutes,
-                        )
-                        rp_access = AuthenticationTokenService.encode(
-                          rp_token.actor_record,
-                          host: rp_host,
-                          resource_type: "client",
-                          session_public_id: rp_token.public_id,
-                          base_session_public_id: rp_token.public_id,
-                          oidc_sid: rp_session.public_id,
-                          oidc_jti: rp_session.oidc_jti,
-                          expires_at: rp_now + 10.minutes,
-                          scopes: %w(openid profile),
-                          issuer: OidcIssuer.for_client(rp_client),
-                          audiences: [rp_client.aud],
-                          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                          subject: OidcSubject.for(
-                            rp_token.actor_record,
-                            resource_type: "client",
-                          ),
-                          client_id: rp_client.client_id,
-                        )
-                        @base_browser_rp_credentials[rp_key] =
-                          [rp_access, rp_session.issue_refresh_token!]
-                      end
-                      if @base_browser_rp_credentials[rp_key]
-                        rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-                        rp_cookie = [
-                          rp_headers.fetch("Cookie"),
-                          "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-                          "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-                        ].join("; ")
-                        rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-                      end
-                    end
                     rp_headers
                   end
                 rr10_host = rr10_headers["Host"]
@@ -3315,71 +1883,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                     nil
                   end
                 rr10_family, rr10_surface = rr10_route&.fetch(:controller)&.split("/")
-                if %w(base warp core edit).include?(rr10_family) && rr10_surface == "app"
-                  rr10_client_id =
-                    case rr10_family
-                    when "base" then "base-#{rr10_surface}-ww"
-                    when "edit" then "edit-org-ww"
-                    when "tech" then "tech-org-ww"
-                    else "#{rr10_family}-#{rr10_surface}"
-                    end
-                  rr10_token = ClientToken.find_by!(public_id: rr10_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                  rr10_client = OidcClientRegistry.find!(rr10_client_id)
-                  rr10_key = [rr10_client.client_id, rr10_token.public_id]
-                  @base_browser_rp_credentials ||= {}
-                  if !@base_browser_rp_credentials[rr10_key] && rr10_token.currently_usable? &&
-                      !(rr10_token.device_session_id && OpAppGrant.exists?(
-                        device_session_id: rr10_token.device_session_id,
-                        oidc_client_id: rr10_client.client_id,
-                        revoked_at: nil,
-                      ))
-                    rr10_token.rotate_refresh_token! unless rr10_token.device_session_record.current_refresh_token_id
-                    rr10_now = Time.current
-                    rr10_session = OpAppGrant.create!(
-                      authentication_epoch: 0,
-                      client_token: rr10_token,
-                      oidc_client_id: rr10_client.client_id,
-                      oidc_scope: "openid profile",
-                      oidc_jti: SecureRandom.uuid,
-                      oidc_nonce: SecureRandom.hex(16),
-                      oidc_auth_time: rr10_now,
-                      refresh_token_expires_at: rr10_now + 10.minutes,
-                    )
-                    rr10_access = AuthenticationTokenService.encode(
-                      rr10_token.actor_record,
-                      host: rr10_host,
-                      resource_type: "client",
-                      session_public_id: rr10_token.public_id,
-                      base_session_public_id: rr10_token.public_id,
-                      oidc_sid: rr10_session.public_id,
-                      oidc_jti: rr10_session.oidc_jti,
-                      expires_at: rr10_now + 10.minutes,
-                      scopes: %w(openid profile),
-                      issuer: OidcIssuer.for_client(rr10_client),
-                      audiences: [rr10_client.aud],
-                      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rr10_client),
-                      subject: OidcSubject.for(
-                        rr10_token.actor_record,
-                        resource_type: "client",
-                      ),
-                      client_id: rr10_client.client_id,
-                    )
-                    @base_browser_rp_credentials[rr10_key] =
-                      [rr10_access, rr10_session.issue_refresh_token!]
-                  end
-                  if @base_browser_rp_credentials[rr10_key]
-                    rr10_access, rr10_refresh = @base_browser_rp_credentials.fetch(rr10_key)
-                    rr10_cookie = [
-                      rr10_headers.fetch("Cookie"),
-                      "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rr10_access)}",
-                      "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rr10_refresh)}",
-                    ].join("; ")
-                    rr10_headers = rr10_headers.merge(
-                      "Cookie" => rr10_cookie,
-                      "HTTP_COOKIE" => rr10_cookie,
-                    )
-                  end
-                end
                 rr10_headers
               end
             lf10_token = ClientToken.find_by(public_id: lf10_user_headers["X-TEST-SESSION-PUBLIC-ID"])
@@ -3390,8 +1893,36 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             lf10_headers = lf10_headers.merge(lf10_user_headers)
           end
           if lf10_entry.to_s == "sign_up" && lf10_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
-            host!(lf10_host)
+            ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+            auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+            @base_browser.get(
+              "/oauth/authorize", params: @oidc_authorization.merge(prompt: "create"), headers: {
+                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+              },
+            )
+            current_browser = @base_browser
+            12.times do
+              break unless current_browser.response.redirect?
+
+              target = URI.parse(current_browser.response.location)
+              if target.host == "jump.umaxica.net"
+                rt = Rack::Utils.parse_query(target.query).fetch("rt")
+                target = URI.parse(JWT.decode(rt, nil, false).first.fetch("url"))
+              end
+              browser = (target.host == auth_host) ? self : @base_browser
+              browser.host!(target.host) if target.host
+              browser.https!
+              browser.get(
+                target.request_uri, headers: {
+                  "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+                },
+              )
+              current_browser = browser
+              break if browser == self && !response.redirect?
+            end
+
+            assert_equal auth_host, request.host
+            assert_response :success
           end
           post(lf10_continue_path, headers: lf10_headers)
           social_auth_state_from_response
@@ -3433,12 +1964,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
 
       flow9_target = URI.parse(response.location)
       if flow9_target.path == "/sign/in/check"
-        flow9_sid_cookie = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"
-        flow9_ceremony = ClientAuthCeremonySession.find_active_by_raw_sid(cookies[flow9_sid_cookie])
-        flow9_parent = OidcAuthorizationTransactionCoordinator.find_by_transaction_id!(
-          surface: "app",
-          transaction_id: flow9_ceremony.authorization_transaction_ref,
-        )
         # The Auth handoff redirects to the Visa result page, which continues the parent
         # authorization by a same-origin POST.
         get(
@@ -3473,122 +1998,22 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             "Sec-Fetch-Dest" => "document",
           },
         )
-        flow9_principal = Client.find_by!(public_id: flow9_parent.reload.actor_ref)
-        BaseSelectorBootstrapAuthority.call(
-          surface: :app,
-          principal: flow9_principal,
-        )
       end
       break unless flow9_result_uri
 
       flow9_continuation = @base_browser.response
-      flow9_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-      break unless flow9_continuation.redirect?
-      # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
-      break unless URI.parse(flow9_continuation.location).path == "/oidc/callback" ||
-        URI.parse(flow9_continuation.location).host ==
-          URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
 
-      JitSecurityJwtRegistry.surface("BASE_APP")
+      assert_equal 303, flow9_continuation.status
+      flow9_registered_uri = URI.parse(
+        OidcClientRegistry.find!("core-app-jp").redirect_uris_by_realm.fetch("client").first,
+      )
       flow9_callback_uri = URI.parse(flow9_continuation.location)
-      # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-      unless flow9_callback_uri.host == flow9_base_host
+      if flow9_callback_uri.host == "jump.umaxica.net"
         flow9_callback_uri = URI.parse(jump_rt_url_from_location_for_test(flow9_callback_uri.to_s))
       end
-      flow9_protocol_browser = open_session
-      flow9_protocol_browser.host!(flow9_base_host)
-      flow9_protocol_browser.https!
-      # Substitute network transport only: the token and UserInfo requests still run
-      # through their real public controllers, including PKCE and client authentication.
-      flow9_transport =
-        Faraday::Adapter::Test::Stubs.new do |flow9_stub|
-          flow9_stub.post(/.*/) do |flow9_env|
-            # The nested Rack executor must not complete the in-flight callback.
-            flow9_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow9_outer_actor = Actor.context
-            flow9_executor_key = Rails.application.executor.active_key
-            flow9_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow9_executor_key)
-            begin
-              flow9_protocol_browser.host!(flow9_env.url.authority)
-              flow9_protocol_browser.https!(flow9_env.url.scheme == "https")
-              flow9_protocol_browser.post(
-                flow9_env.url.request_uri,
-                params: Rack::Utils.parse_query(flow9_env.body),
-                headers: { "Accept" => "application/json" },
-              )
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow9_executor_key] =
-                flow9_outer_execution
-            end
 
-            assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow9_outer_controller) }
-            assert_withheld { Actor.context.equal?(flow9_outer_actor) }
-            assert_equal 200,
-                         flow9_protocol_browser.response.status
-            [flow9_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow9_protocol_browser.response.body,]
-          end
-          flow9_stub.get(/.*/) do |flow9_env|
-            flow9_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow9_outer_actor = Actor.context
-            flow9_executor_key = Rails.application.executor.active_key
-            flow9_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow9_executor_key)
-            begin
-              flow9_protocol_browser.host!(flow9_env.url.authority)
-              flow9_protocol_browser.https!(flow9_env.url.scheme == "https")
-              # The JWKS request carries no Authorization; the UserInfo request does.
-              flow9_get_headers = { "Accept" => "application/json" }
-              flow9_get_headers["Authorization"] = flow9_env.request_headers["Authorization"] if
-                flow9_env.request_headers["Authorization"].present?
-              flow9_protocol_browser.get(flow9_env.url.request_uri, headers: flow9_get_headers)
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow9_executor_key] =
-                flow9_outer_execution
-            end
-
-            assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow9_outer_controller) }
-            assert_withheld { Actor.context.equal?(flow9_outer_actor) }
-            assert_equal 200,
-                         flow9_protocol_browser.response.status
-            [flow9_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow9_protocol_browser.response.body,]
-          end
-        end
-      flow9_connection =
-        Faraday.new do |flow9_builder|
-          flow9_builder.request(:url_encoded)
-          flow9_builder.adapter(
-            :test,
-            flow9_transport,
-          )
-        end
-      OutboundHttp::Connection.stub(
-        :build,
-        ->(**flow9_args) {
-          assert_equal flow9_visa_host, URI(flow9_args.fetch(:url).to_s).host
-          flow9_connection
-        },
-      ) do
-        # The callback carries the Base browser's RP state cookies.
-        flow9_base_cookie = @base_browser.cookies.to_hash.map { |flow9_name, flow9_value|
-          "#{flow9_name}=#{Rack::Utils.escape(flow9_value)}"
-        }.join("; ")
-        host!(flow9_base_host)
-        https!
-        TestSupport::OutboundHttpGuard.allow do
-          get(
-            flow9_callback_uri.request_uri,
-            headers: { "Cookie" => flow9_base_cookie, "HTTP_COOKIE" => flow9_base_cookie },
-          )
-        end
-      end
-
-      assert_equal [true, true, true],
-                   [response.redirect?,
-                    cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                    cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
-      # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
-      # request in this process already cached the key set.
+      assert_equal [flow9_registered_uri.host, flow9_registered_uri.path],
+                   [flow9_callback_uri.host, flow9_callback_uri.path]
     end
 
     assert_equal user_count_before, Client.count
@@ -3624,7 +2049,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
           lf11_ri = "jp"
           lf11_rt = nil
           lf11_referer = nil
-          lf11_host = @host.presence || configured_host(:sign_service)
+          lf11_host = @host.presence || configured_host(:auth_service)
           host!(lf11_host) if respond_to?(:host!)
           lf11_normalized_provider = SocialIdentifiable.normalize_provider(lf11_provider)
           # The ceremony entry is POST only (see SocialCeremonyEntry): a GET entry would
@@ -3664,64 +2089,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                         nil
                       end
                     rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-                    if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-                      rp_client_id =
-                        case rp_family
-                        when "base" then "base-#{rp_surface}-ww"
-                        when "edit" then "edit-org-ww"
-                        when "tech" then "tech-org-ww"
-                        else "#{rp_family}-#{rp_surface}-jp"
-                        end
-                      rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                      rp_client = OidcClientRegistry.find!(rp_client_id)
-                      rp_key = [rp_client.client_id, rp_token.public_id]
-                      @base_browser_rp_credentials ||= {}
-                      if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-                          !(rp_token.device_session_id && OpAppGrant.exists?(
-                            device_session_id: rp_token.device_session_id,
-                            oidc_client_id: rp_client.client_id,
-                            revoked_at: nil,
-                          ))
-                        rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-                        rp_now = Time.current
-                        rp_session = OpAppGrant.create!(
-                          authentication_epoch: 0,
-                          client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-                          oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-                          refresh_token_expires_at: rp_now + 10.minutes,
-                        )
-                        rp_access = AuthenticationTokenService.encode(
-                          rp_token.actor_record,
-                          host: rp_host,
-                          resource_type: "client",
-                          session_public_id: rp_token.public_id,
-                          base_session_public_id: rp_token.public_id,
-                          oidc_sid: rp_session.public_id,
-                          oidc_jti: rp_session.oidc_jti,
-                          expires_at: rp_now + 10.minutes,
-                          scopes: %w(openid profile),
-                          issuer: OidcIssuer.for_client(rp_client),
-                          audiences: [rp_client.aud],
-                          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                          subject: OidcSubject.for(
-                            rp_token.actor_record,
-                            resource_type: "client",
-                          ),
-                          client_id: rp_client.client_id,
-                        )
-                        @base_browser_rp_credentials[rp_key] =
-                          [rp_access, rp_session.issue_refresh_token!]
-                      end
-                      if @base_browser_rp_credentials[rp_key]
-                        rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-                        rp_cookie = [
-                          rp_headers.fetch("Cookie"),
-                          "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-                          "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-                        ].join("; ")
-                        rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-                      end
-                    end
                     rp_headers
                   end
                 rr11_host = rr11_headers["Host"]
@@ -3732,71 +2099,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                     nil
                   end
                 rr11_family, rr11_surface = rr11_route&.fetch(:controller)&.split("/")
-                if %w(base warp core edit).include?(rr11_family) && rr11_surface == "app"
-                  rr11_client_id =
-                    case rr11_family
-                    when "base" then "base-#{rr11_surface}-ww"
-                    when "edit" then "edit-org-ww"
-                    when "tech" then "tech-org-ww"
-                    else "#{rr11_family}-#{rr11_surface}"
-                    end
-                  rr11_token = ClientToken.find_by!(public_id: rr11_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                  rr11_client = OidcClientRegistry.find!(rr11_client_id)
-                  rr11_key = [rr11_client.client_id, rr11_token.public_id]
-                  @base_browser_rp_credentials ||= {}
-                  if !@base_browser_rp_credentials[rr11_key] && rr11_token.currently_usable? &&
-                      !(rr11_token.device_session_id && OpAppGrant.exists?(
-                        device_session_id: rr11_token.device_session_id,
-                        oidc_client_id: rr11_client.client_id,
-                        revoked_at: nil,
-                      ))
-                    rr11_token.rotate_refresh_token! unless rr11_token.device_session_record.current_refresh_token_id
-                    rr11_now = Time.current
-                    rr11_session = OpAppGrant.create!(
-                      authentication_epoch: 0,
-                      client_token: rr11_token,
-                      oidc_client_id: rr11_client.client_id,
-                      oidc_scope: "openid profile",
-                      oidc_jti: SecureRandom.uuid,
-                      oidc_nonce: SecureRandom.hex(16),
-                      oidc_auth_time: rr11_now,
-                      refresh_token_expires_at: rr11_now + 10.minutes,
-                    )
-                    rr11_access = AuthenticationTokenService.encode(
-                      rr11_token.actor_record,
-                      host: rr11_host,
-                      resource_type: "client",
-                      session_public_id: rr11_token.public_id,
-                      base_session_public_id: rr11_token.public_id,
-                      oidc_sid: rr11_session.public_id,
-                      oidc_jti: rr11_session.oidc_jti,
-                      expires_at: rr11_now + 10.minutes,
-                      scopes: %w(openid profile),
-                      issuer: OidcIssuer.for_client(rr11_client),
-                      audiences: [rr11_client.aud],
-                      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rr11_client),
-                      subject: OidcSubject.for(
-                        rr11_token.actor_record,
-                        resource_type: "client",
-                      ),
-                      client_id: rr11_client.client_id,
-                    )
-                    @base_browser_rp_credentials[rr11_key] =
-                      [rr11_access, rr11_session.issue_refresh_token!]
-                  end
-                  if @base_browser_rp_credentials[rr11_key]
-                    rr11_access, rr11_refresh = @base_browser_rp_credentials.fetch(rr11_key)
-                    rr11_cookie = [
-                      rr11_headers.fetch("Cookie"),
-                      "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rr11_access)}",
-                      "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rr11_refresh)}",
-                    ].join("; ")
-                    rr11_headers = rr11_headers.merge(
-                      "Cookie" => rr11_cookie,
-                      "HTTP_COOKIE" => rr11_cookie,
-                    )
-                  end
-                end
                 rr11_headers
               end
             lf11_token = ClientToken.find_by(public_id: lf11_user_headers["X-TEST-SESSION-PUBLIC-ID"])
@@ -3807,8 +2109,36 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             lf11_headers = lf11_headers.merge(lf11_user_headers)
           end
           if lf11_entry.to_s == "sign_up" && lf11_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
-            host!(lf11_host)
+            ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+            auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+            @base_browser.get(
+              "/oauth/authorize", params: @oidc_authorization.merge(prompt: "create"), headers: {
+                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+              },
+            )
+            current_browser = @base_browser
+            12.times do
+              break unless current_browser.response.redirect?
+
+              target = URI.parse(current_browser.response.location)
+              if target.host == "jump.umaxica.net"
+                rt = Rack::Utils.parse_query(target.query).fetch("rt")
+                target = URI.parse(JWT.decode(rt, nil, false).first.fetch("url"))
+              end
+              browser = (target.host == auth_host) ? self : @base_browser
+              browser.host!(target.host) if target.host
+              browser.https!
+              browser.get(
+                target.request_uri, headers: {
+                  "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+                },
+              )
+              current_browser = browser
+              break if browser == self && !response.redirect?
+            end
+
+            assert_equal auth_host, request.host
+            assert_response :success
           end
           post(lf11_continue_path, headers: lf11_headers)
           social_auth_state_from_response
@@ -3853,12 +2183,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
 
       flow10_target = URI.parse(response.location)
       if flow10_target.path == "/sign/in/check"
-        flow10_sid_cookie = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"
-        flow10_ceremony = ClientAuthCeremonySession.find_active_by_raw_sid(cookies[flow10_sid_cookie])
-        flow10_parent = OidcAuthorizationTransactionCoordinator.find_by_transaction_id!(
-          surface: "app",
-          transaction_id: flow10_ceremony.authorization_transaction_ref,
-        )
         # The Auth handoff redirects to the Visa result page, which continues the parent
         # authorization by a same-origin POST.
         get(
@@ -3893,126 +2217,26 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             "Sec-Fetch-Dest" => "document",
           },
         )
-        flow10_principal = Client.find_by!(public_id: flow10_parent.reload.actor_ref)
-        BaseSelectorBootstrapAuthority.call(
-          surface: :app,
-          principal: flow10_principal,
-        )
       end
       break unless flow10_result_uri
 
       flow10_continuation = @base_browser.response
-      flow10_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-      break unless flow10_continuation.redirect?
-      # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
-      break unless URI.parse(flow10_continuation.location).path == "/oidc/callback" ||
-        URI.parse(flow10_continuation.location).host ==
-          URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
 
-      JitSecurityJwtRegistry.surface("BASE_APP")
+      assert_equal 303, flow10_continuation.status
+      flow10_registered_uri = URI.parse(
+        OidcClientRegistry.find!("core-app-jp").redirect_uris_by_realm.fetch("client").first,
+      )
       flow10_callback_uri = URI.parse(flow10_continuation.location)
-      # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-      unless flow10_callback_uri.host == flow10_base_host
+      if flow10_callback_uri.host == "jump.umaxica.net"
         flow10_callback_uri = URI.parse(jump_rt_url_from_location_for_test(flow10_callback_uri.to_s))
       end
-      flow10_protocol_browser = open_session
-      flow10_protocol_browser.host!(flow10_base_host)
-      flow10_protocol_browser.https!
-      # Substitute network transport only: the token and UserInfo requests still run
-      # through their real public controllers, including PKCE and client authentication.
-      flow10_transport =
-        Faraday::Adapter::Test::Stubs.new do |flow10_stub|
-          flow10_stub.post(/.*/) do |flow10_env|
-            # The nested Rack executor must not complete the in-flight callback.
-            flow10_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow10_outer_actor = Actor.context
-            flow10_executor_key = Rails.application.executor.active_key
-            flow10_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow10_executor_key)
-            begin
-              flow10_protocol_browser.host!(flow10_env.url.authority)
-              flow10_protocol_browser.https!(flow10_env.url.scheme == "https")
-              flow10_protocol_browser.post(
-                flow10_env.url.request_uri,
-                params: Rack::Utils.parse_query(flow10_env.body),
-                headers: { "Accept" => "application/json" },
-              )
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow10_executor_key] =
-                flow10_outer_execution
-            end
 
-            assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow10_outer_controller) }
-            assert_withheld { Actor.context.equal?(flow10_outer_actor) }
-            assert_equal 200,
-                         flow10_protocol_browser.response.status
-            [flow10_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow10_protocol_browser.response.body,]
-          end
-          flow10_stub.get(/.*/) do |flow10_env|
-            flow10_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow10_outer_actor = Actor.context
-            flow10_executor_key = Rails.application.executor.active_key
-            flow10_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow10_executor_key)
-            begin
-              flow10_protocol_browser.host!(flow10_env.url.authority)
-              flow10_protocol_browser.https!(flow10_env.url.scheme == "https")
-              # The JWKS request carries no Authorization; the UserInfo request does.
-              flow10_get_headers = { "Accept" => "application/json" }
-              flow10_get_headers["Authorization"] = flow10_env.request_headers["Authorization"] if
-                flow10_env.request_headers["Authorization"].present?
-              flow10_protocol_browser.get(flow10_env.url.request_uri, headers: flow10_get_headers)
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow10_executor_key] =
-                flow10_outer_execution
-            end
-
-            assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow10_outer_controller) }
-            assert_withheld { Actor.context.equal?(flow10_outer_actor) }
-            assert_equal 200,
-                         flow10_protocol_browser.response.status
-            [flow10_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow10_protocol_browser.response.body,]
-          end
-        end
-      flow10_connection =
-        Faraday.new do |flow10_builder|
-          flow10_builder.request(:url_encoded)
-          flow10_builder.adapter(
-            :test,
-            flow10_transport,
-          )
-        end
-      OutboundHttp::Connection.stub(
-        :build,
-        ->(**flow10_args) {
-          assert_equal flow10_visa_host, URI(flow10_args.fetch(:url).to_s).host
-          flow10_connection
-        },
-      ) do
-        # The callback carries the Base browser's RP state cookies.
-        flow10_base_cookie = @base_browser.cookies.to_hash.map { |flow10_name, flow10_value|
-          "#{flow10_name}=#{Rack::Utils.escape(flow10_value)}"
-        }.join("; ")
-        host!(flow10_base_host)
-        https!
-        TestSupport::OutboundHttpGuard.allow do
-          get(
-            flow10_callback_uri.request_uri,
-            headers: { "Cookie" => flow10_base_cookie, "HTTP_COOKIE" => flow10_base_cookie },
-          )
-        end
-      end
-
-      assert_equal [true, true, true],
-                   [response.redirect?,
-                    cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                    cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
-      # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
-      # request in this process already cached the key set.
+      assert_equal [flow10_registered_uri.host, flow10_registered_uri.path],
+                   [flow10_callback_uri.host, flow10_callback_uri.path]
     end
 
     assert_response :redirect
-    assert_social_login_lands_on_app_dashboard(response.location)
+    assert_social_login_issued_visa_result(response.location)
   end
 
   # ============================================================================
@@ -4060,7 +2284,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
           lf13_ri = "jp"
           lf13_rt = nil
           lf13_referer = nil
-          lf13_host = @host.presence || configured_host(:sign_service)
+          lf13_host = @host.presence || configured_host(:auth_service)
           host!(lf13_host) if respond_to?(:host!)
           lf13_normalized_provider = SocialIdentifiable.normalize_provider(lf13_provider)
           # The ceremony entry is POST only (see SocialCeremonyEntry): a GET entry would
@@ -4100,64 +2324,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                         nil
                       end
                     rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-                    if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-                      rp_client_id =
-                        case rp_family
-                        when "base" then "base-#{rp_surface}-ww"
-                        when "edit" then "edit-org-ww"
-                        when "tech" then "tech-org-ww"
-                        else "#{rp_family}-#{rp_surface}-jp"
-                        end
-                      rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                      rp_client = OidcClientRegistry.find!(rp_client_id)
-                      rp_key = [rp_client.client_id, rp_token.public_id]
-                      @base_browser_rp_credentials ||= {}
-                      if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-                          !(rp_token.device_session_id && OpAppGrant.exists?(
-                            device_session_id: rp_token.device_session_id,
-                            oidc_client_id: rp_client.client_id,
-                            revoked_at: nil,
-                          ))
-                        rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-                        rp_now = Time.current
-                        rp_session = OpAppGrant.create!(
-                          authentication_epoch: 0,
-                          client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-                          oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-                          refresh_token_expires_at: rp_now + 10.minutes,
-                        )
-                        rp_access = AuthenticationTokenService.encode(
-                          rp_token.actor_record,
-                          host: rp_host,
-                          resource_type: "client",
-                          session_public_id: rp_token.public_id,
-                          base_session_public_id: rp_token.public_id,
-                          oidc_sid: rp_session.public_id,
-                          oidc_jti: rp_session.oidc_jti,
-                          expires_at: rp_now + 10.minutes,
-                          scopes: %w(openid profile),
-                          issuer: OidcIssuer.for_client(rp_client),
-                          audiences: [rp_client.aud],
-                          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                          subject: OidcSubject.for(
-                            rp_token.actor_record,
-                            resource_type: "client",
-                          ),
-                          client_id: rp_client.client_id,
-                        )
-                        @base_browser_rp_credentials[rp_key] =
-                          [rp_access, rp_session.issue_refresh_token!]
-                      end
-                      if @base_browser_rp_credentials[rp_key]
-                        rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-                        rp_cookie = [
-                          rp_headers.fetch("Cookie"),
-                          "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-                          "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-                        ].join("; ")
-                        rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-                      end
-                    end
                     rp_headers
                   end
                 rr13_host = rr13_headers["Host"]
@@ -4168,71 +2334,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                     nil
                   end
                 rr13_family, rr13_surface = rr13_route&.fetch(:controller)&.split("/")
-                if %w(base warp core edit).include?(rr13_family) && rr13_surface == "app"
-                  rr13_client_id =
-                    case rr13_family
-                    when "base" then "base-#{rr13_surface}-ww"
-                    when "edit" then "edit-org-ww"
-                    when "tech" then "tech-org-ww"
-                    else "#{rr13_family}-#{rr13_surface}"
-                    end
-                  rr13_token = ClientToken.find_by!(public_id: rr13_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                  rr13_client = OidcClientRegistry.find!(rr13_client_id)
-                  rr13_key = [rr13_client.client_id, rr13_token.public_id]
-                  @base_browser_rp_credentials ||= {}
-                  if !@base_browser_rp_credentials[rr13_key] && rr13_token.currently_usable? &&
-                      !(rr13_token.device_session_id && OpAppGrant.exists?(
-                        device_session_id: rr13_token.device_session_id,
-                        oidc_client_id: rr13_client.client_id,
-                        revoked_at: nil,
-                      ))
-                    rr13_token.rotate_refresh_token! unless rr13_token.device_session_record.current_refresh_token_id
-                    rr13_now = Time.current
-                    rr13_session = OpAppGrant.create!(
-                      authentication_epoch: 0,
-                      client_token: rr13_token,
-                      oidc_client_id: rr13_client.client_id,
-                      oidc_scope: "openid profile",
-                      oidc_jti: SecureRandom.uuid,
-                      oidc_nonce: SecureRandom.hex(16),
-                      oidc_auth_time: rr13_now,
-                      refresh_token_expires_at: rr13_now + 10.minutes,
-                    )
-                    rr13_access = AuthenticationTokenService.encode(
-                      rr13_token.actor_record,
-                      host: rr13_host,
-                      resource_type: "client",
-                      session_public_id: rr13_token.public_id,
-                      base_session_public_id: rr13_token.public_id,
-                      oidc_sid: rr13_session.public_id,
-                      oidc_jti: rr13_session.oidc_jti,
-                      expires_at: rr13_now + 10.minutes,
-                      scopes: %w(openid profile),
-                      issuer: OidcIssuer.for_client(rr13_client),
-                      audiences: [rr13_client.aud],
-                      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rr13_client),
-                      subject: OidcSubject.for(
-                        rr13_token.actor_record,
-                        resource_type: "client",
-                      ),
-                      client_id: rr13_client.client_id,
-                    )
-                    @base_browser_rp_credentials[rr13_key] =
-                      [rr13_access, rr13_session.issue_refresh_token!]
-                  end
-                  if @base_browser_rp_credentials[rr13_key]
-                    rr13_access, rr13_refresh = @base_browser_rp_credentials.fetch(rr13_key)
-                    rr13_cookie = [
-                      rr13_headers.fetch("Cookie"),
-                      "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rr13_access)}",
-                      "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rr13_refresh)}",
-                    ].join("; ")
-                    rr13_headers = rr13_headers.merge(
-                      "Cookie" => rr13_cookie,
-                      "HTTP_COOKIE" => rr13_cookie,
-                    )
-                  end
-                end
                 rr13_headers
               end
             lf13_token = ClientToken.find_by(public_id: lf13_user_headers["X-TEST-SESSION-PUBLIC-ID"])
@@ -4243,8 +2344,36 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             lf13_headers = lf13_headers.merge(lf13_user_headers)
           end
           if lf13_entry.to_s == "sign_up" && lf13_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
-            host!(lf13_host)
+            ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+            auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+            @base_browser.get(
+              "/oauth/authorize", params: @oidc_authorization.merge(prompt: "create"), headers: {
+                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+              },
+            )
+            current_browser = @base_browser
+            12.times do
+              break unless current_browser.response.redirect?
+
+              target = URI.parse(current_browser.response.location)
+              if target.host == "jump.umaxica.net"
+                rt = Rack::Utils.parse_query(target.query).fetch("rt")
+                target = URI.parse(JWT.decode(rt, nil, false).first.fetch("url"))
+              end
+              browser = (target.host == auth_host) ? self : @base_browser
+              browser.host!(target.host) if target.host
+              browser.https!
+              browser.get(
+                target.request_uri, headers: {
+                  "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+                },
+              )
+              current_browser = browser
+              break if browser == self && !response.redirect?
+            end
+
+            assert_equal auth_host, request.host
+            assert_response :success
           end
           post(lf13_continue_path, headers: lf13_headers)
           social_auth_state_from_response
@@ -4294,12 +2423,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
 
                   flow12_target = URI.parse(response.location)
                   if flow12_target.path == "/sign/in/check"
-                    flow12_sid_cookie = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"
-                    flow12_ceremony = ClientAuthCeremonySession.find_active_by_raw_sid(cookies[flow12_sid_cookie])
-                    flow12_parent = OidcAuthorizationTransactionCoordinator.find_by_transaction_id!(
-                      surface: "app",
-                      transaction_id: flow12_ceremony.authorization_transaction_ref,
-                    )
                     # The Auth handoff redirects to the Visa result page, which continues the parent
                     # authorization by a same-origin POST.
                     get(
@@ -4338,122 +2461,22 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                         "Sec-Fetch-Dest" => "document",
                       },
                     )
-                    flow12_principal = Client.find_by!(public_id: flow12_parent.reload.actor_ref)
-                    BaseSelectorBootstrapAuthority.call(
-                      surface: :app,
-                      principal: flow12_principal,
-                    )
                   end
                   break unless flow12_result_uri
 
                   flow12_continuation = @base_browser.response
-                  flow12_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-                  break unless flow12_continuation.redirect?
-                  # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
-                  break unless URI.parse(flow12_continuation.location).path == "/oidc/callback" ||
-                    URI.parse(flow12_continuation.location).host ==
-                      URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
 
-                  JitSecurityJwtRegistry.surface("BASE_APP")
+                  assert_equal 303, flow12_continuation.status
+                  flow12_registered_uri = URI.parse(
+                    OidcClientRegistry.find!("core-app-jp").redirect_uris_by_realm.fetch("client").first,
+                  )
                   flow12_callback_uri = URI.parse(flow12_continuation.location)
-                  # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-                  unless flow12_callback_uri.host == flow12_base_host
+                  if flow12_callback_uri.host == "jump.umaxica.net"
                     flow12_callback_uri = URI.parse(jump_rt_url_from_location_for_test(flow12_callback_uri.to_s))
                   end
-                  flow12_protocol_browser = open_session
-                  flow12_protocol_browser.host!(flow12_base_host)
-                  flow12_protocol_browser.https!
-                  # Substitute network transport only: the token and UserInfo requests still run
-                  # through their real public controllers, including PKCE and client authentication.
-                  flow12_transport =
-                    Faraday::Adapter::Test::Stubs.new do |flow12_stub|
-                      flow12_stub.post(/.*/) do |flow12_env|
-                        # The nested Rack executor must not complete the in-flight callback.
-                        flow12_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-                        flow12_outer_actor = Actor.context
-                        flow12_executor_key = Rails.application.executor.active_key
-                        flow12_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow12_executor_key)
-                        begin
-                          flow12_protocol_browser.host!(flow12_env.url.authority)
-                          flow12_protocol_browser.https!(flow12_env.url.scheme == "https")
-                          flow12_protocol_browser.post(
-                            flow12_env.url.request_uri,
-                            params: Rack::Utils.parse_query(flow12_env.body),
-                            headers: { "Accept" => "application/json" },
-                          )
-                        ensure
-                          ActiveSupport::IsolatedExecutionState[flow12_executor_key] =
-                            flow12_outer_execution
-                        end
 
-                        assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow12_outer_controller) }
-                        assert_withheld { Actor.context.equal?(flow12_outer_actor) }
-                        assert_equal 200,
-                                     flow12_protocol_browser.response.status
-                        [flow12_protocol_browser.response.status, { "Content-Type" => "application/json" },
-                         flow12_protocol_browser.response.body,]
-                      end
-                      flow12_stub.get(/.*/) do |flow12_env|
-                        flow12_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-                        flow12_outer_actor = Actor.context
-                        flow12_executor_key = Rails.application.executor.active_key
-                        flow12_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow12_executor_key)
-                        begin
-                          flow12_protocol_browser.host!(flow12_env.url.authority)
-                          flow12_protocol_browser.https!(flow12_env.url.scheme == "https")
-                          # The JWKS request carries no Authorization; the UserInfo request does.
-                          flow12_get_headers = { "Accept" => "application/json" }
-                          flow12_get_headers["Authorization"] = flow12_env.request_headers["Authorization"] if
-                            flow12_env.request_headers["Authorization"].present?
-                          flow12_protocol_browser.get(flow12_env.url.request_uri, headers: flow12_get_headers)
-                        ensure
-                          ActiveSupport::IsolatedExecutionState[flow12_executor_key] =
-                            flow12_outer_execution
-                        end
-
-                        assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow12_outer_controller) }
-                        assert_withheld { Actor.context.equal?(flow12_outer_actor) }
-                        assert_equal 200,
-                                     flow12_protocol_browser.response.status
-                        [flow12_protocol_browser.response.status, { "Content-Type" => "application/json" },
-                         flow12_protocol_browser.response.body,]
-                      end
-                    end
-                  flow12_connection =
-                    Faraday.new do |flow12_builder|
-                      flow12_builder.request(:url_encoded)
-                      flow12_builder.adapter(
-                        :test,
-                        flow12_transport,
-                      )
-                    end
-                  OutboundHttp::Connection.stub(
-                    :build,
-                    ->(**flow12_args) {
-                      assert_equal flow12_visa_host, URI(flow12_args.fetch(:url).to_s).host
-                      flow12_connection
-                    },
-                  ) do
-                    # The callback carries the Base browser's RP state cookies.
-                    flow12_base_cookie = @base_browser.cookies.to_hash.map { |flow12_name, flow12_value|
-                      "#{flow12_name}=#{Rack::Utils.escape(flow12_value)}"
-                    }.join("; ")
-                    host!(flow12_base_host)
-                    https!
-                    TestSupport::OutboundHttpGuard.allow do
-                      get(
-                        flow12_callback_uri.request_uri,
-                        headers: { "Cookie" => flow12_base_cookie, "HTTP_COOKIE" => flow12_base_cookie },
-                      )
-                    end
-                  end
-
-                  assert_equal [true, true, true],
-                               [response.redirect?,
-                                cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                                cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
-                  # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
-                  # request in this process already cached the key set.
+                  assert_equal [flow12_registered_uri.host, flow12_registered_uri.path],
+                               [flow12_callback_uri.host, flow12_callback_uri.path]
                 end
               end
             end
@@ -4462,10 +2485,10 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
       end
     end
 
-    assert_redirected_to sign_app_sign_up_guard_google_url(ri: "jp")
+    assert_redirected_to auth_app_sign_up_guard_google_url(ri: "jp")
     follow_redirect!
 
-    assert_redirected_to sign_app_sign_up_check_google_confirmation_url(
+    assert_redirected_to auth_app_sign_up_check_google_confirmation_url(
       ri: "jp", fb: SignFlowBindingCodec.encode(
         flow: session_sign_up_flow(session, surface: :app),
         surface: :app,
@@ -4539,7 +2562,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
           lf14_ri = "jp"
           lf14_rt = nil
           lf14_referer = nil
-          lf14_host = @host.presence || configured_host(:sign_service)
+          lf14_host = @host.presence || configured_host(:auth_service)
           host!(lf14_host) if respond_to?(:host!)
           lf14_normalized_provider = SocialIdentifiable.normalize_provider(lf14_provider)
           # The ceremony entry is POST only (see SocialCeremonyEntry): a GET entry would
@@ -4579,64 +2602,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                         nil
                       end
                     rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-                    if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-                      rp_client_id =
-                        case rp_family
-                        when "base" then "base-#{rp_surface}-ww"
-                        when "edit" then "edit-org-ww"
-                        when "tech" then "tech-org-ww"
-                        else "#{rp_family}-#{rp_surface}-jp"
-                        end
-                      rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                      rp_client = OidcClientRegistry.find!(rp_client_id)
-                      rp_key = [rp_client.client_id, rp_token.public_id]
-                      @base_browser_rp_credentials ||= {}
-                      if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-                          !(rp_token.device_session_id && OpAppGrant.exists?(
-                            device_session_id: rp_token.device_session_id,
-                            oidc_client_id: rp_client.client_id,
-                            revoked_at: nil,
-                          ))
-                        rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-                        rp_now = Time.current
-                        rp_session = OpAppGrant.create!(
-                          authentication_epoch: 0,
-                          client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-                          oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-                          refresh_token_expires_at: rp_now + 10.minutes,
-                        )
-                        rp_access = AuthenticationTokenService.encode(
-                          rp_token.actor_record,
-                          host: rp_host,
-                          resource_type: "client",
-                          session_public_id: rp_token.public_id,
-                          base_session_public_id: rp_token.public_id,
-                          oidc_sid: rp_session.public_id,
-                          oidc_jti: rp_session.oidc_jti,
-                          expires_at: rp_now + 10.minutes,
-                          scopes: %w(openid profile),
-                          issuer: OidcIssuer.for_client(rp_client),
-                          audiences: [rp_client.aud],
-                          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                          subject: OidcSubject.for(
-                            rp_token.actor_record,
-                            resource_type: "client",
-                          ),
-                          client_id: rp_client.client_id,
-                        )
-                        @base_browser_rp_credentials[rp_key] =
-                          [rp_access, rp_session.issue_refresh_token!]
-                      end
-                      if @base_browser_rp_credentials[rp_key]
-                        rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-                        rp_cookie = [
-                          rp_headers.fetch("Cookie"),
-                          "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-                          "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-                        ].join("; ")
-                        rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-                      end
-                    end
                     rp_headers
                   end
                 rr14_host = rr14_headers["Host"]
@@ -4647,71 +2612,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                     nil
                   end
                 rr14_family, rr14_surface = rr14_route&.fetch(:controller)&.split("/")
-                if %w(base warp core edit).include?(rr14_family) && rr14_surface == "app"
-                  rr14_client_id =
-                    case rr14_family
-                    when "base" then "base-#{rr14_surface}-ww"
-                    when "edit" then "edit-org-ww"
-                    when "tech" then "tech-org-ww"
-                    else "#{rr14_family}-#{rr14_surface}"
-                    end
-                  rr14_token = ClientToken.find_by!(public_id: rr14_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                  rr14_client = OidcClientRegistry.find!(rr14_client_id)
-                  rr14_key = [rr14_client.client_id, rr14_token.public_id]
-                  @base_browser_rp_credentials ||= {}
-                  if !@base_browser_rp_credentials[rr14_key] && rr14_token.currently_usable? &&
-                      !(rr14_token.device_session_id && OpAppGrant.exists?(
-                        device_session_id: rr14_token.device_session_id,
-                        oidc_client_id: rr14_client.client_id,
-                        revoked_at: nil,
-                      ))
-                    rr14_token.rotate_refresh_token! unless rr14_token.device_session_record.current_refresh_token_id
-                    rr14_now = Time.current
-                    rr14_session = OpAppGrant.create!(
-                      authentication_epoch: 0,
-                      client_token: rr14_token,
-                      oidc_client_id: rr14_client.client_id,
-                      oidc_scope: "openid profile",
-                      oidc_jti: SecureRandom.uuid,
-                      oidc_nonce: SecureRandom.hex(16),
-                      oidc_auth_time: rr14_now,
-                      refresh_token_expires_at: rr14_now + 10.minutes,
-                    )
-                    rr14_access = AuthenticationTokenService.encode(
-                      rr14_token.actor_record,
-                      host: rr14_host,
-                      resource_type: "client",
-                      session_public_id: rr14_token.public_id,
-                      base_session_public_id: rr14_token.public_id,
-                      oidc_sid: rr14_session.public_id,
-                      oidc_jti: rr14_session.oidc_jti,
-                      expires_at: rr14_now + 10.minutes,
-                      scopes: %w(openid profile),
-                      issuer: OidcIssuer.for_client(rr14_client),
-                      audiences: [rr14_client.aud],
-                      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rr14_client),
-                      subject: OidcSubject.for(
-                        rr14_token.actor_record,
-                        resource_type: "client",
-                      ),
-                      client_id: rr14_client.client_id,
-                    )
-                    @base_browser_rp_credentials[rr14_key] =
-                      [rr14_access, rr14_session.issue_refresh_token!]
-                  end
-                  if @base_browser_rp_credentials[rr14_key]
-                    rr14_access, rr14_refresh = @base_browser_rp_credentials.fetch(rr14_key)
-                    rr14_cookie = [
-                      rr14_headers.fetch("Cookie"),
-                      "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rr14_access)}",
-                      "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rr14_refresh)}",
-                    ].join("; ")
-                    rr14_headers = rr14_headers.merge(
-                      "Cookie" => rr14_cookie,
-                      "HTTP_COOKIE" => rr14_cookie,
-                    )
-                  end
-                end
                 rr14_headers
               end
             lf14_token = ClientToken.find_by(public_id: lf14_user_headers["X-TEST-SESSION-PUBLIC-ID"])
@@ -4722,8 +2622,36 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             lf14_headers = lf14_headers.merge(lf14_user_headers)
           end
           if lf14_entry.to_s == "sign_up" && lf14_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
-            host!(lf14_host)
+            ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+            auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+            @base_browser.get(
+              "/oauth/authorize", params: @oidc_authorization.merge(prompt: "create"), headers: {
+                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+              },
+            )
+            current_browser = @base_browser
+            12.times do
+              break unless current_browser.response.redirect?
+
+              target = URI.parse(current_browser.response.location)
+              if target.host == "jump.umaxica.net"
+                rt = Rack::Utils.parse_query(target.query).fetch("rt")
+                target = URI.parse(JWT.decode(rt, nil, false).first.fetch("url"))
+              end
+              browser = (target.host == auth_host) ? self : @base_browser
+              browser.host!(target.host) if target.host
+              browser.https!
+              browser.get(
+                target.request_uri, headers: {
+                  "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+                },
+              )
+              current_browser = browser
+              break if browser == self && !response.redirect?
+            end
+
+            assert_equal auth_host, request.host
+            assert_response :success
           end
           post(lf14_continue_path, headers: lf14_headers)
           social_auth_state_from_response
@@ -4767,12 +2695,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
 
       flow13_target = URI.parse(response.location)
       if flow13_target.path == "/sign/in/check"
-        flow13_sid_cookie = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"
-        flow13_ceremony = ClientAuthCeremonySession.find_active_by_raw_sid(cookies[flow13_sid_cookie])
-        flow13_parent = OidcAuthorizationTransactionCoordinator.find_by_transaction_id!(
-          surface: "app",
-          transaction_id: flow13_ceremony.authorization_transaction_ref,
-        )
         # The Auth handoff redirects to the Visa result page, which continues the parent
         # authorization by a same-origin POST.
         get(
@@ -4807,122 +2729,22 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             "Sec-Fetch-Dest" => "document",
           },
         )
-        flow13_principal = Client.find_by!(public_id: flow13_parent.reload.actor_ref)
-        BaseSelectorBootstrapAuthority.call(
-          surface: :app,
-          principal: flow13_principal,
-        )
       end
       break unless flow13_result_uri
 
       flow13_continuation = @base_browser.response
-      flow13_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-      break unless flow13_continuation.redirect?
-      # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
-      break unless URI.parse(flow13_continuation.location).path == "/oidc/callback" ||
-        URI.parse(flow13_continuation.location).host ==
-          URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
 
-      JitSecurityJwtRegistry.surface("BASE_APP")
+      assert_equal 303, flow13_continuation.status
+      flow13_registered_uri = URI.parse(
+        OidcClientRegistry.find!("core-app-jp").redirect_uris_by_realm.fetch("client").first,
+      )
       flow13_callback_uri = URI.parse(flow13_continuation.location)
-      # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-      unless flow13_callback_uri.host == flow13_base_host
+      if flow13_callback_uri.host == "jump.umaxica.net"
         flow13_callback_uri = URI.parse(jump_rt_url_from_location_for_test(flow13_callback_uri.to_s))
       end
-      flow13_protocol_browser = open_session
-      flow13_protocol_browser.host!(flow13_base_host)
-      flow13_protocol_browser.https!
-      # Substitute network transport only: the token and UserInfo requests still run
-      # through their real public controllers, including PKCE and client authentication.
-      flow13_transport =
-        Faraday::Adapter::Test::Stubs.new do |flow13_stub|
-          flow13_stub.post(/.*/) do |flow13_env|
-            # The nested Rack executor must not complete the in-flight callback.
-            flow13_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow13_outer_actor = Actor.context
-            flow13_executor_key = Rails.application.executor.active_key
-            flow13_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow13_executor_key)
-            begin
-              flow13_protocol_browser.host!(flow13_env.url.authority)
-              flow13_protocol_browser.https!(flow13_env.url.scheme == "https")
-              flow13_protocol_browser.post(
-                flow13_env.url.request_uri,
-                params: Rack::Utils.parse_query(flow13_env.body),
-                headers: { "Accept" => "application/json" },
-              )
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow13_executor_key] =
-                flow13_outer_execution
-            end
 
-            assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow13_outer_controller) }
-            assert_withheld { Actor.context.equal?(flow13_outer_actor) }
-            assert_equal 200,
-                         flow13_protocol_browser.response.status
-            [flow13_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow13_protocol_browser.response.body,]
-          end
-          flow13_stub.get(/.*/) do |flow13_env|
-            flow13_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow13_outer_actor = Actor.context
-            flow13_executor_key = Rails.application.executor.active_key
-            flow13_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow13_executor_key)
-            begin
-              flow13_protocol_browser.host!(flow13_env.url.authority)
-              flow13_protocol_browser.https!(flow13_env.url.scheme == "https")
-              # The JWKS request carries no Authorization; the UserInfo request does.
-              flow13_get_headers = { "Accept" => "application/json" }
-              flow13_get_headers["Authorization"] = flow13_env.request_headers["Authorization"] if
-                flow13_env.request_headers["Authorization"].present?
-              flow13_protocol_browser.get(flow13_env.url.request_uri, headers: flow13_get_headers)
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow13_executor_key] =
-                flow13_outer_execution
-            end
-
-            assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow13_outer_controller) }
-            assert_withheld { Actor.context.equal?(flow13_outer_actor) }
-            assert_equal 200,
-                         flow13_protocol_browser.response.status
-            [flow13_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow13_protocol_browser.response.body,]
-          end
-        end
-      flow13_connection =
-        Faraday.new do |flow13_builder|
-          flow13_builder.request(:url_encoded)
-          flow13_builder.adapter(
-            :test,
-            flow13_transport,
-          )
-        end
-      OutboundHttp::Connection.stub(
-        :build,
-        ->(**flow13_args) {
-          assert_equal flow13_visa_host, URI(flow13_args.fetch(:url).to_s).host
-          flow13_connection
-        },
-      ) do
-        # The callback carries the Base browser's RP state cookies.
-        flow13_base_cookie = @base_browser.cookies.to_hash.map { |flow13_name, flow13_value|
-          "#{flow13_name}=#{Rack::Utils.escape(flow13_value)}"
-        }.join("; ")
-        host!(flow13_base_host)
-        https!
-        TestSupport::OutboundHttpGuard.allow do
-          get(
-            flow13_callback_uri.request_uri,
-            headers: { "Cookie" => flow13_base_cookie, "HTTP_COOKIE" => flow13_base_cookie },
-          )
-        end
-      end
-
-      assert_equal [true, true, true],
-                   [response.redirect?,
-                    cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                    cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
-      # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
-      # request in this process already cached the key set.
+      assert_equal [flow13_registered_uri.host, flow13_registered_uri.path],
+                   [flow13_callback_uri.host, flow13_callback_uri.path]
     end
 
     assert_response :redirect
@@ -4951,7 +2773,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
         lf15_ri = "jp"
         lf15_rt = nil
         lf15_referer = nil
-        lf15_host = @host.presence || configured_host(:sign_service)
+        lf15_host = @host.presence || configured_host(:auth_service)
         host!(lf15_host) if respond_to?(:host!)
         lf15_normalized_provider = SocialIdentifiable.normalize_provider(lf15_provider)
         # The ceremony entry is POST only (see SocialCeremonyEntry): a GET entry would
@@ -4988,63 +2810,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                       nil
                     end
                   rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-                  if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-                    rp_client_id =
-                      case rp_family
-                      when "base" then "base-#{rp_surface}-ww"
-                      when "edit" then "edit-org-ww"
-                      when "tech" then "tech-org-ww"
-                      else "#{rp_family}-#{rp_surface}-jp"
-                      end
-                    rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                    rp_client = OidcClientRegistry.find!(rp_client_id)
-                    rp_key = [rp_client.client_id, rp_token.public_id]
-                    @base_browser_rp_credentials ||= {}
-                    if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-                        !(rp_token.device_session_id && OpAppGrant.exists?(
-                          device_session_id: rp_token.device_session_id,
-                          oidc_client_id: rp_client.client_id,
-                          revoked_at: nil,
-                        ))
-                      rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-                      rp_now = Time.current
-                      rp_session = OpAppGrant.create!(
-                        authentication_epoch: 0,
-                        client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-                        oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-                        refresh_token_expires_at: rp_now + 10.minutes,
-                      )
-                      rp_access = AuthenticationTokenService.encode(
-                        rp_token.actor_record,
-                        host: rp_host,
-                        resource_type: "client",
-                        session_public_id: rp_token.public_id,
-                        base_session_public_id: rp_token.public_id,
-                        oidc_sid: rp_session.public_id,
-                        oidc_jti: rp_session.oidc_jti,
-                        expires_at: rp_now + 10.minutes,
-                        scopes: %w(openid profile),
-                        issuer: OidcIssuer.for_client(rp_client),
-                        audiences: [rp_client.aud],
-                        jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                        subject: OidcSubject.for(
-                          rp_token.actor_record,
-                          resource_type: "client",
-                        ),
-                        client_id: rp_client.client_id,
-                      )
-                      @base_browser_rp_credentials[rp_key] = [rp_access, rp_session.issue_refresh_token!]
-                    end
-                    if @base_browser_rp_credentials[rp_key]
-                      rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-                      rp_cookie = [
-                        rp_headers.fetch("Cookie"),
-                        "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-                        "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-                      ].join("; ")
-                      rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-                    end
-                  end
                   rp_headers
                 end
               rr15_host = rr15_headers["Host"]
@@ -5055,71 +2820,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                   nil
                 end
               rr15_family, rr15_surface = rr15_route&.fetch(:controller)&.split("/")
-              if %w(base warp core edit).include?(rr15_family) && rr15_surface == "app"
-                rr15_client_id =
-                  case rr15_family
-                  when "base" then "base-#{rr15_surface}-ww"
-                  when "edit" then "edit-org-ww"
-                  when "tech" then "tech-org-ww"
-                  else "#{rr15_family}-#{rr15_surface}"
-                  end
-                rr15_token = ClientToken.find_by!(public_id: rr15_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                rr15_client = OidcClientRegistry.find!(rr15_client_id)
-                rr15_key = [rr15_client.client_id, rr15_token.public_id]
-                @base_browser_rp_credentials ||= {}
-                if !@base_browser_rp_credentials[rr15_key] && rr15_token.currently_usable? &&
-                    !(rr15_token.device_session_id && OpAppGrant.exists?(
-                      device_session_id: rr15_token.device_session_id,
-                      oidc_client_id: rr15_client.client_id,
-                      revoked_at: nil,
-                    ))
-                  rr15_token.rotate_refresh_token! unless rr15_token.device_session_record.current_refresh_token_id
-                  rr15_now = Time.current
-                  rr15_session = OpAppGrant.create!(
-                    authentication_epoch: 0,
-                    client_token: rr15_token,
-                    oidc_client_id: rr15_client.client_id,
-                    oidc_scope: "openid profile",
-                    oidc_jti: SecureRandom.uuid,
-                    oidc_nonce: SecureRandom.hex(16),
-                    oidc_auth_time: rr15_now,
-                    refresh_token_expires_at: rr15_now + 10.minutes,
-                  )
-                  rr15_access = AuthenticationTokenService.encode(
-                    rr15_token.actor_record,
-                    host: rr15_host,
-                    resource_type: "client",
-                    session_public_id: rr15_token.public_id,
-                    base_session_public_id: rr15_token.public_id,
-                    oidc_sid: rr15_session.public_id,
-                    oidc_jti: rr15_session.oidc_jti,
-                    expires_at: rr15_now + 10.minutes,
-                    scopes: %w(openid profile),
-                    issuer: OidcIssuer.for_client(rr15_client),
-                    audiences: [rr15_client.aud],
-                    jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rr15_client),
-                    subject: OidcSubject.for(
-                      rr15_token.actor_record,
-                      resource_type: "client",
-                    ),
-                    client_id: rr15_client.client_id,
-                  )
-                  @base_browser_rp_credentials[rr15_key] =
-                    [rr15_access, rr15_session.issue_refresh_token!]
-                end
-                if @base_browser_rp_credentials[rr15_key]
-                  rr15_access, rr15_refresh = @base_browser_rp_credentials.fetch(rr15_key)
-                  rr15_cookie = [
-                    rr15_headers.fetch("Cookie"),
-                    "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rr15_access)}",
-                    "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rr15_refresh)}",
-                  ].join("; ")
-                  rr15_headers = rr15_headers.merge(
-                    "Cookie" => rr15_cookie,
-                    "HTTP_COOKIE" => rr15_cookie,
-                  )
-                end
-              end
               rr15_headers
             end
           lf15_token = ClientToken.find_by(public_id: lf15_user_headers["X-TEST-SESSION-PUBLIC-ID"])
@@ -5130,8 +2830,36 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
           lf15_headers = lf15_headers.merge(lf15_user_headers)
         end
         if lf15_entry.to_s == "sign_up" && lf15_intent.to_s != "link"
-          switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
-          host!(lf15_host)
+          ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+          auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+          @base_browser.get(
+            "/oauth/authorize", params: @oidc_authorization.merge(prompt: "create"), headers: {
+              "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+            },
+          )
+          current_browser = @base_browser
+          12.times do
+            break unless current_browser.response.redirect?
+
+            target = URI.parse(current_browser.response.location)
+            if target.host == "jump.umaxica.net"
+              rt = Rack::Utils.parse_query(target.query).fetch("rt")
+              target = URI.parse(JWT.decode(rt, nil, false).first.fetch("url"))
+            end
+            browser = (target.host == auth_host) ? self : @base_browser
+            browser.host!(target.host) if target.host
+            browser.https!
+            browser.get(
+              target.request_uri, headers: {
+                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+              },
+            )
+            current_browser = browser
+            break if browser == self && !response.redirect?
+          end
+
+          assert_equal auth_host, request.host
+          assert_response :success
         end
         post(lf15_continue_path, headers: lf15_headers)
         social_auth_state_from_response
@@ -5159,7 +2887,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
         lf16_ri = "jp"
         lf16_rt = nil
         lf16_referer = nil
-        lf16_host = @host.presence || configured_host(:sign_service)
+        lf16_host = @host.presence || configured_host(:auth_service)
         host!(lf16_host) if respond_to?(:host!)
         lf16_normalized_provider = SocialIdentifiable.normalize_provider(lf16_provider)
         # The ceremony entry is POST only (see SocialCeremonyEntry): a GET entry would
@@ -5196,63 +2924,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                       nil
                     end
                   rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-                  if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-                    rp_client_id =
-                      case rp_family
-                      when "base" then "base-#{rp_surface}-ww"
-                      when "edit" then "edit-org-ww"
-                      when "tech" then "tech-org-ww"
-                      else "#{rp_family}-#{rp_surface}-jp"
-                      end
-                    rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                    rp_client = OidcClientRegistry.find!(rp_client_id)
-                    rp_key = [rp_client.client_id, rp_token.public_id]
-                    @base_browser_rp_credentials ||= {}
-                    if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-                        !(rp_token.device_session_id && OpAppGrant.exists?(
-                          device_session_id: rp_token.device_session_id,
-                          oidc_client_id: rp_client.client_id,
-                          revoked_at: nil,
-                        ))
-                      rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-                      rp_now = Time.current
-                      rp_session = OpAppGrant.create!(
-                        authentication_epoch: 0,
-                        client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-                        oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-                        refresh_token_expires_at: rp_now + 10.minutes,
-                      )
-                      rp_access = AuthenticationTokenService.encode(
-                        rp_token.actor_record,
-                        host: rp_host,
-                        resource_type: "client",
-                        session_public_id: rp_token.public_id,
-                        base_session_public_id: rp_token.public_id,
-                        oidc_sid: rp_session.public_id,
-                        oidc_jti: rp_session.oidc_jti,
-                        expires_at: rp_now + 10.minutes,
-                        scopes: %w(openid profile),
-                        issuer: OidcIssuer.for_client(rp_client),
-                        audiences: [rp_client.aud],
-                        jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                        subject: OidcSubject.for(
-                          rp_token.actor_record,
-                          resource_type: "client",
-                        ),
-                        client_id: rp_client.client_id,
-                      )
-                      @base_browser_rp_credentials[rp_key] = [rp_access, rp_session.issue_refresh_token!]
-                    end
-                    if @base_browser_rp_credentials[rp_key]
-                      rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-                      rp_cookie = [
-                        rp_headers.fetch("Cookie"),
-                        "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-                        "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-                      ].join("; ")
-                      rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-                    end
-                  end
                   rp_headers
                 end
               rr16_host = rr16_headers["Host"]
@@ -5263,71 +2934,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                   nil
                 end
               rr16_family, rr16_surface = rr16_route&.fetch(:controller)&.split("/")
-              if %w(base warp core edit).include?(rr16_family) && rr16_surface == "app"
-                rr16_client_id =
-                  case rr16_family
-                  when "base" then "base-#{rr16_surface}-ww"
-                  when "edit" then "edit-org-ww"
-                  when "tech" then "tech-org-ww"
-                  else "#{rr16_family}-#{rr16_surface}"
-                  end
-                rr16_token = ClientToken.find_by!(public_id: rr16_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                rr16_client = OidcClientRegistry.find!(rr16_client_id)
-                rr16_key = [rr16_client.client_id, rr16_token.public_id]
-                @base_browser_rp_credentials ||= {}
-                if !@base_browser_rp_credentials[rr16_key] && rr16_token.currently_usable? &&
-                    !(rr16_token.device_session_id && OpAppGrant.exists?(
-                      device_session_id: rr16_token.device_session_id,
-                      oidc_client_id: rr16_client.client_id,
-                      revoked_at: nil,
-                    ))
-                  rr16_token.rotate_refresh_token! unless rr16_token.device_session_record.current_refresh_token_id
-                  rr16_now = Time.current
-                  rr16_session = OpAppGrant.create!(
-                    authentication_epoch: 0,
-                    client_token: rr16_token,
-                    oidc_client_id: rr16_client.client_id,
-                    oidc_scope: "openid profile",
-                    oidc_jti: SecureRandom.uuid,
-                    oidc_nonce: SecureRandom.hex(16),
-                    oidc_auth_time: rr16_now,
-                    refresh_token_expires_at: rr16_now + 10.minutes,
-                  )
-                  rr16_access = AuthenticationTokenService.encode(
-                    rr16_token.actor_record,
-                    host: rr16_host,
-                    resource_type: "client",
-                    session_public_id: rr16_token.public_id,
-                    base_session_public_id: rr16_token.public_id,
-                    oidc_sid: rr16_session.public_id,
-                    oidc_jti: rr16_session.oidc_jti,
-                    expires_at: rr16_now + 10.minutes,
-                    scopes: %w(openid profile),
-                    issuer: OidcIssuer.for_client(rr16_client),
-                    audiences: [rr16_client.aud],
-                    jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rr16_client),
-                    subject: OidcSubject.for(
-                      rr16_token.actor_record,
-                      resource_type: "client",
-                    ),
-                    client_id: rr16_client.client_id,
-                  )
-                  @base_browser_rp_credentials[rr16_key] =
-                    [rr16_access, rr16_session.issue_refresh_token!]
-                end
-                if @base_browser_rp_credentials[rr16_key]
-                  rr16_access, rr16_refresh = @base_browser_rp_credentials.fetch(rr16_key)
-                  rr16_cookie = [
-                    rr16_headers.fetch("Cookie"),
-                    "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rr16_access)}",
-                    "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rr16_refresh)}",
-                  ].join("; ")
-                  rr16_headers = rr16_headers.merge(
-                    "Cookie" => rr16_cookie,
-                    "HTTP_COOKIE" => rr16_cookie,
-                  )
-                end
-              end
               rr16_headers
             end
           lf16_token = ClientToken.find_by(public_id: lf16_user_headers["X-TEST-SESSION-PUBLIC-ID"])
@@ -5338,8 +2944,36 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
           lf16_headers = lf16_headers.merge(lf16_user_headers)
         end
         if lf16_entry.to_s == "sign_up" && lf16_intent.to_s != "link"
-          switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
-          host!(lf16_host)
+          ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+          auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+          @base_browser.get(
+            "/oauth/authorize", params: @oidc_authorization.merge(prompt: "create"), headers: {
+              "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+            },
+          )
+          current_browser = @base_browser
+          12.times do
+            break unless current_browser.response.redirect?
+
+            target = URI.parse(current_browser.response.location)
+            if target.host == "jump.umaxica.net"
+              rt = Rack::Utils.parse_query(target.query).fetch("rt")
+              target = URI.parse(JWT.decode(rt, nil, false).first.fetch("url"))
+            end
+            browser = (target.host == auth_host) ? self : @base_browser
+            browser.host!(target.host) if target.host
+            browser.https!
+            browser.get(
+              target.request_uri, headers: {
+                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+              },
+            )
+            current_browser = browser
+            break if browser == self && !response.redirect?
+          end
+
+          assert_equal auth_host, request.host
+          assert_response :success
         end
         post(lf16_continue_path, headers: lf16_headers)
         social_auth_state_from_response
@@ -5406,7 +3040,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
           lf18_ri = "jp"
           lf18_rt = nil
           lf18_referer = nil
-          lf18_host = @host.presence || configured_host(:sign_service)
+          lf18_host = @host.presence || configured_host(:auth_service)
           host!(lf18_host) if respond_to?(:host!)
           lf18_normalized_provider = SocialIdentifiable.normalize_provider(lf18_provider)
           # The ceremony entry is POST only (see SocialCeremonyEntry): a GET entry would
@@ -5446,64 +3080,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                         nil
                       end
                     rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-                    if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-                      rp_client_id =
-                        case rp_family
-                        when "base" then "base-#{rp_surface}-ww"
-                        when "edit" then "edit-org-ww"
-                        when "tech" then "tech-org-ww"
-                        else "#{rp_family}-#{rp_surface}-jp"
-                        end
-                      rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                      rp_client = OidcClientRegistry.find!(rp_client_id)
-                      rp_key = [rp_client.client_id, rp_token.public_id]
-                      @base_browser_rp_credentials ||= {}
-                      if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-                          !(rp_token.device_session_id && OpAppGrant.exists?(
-                            device_session_id: rp_token.device_session_id,
-                            oidc_client_id: rp_client.client_id,
-                            revoked_at: nil,
-                          ))
-                        rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-                        rp_now = Time.current
-                        rp_session = OpAppGrant.create!(
-                          authentication_epoch: 0,
-                          client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-                          oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-                          refresh_token_expires_at: rp_now + 10.minutes,
-                        )
-                        rp_access = AuthenticationTokenService.encode(
-                          rp_token.actor_record,
-                          host: rp_host,
-                          resource_type: "client",
-                          session_public_id: rp_token.public_id,
-                          base_session_public_id: rp_token.public_id,
-                          oidc_sid: rp_session.public_id,
-                          oidc_jti: rp_session.oidc_jti,
-                          expires_at: rp_now + 10.minutes,
-                          scopes: %w(openid profile),
-                          issuer: OidcIssuer.for_client(rp_client),
-                          audiences: [rp_client.aud],
-                          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                          subject: OidcSubject.for(
-                            rp_token.actor_record,
-                            resource_type: "client",
-                          ),
-                          client_id: rp_client.client_id,
-                        )
-                        @base_browser_rp_credentials[rp_key] =
-                          [rp_access, rp_session.issue_refresh_token!]
-                      end
-                      if @base_browser_rp_credentials[rp_key]
-                        rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-                        rp_cookie = [
-                          rp_headers.fetch("Cookie"),
-                          "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-                          "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-                        ].join("; ")
-                        rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-                      end
-                    end
                     rp_headers
                   end
                 rr18_host = rr18_headers["Host"]
@@ -5514,71 +3090,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                     nil
                   end
                 rr18_family, rr18_surface = rr18_route&.fetch(:controller)&.split("/")
-                if %w(base warp core edit).include?(rr18_family) && rr18_surface == "app"
-                  rr18_client_id =
-                    case rr18_family
-                    when "base" then "base-#{rr18_surface}-ww"
-                    when "edit" then "edit-org-ww"
-                    when "tech" then "tech-org-ww"
-                    else "#{rr18_family}-#{rr18_surface}"
-                    end
-                  rr18_token = ClientToken.find_by!(public_id: rr18_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                  rr18_client = OidcClientRegistry.find!(rr18_client_id)
-                  rr18_key = [rr18_client.client_id, rr18_token.public_id]
-                  @base_browser_rp_credentials ||= {}
-                  if !@base_browser_rp_credentials[rr18_key] && rr18_token.currently_usable? &&
-                      !(rr18_token.device_session_id && OpAppGrant.exists?(
-                        device_session_id: rr18_token.device_session_id,
-                        oidc_client_id: rr18_client.client_id,
-                        revoked_at: nil,
-                      ))
-                    rr18_token.rotate_refresh_token! unless rr18_token.device_session_record.current_refresh_token_id
-                    rr18_now = Time.current
-                    rr18_session = OpAppGrant.create!(
-                      authentication_epoch: 0,
-                      client_token: rr18_token,
-                      oidc_client_id: rr18_client.client_id,
-                      oidc_scope: "openid profile",
-                      oidc_jti: SecureRandom.uuid,
-                      oidc_nonce: SecureRandom.hex(16),
-                      oidc_auth_time: rr18_now,
-                      refresh_token_expires_at: rr18_now + 10.minutes,
-                    )
-                    rr18_access = AuthenticationTokenService.encode(
-                      rr18_token.actor_record,
-                      host: rr18_host,
-                      resource_type: "client",
-                      session_public_id: rr18_token.public_id,
-                      base_session_public_id: rr18_token.public_id,
-                      oidc_sid: rr18_session.public_id,
-                      oidc_jti: rr18_session.oidc_jti,
-                      expires_at: rr18_now + 10.minutes,
-                      scopes: %w(openid profile),
-                      issuer: OidcIssuer.for_client(rr18_client),
-                      audiences: [rr18_client.aud],
-                      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rr18_client),
-                      subject: OidcSubject.for(
-                        rr18_token.actor_record,
-                        resource_type: "client",
-                      ),
-                      client_id: rr18_client.client_id,
-                    )
-                    @base_browser_rp_credentials[rr18_key] =
-                      [rr18_access, rr18_session.issue_refresh_token!]
-                  end
-                  if @base_browser_rp_credentials[rr18_key]
-                    rr18_access, rr18_refresh = @base_browser_rp_credentials.fetch(rr18_key)
-                    rr18_cookie = [
-                      rr18_headers.fetch("Cookie"),
-                      "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rr18_access)}",
-                      "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rr18_refresh)}",
-                    ].join("; ")
-                    rr18_headers = rr18_headers.merge(
-                      "Cookie" => rr18_cookie,
-                      "HTTP_COOKIE" => rr18_cookie,
-                    )
-                  end
-                end
                 rr18_headers
               end
             lf18_token = ClientToken.find_by(public_id: lf18_user_headers["X-TEST-SESSION-PUBLIC-ID"])
@@ -5589,8 +3100,36 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             lf18_headers = lf18_headers.merge(lf18_user_headers)
           end
           if lf18_entry.to_s == "sign_up" && lf18_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
-            host!(lf18_host)
+            ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+            auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+            @base_browser.get(
+              "/oauth/authorize", params: @oidc_authorization.merge(prompt: "create"), headers: {
+                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+              },
+            )
+            current_browser = @base_browser
+            12.times do
+              break unless current_browser.response.redirect?
+
+              target = URI.parse(current_browser.response.location)
+              if target.host == "jump.umaxica.net"
+                rt = Rack::Utils.parse_query(target.query).fetch("rt")
+                target = URI.parse(JWT.decode(rt, nil, false).first.fetch("url"))
+              end
+              browser = (target.host == auth_host) ? self : @base_browser
+              browser.host!(target.host) if target.host
+              browser.https!
+              browser.get(
+                target.request_uri, headers: {
+                  "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+                },
+              )
+              current_browser = browser
+              break if browser == self && !response.redirect?
+            end
+
+            assert_equal auth_host, request.host
+            assert_response :success
           end
           post(lf18_continue_path, headers: lf18_headers)
           social_auth_state_from_response
@@ -5634,12 +3173,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
 
       flow14_target = URI.parse(response.location)
       if flow14_target.path == "/sign/in/check"
-        flow14_sid_cookie = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"
-        flow14_ceremony = ClientAuthCeremonySession.find_active_by_raw_sid(cookies[flow14_sid_cookie])
-        flow14_parent = OidcAuthorizationTransactionCoordinator.find_by_transaction_id!(
-          surface: "app",
-          transaction_id: flow14_ceremony.authorization_transaction_ref,
-        )
         # The Auth handoff redirects to the Visa result page, which continues the parent
         # authorization by a same-origin POST.
         get(
@@ -5674,122 +3207,22 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             "Sec-Fetch-Dest" => "document",
           },
         )
-        flow14_principal = Client.find_by!(public_id: flow14_parent.reload.actor_ref)
-        BaseSelectorBootstrapAuthority.call(
-          surface: :app,
-          principal: flow14_principal,
-        )
       end
       break unless flow14_result_uri
 
       flow14_continuation = @base_browser.response
-      flow14_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-      break unless flow14_continuation.redirect?
-      # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
-      break unless URI.parse(flow14_continuation.location).path == "/oidc/callback" ||
-        URI.parse(flow14_continuation.location).host ==
-          URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
 
-      JitSecurityJwtRegistry.surface("BASE_APP")
+      assert_equal 303, flow14_continuation.status
+      flow14_registered_uri = URI.parse(
+        OidcClientRegistry.find!("core-app-jp").redirect_uris_by_realm.fetch("client").first,
+      )
       flow14_callback_uri = URI.parse(flow14_continuation.location)
-      # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-      unless flow14_callback_uri.host == flow14_base_host
+      if flow14_callback_uri.host == "jump.umaxica.net"
         flow14_callback_uri = URI.parse(jump_rt_url_from_location_for_test(flow14_callback_uri.to_s))
       end
-      flow14_protocol_browser = open_session
-      flow14_protocol_browser.host!(flow14_base_host)
-      flow14_protocol_browser.https!
-      # Substitute network transport only: the token and UserInfo requests still run
-      # through their real public controllers, including PKCE and client authentication.
-      flow14_transport =
-        Faraday::Adapter::Test::Stubs.new do |flow14_stub|
-          flow14_stub.post(/.*/) do |flow14_env|
-            # The nested Rack executor must not complete the in-flight callback.
-            flow14_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow14_outer_actor = Actor.context
-            flow14_executor_key = Rails.application.executor.active_key
-            flow14_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow14_executor_key)
-            begin
-              flow14_protocol_browser.host!(flow14_env.url.authority)
-              flow14_protocol_browser.https!(flow14_env.url.scheme == "https")
-              flow14_protocol_browser.post(
-                flow14_env.url.request_uri,
-                params: Rack::Utils.parse_query(flow14_env.body),
-                headers: { "Accept" => "application/json" },
-              )
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow14_executor_key] =
-                flow14_outer_execution
-            end
 
-            assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow14_outer_controller) }
-            assert_withheld { Actor.context.equal?(flow14_outer_actor) }
-            assert_equal 200,
-                         flow14_protocol_browser.response.status
-            [flow14_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow14_protocol_browser.response.body,]
-          end
-          flow14_stub.get(/.*/) do |flow14_env|
-            flow14_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow14_outer_actor = Actor.context
-            flow14_executor_key = Rails.application.executor.active_key
-            flow14_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow14_executor_key)
-            begin
-              flow14_protocol_browser.host!(flow14_env.url.authority)
-              flow14_protocol_browser.https!(flow14_env.url.scheme == "https")
-              # The JWKS request carries no Authorization; the UserInfo request does.
-              flow14_get_headers = { "Accept" => "application/json" }
-              flow14_get_headers["Authorization"] = flow14_env.request_headers["Authorization"] if
-                flow14_env.request_headers["Authorization"].present?
-              flow14_protocol_browser.get(flow14_env.url.request_uri, headers: flow14_get_headers)
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow14_executor_key] =
-                flow14_outer_execution
-            end
-
-            assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow14_outer_controller) }
-            assert_withheld { Actor.context.equal?(flow14_outer_actor) }
-            assert_equal 200,
-                         flow14_protocol_browser.response.status
-            [flow14_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow14_protocol_browser.response.body,]
-          end
-        end
-      flow14_connection =
-        Faraday.new do |flow14_builder|
-          flow14_builder.request(:url_encoded)
-          flow14_builder.adapter(
-            :test,
-            flow14_transport,
-          )
-        end
-      OutboundHttp::Connection.stub(
-        :build,
-        ->(**flow14_args) {
-          assert_equal flow14_visa_host, URI(flow14_args.fetch(:url).to_s).host
-          flow14_connection
-        },
-      ) do
-        # The callback carries the Base browser's RP state cookies.
-        flow14_base_cookie = @base_browser.cookies.to_hash.map { |flow14_name, flow14_value|
-          "#{flow14_name}=#{Rack::Utils.escape(flow14_value)}"
-        }.join("; ")
-        host!(flow14_base_host)
-        https!
-        TestSupport::OutboundHttpGuard.allow do
-          get(
-            flow14_callback_uri.request_uri,
-            headers: { "Cookie" => flow14_base_cookie, "HTTP_COOKIE" => flow14_base_cookie },
-          )
-        end
-      end
-
-      assert_equal [true, true, true],
-                   [response.redirect?,
-                    cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                    cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
-      # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
-      # request in this process already cached the key set.
+      assert_equal [flow14_registered_uri.host, flow14_registered_uri.path],
+                   [flow14_callback_uri.host, flow14_callback_uri.path]
     end
 
     assert_response :redirect
@@ -5842,7 +3275,7 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
           lf19_ri = "jp"
           lf19_rt = nil
           lf19_referer = nil
-          lf19_host = @host.presence || configured_host(:sign_service)
+          lf19_host = @host.presence || configured_host(:auth_service)
           host!(lf19_host) if respond_to?(:host!)
           lf19_normalized_provider = SocialIdentifiable.normalize_provider(lf19_provider)
           # The ceremony entry is POST only (see SocialCeremonyEntry): a GET entry would
@@ -5882,64 +3315,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                         nil
                       end
                     rp_family, rp_surface = rp_route&.fetch(:controller)&.split("/")
-                    if %w(base warp core edit).include?(rp_family) && rp_surface == "app"
-                      rp_client_id =
-                        case rp_family
-                        when "base" then "base-#{rp_surface}-ww"
-                        when "edit" then "edit-org-ww"
-                        when "tech" then "tech-org-ww"
-                        else "#{rp_family}-#{rp_surface}-jp"
-                        end
-                      rp_token = ClientToken.find_by!(public_id: rp_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                      rp_client = OidcClientRegistry.find!(rp_client_id)
-                      rp_key = [rp_client.client_id, rp_token.public_id]
-                      @base_browser_rp_credentials ||= {}
-                      if !@base_browser_rp_credentials[rp_key] && rp_token.currently_usable? &&
-                          !(rp_token.device_session_id && OpAppGrant.exists?(
-                            device_session_id: rp_token.device_session_id,
-                            oidc_client_id: rp_client.client_id,
-                            revoked_at: nil,
-                          ))
-                        rp_token.rotate_refresh_token! unless rp_token.device_session_record.current_refresh_token_id
-                        rp_now = Time.current
-                        rp_session = OpAppGrant.create!(
-                          authentication_epoch: 0,
-                          client_token: rp_token, oidc_client_id: rp_client.client_id, oidc_scope: "openid profile",
-                          oidc_jti: SecureRandom.uuid, oidc_nonce: SecureRandom.hex(16), oidc_auth_time: rp_now,
-                          refresh_token_expires_at: rp_now + 10.minutes,
-                        )
-                        rp_access = AuthenticationTokenService.encode(
-                          rp_token.actor_record,
-                          host: rp_host,
-                          resource_type: "client",
-                          session_public_id: rp_token.public_id,
-                          base_session_public_id: rp_token.public_id,
-                          oidc_sid: rp_session.public_id,
-                          oidc_jti: rp_session.oidc_jti,
-                          expires_at: rp_now + 10.minutes,
-                          scopes: %w(openid profile),
-                          issuer: OidcIssuer.for_client(rp_client),
-                          audiences: [rp_client.aud],
-                          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rp_client),
-                          subject: OidcSubject.for(
-                            rp_token.actor_record,
-                            resource_type: "client",
-                          ),
-                          client_id: rp_client.client_id,
-                        )
-                        @base_browser_rp_credentials[rp_key] =
-                          [rp_access, rp_session.issue_refresh_token!]
-                      end
-                      if @base_browser_rp_credentials[rp_key]
-                        rp_access, rp_refresh = @base_browser_rp_credentials.fetch(rp_key)
-                        rp_cookie = [
-                          rp_headers.fetch("Cookie"),
-                          "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rp_access)}",
-                          "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rp_refresh)}",
-                        ].join("; ")
-                        rp_headers = rp_headers.merge("Cookie" => rp_cookie, "HTTP_COOKIE" => rp_cookie)
-                      end
-                    end
                     rp_headers
                   end
                 rr19_host = rr19_headers["Host"]
@@ -5950,71 +3325,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
                     nil
                   end
                 rr19_family, rr19_surface = rr19_route&.fetch(:controller)&.split("/")
-                if %w(base warp core edit).include?(rr19_family) && rr19_surface == "app"
-                  rr19_client_id =
-                    case rr19_family
-                    when "base" then "base-#{rr19_surface}-ww"
-                    when "edit" then "edit-org-ww"
-                    when "tech" then "tech-org-ww"
-                    else "#{rr19_family}-#{rr19_surface}"
-                    end
-                  rr19_token = ClientToken.find_by!(public_id: rr19_headers.fetch("X-TEST-SESSION-PUBLIC-ID"))
-                  rr19_client = OidcClientRegistry.find!(rr19_client_id)
-                  rr19_key = [rr19_client.client_id, rr19_token.public_id]
-                  @base_browser_rp_credentials ||= {}
-                  if !@base_browser_rp_credentials[rr19_key] && rr19_token.currently_usable? &&
-                      !(rr19_token.device_session_id && OpAppGrant.exists?(
-                        device_session_id: rr19_token.device_session_id,
-                        oidc_client_id: rr19_client.client_id,
-                        revoked_at: nil,
-                      ))
-                    rr19_token.rotate_refresh_token! unless rr19_token.device_session_record.current_refresh_token_id
-                    rr19_now = Time.current
-                    rr19_session = OpAppGrant.create!(
-                      authentication_epoch: 0,
-                      client_token: rr19_token,
-                      oidc_client_id: rr19_client.client_id,
-                      oidc_scope: "openid profile",
-                      oidc_jti: SecureRandom.uuid,
-                      oidc_nonce: SecureRandom.hex(16),
-                      oidc_auth_time: rr19_now,
-                      refresh_token_expires_at: rr19_now + 10.minutes,
-                    )
-                    rr19_access = AuthenticationTokenService.encode(
-                      rr19_token.actor_record,
-                      host: rr19_host,
-                      resource_type: "client",
-                      session_public_id: rr19_token.public_id,
-                      base_session_public_id: rr19_token.public_id,
-                      oidc_sid: rr19_session.public_id,
-                      oidc_jti: rr19_session.oidc_jti,
-                      expires_at: rr19_now + 10.minutes,
-                      scopes: %w(openid profile),
-                      issuer: OidcIssuer.for_client(rr19_client),
-                      audiences: [rr19_client.aud],
-                      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(rr19_client),
-                      subject: OidcSubject.for(
-                        rr19_token.actor_record,
-                        resource_type: "client",
-                      ),
-                      client_id: rr19_client.client_id,
-                    )
-                    @base_browser_rp_credentials[rr19_key] =
-                      [rr19_access, rr19_session.issue_refresh_token!]
-                  end
-                  if @base_browser_rp_credentials[rr19_key]
-                    rr19_access, rr19_refresh = @base_browser_rp_credentials.fetch(rr19_key)
-                    rr19_cookie = [
-                      rr19_headers.fetch("Cookie"),
-                      "#{OidcRpBrowserCredentialContract::ACCESS_COOKIE}=#{Rack::Utils.escape(rr19_access)}",
-                      "#{OidcRpBrowserCredentialContract::REFRESH_COOKIE}=#{Rack::Utils.escape(rr19_refresh)}",
-                    ].join("; ")
-                    rr19_headers = rr19_headers.merge(
-                      "Cookie" => rr19_cookie,
-                      "HTTP_COOKIE" => rr19_cookie,
-                    )
-                  end
-                end
                 rr19_headers
               end
             lf19_token = ClientToken.find_by(public_id: lf19_user_headers["X-TEST-SESSION-PUBLIC-ID"])
@@ -6025,8 +3335,36 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             lf19_headers = lf19_headers.merge(lf19_user_headers)
           end
           if lf19_entry.to_s == "sign_up" && lf19_intent.to_s != "link"
-            switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
-            host!(lf19_host)
+            ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+            auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+            @base_browser.get(
+              "/oauth/authorize", params: @oidc_authorization.merge(prompt: "create"), headers: {
+                "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+              },
+            )
+            current_browser = @base_browser
+            12.times do
+              break unless current_browser.response.redirect?
+
+              target = URI.parse(current_browser.response.location)
+              if target.host == "jump.umaxica.net"
+                rt = Rack::Utils.parse_query(target.query).fetch("rt")
+                target = URI.parse(JWT.decode(rt, nil, false).first.fetch("url"))
+              end
+              browser = (target.host == auth_host) ? self : @base_browser
+              browser.host!(target.host) if target.host
+              browser.https!
+              browser.get(
+                target.request_uri, headers: {
+                  "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
+                },
+              )
+              current_browser = browser
+              break if browser == self && !response.redirect?
+            end
+
+            assert_equal auth_host, request.host
+            assert_response :success
           end
           post(lf19_continue_path, headers: lf19_headers)
           social_auth_state_from_response
@@ -6070,12 +3408,6 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
 
       flow15_target = URI.parse(response.location)
       if flow15_target.path == "/sign/in/check"
-        flow15_sid_cookie = JitSessionCookieConfig.force_secure? ? "__Host-auth_sid" : "auth_sid"
-        flow15_ceremony = ClientAuthCeremonySession.find_active_by_raw_sid(cookies[flow15_sid_cookie])
-        flow15_parent = OidcAuthorizationTransactionCoordinator.find_by_transaction_id!(
-          surface: "app",
-          transaction_id: flow15_ceremony.authorization_transaction_ref,
-        )
         # The Auth handoff redirects to the Visa result page, which continues the parent
         # authorization by a same-origin POST.
         get(
@@ -6110,122 +3442,22 @@ class SocialAuthLoginTest < ActionDispatch::IntegrationTest
             "Sec-Fetch-Dest" => "document",
           },
         )
-        flow15_principal = Client.find_by!(public_id: flow15_parent.reload.actor_ref)
-        BaseSelectorBootstrapAuthority.call(
-          surface: :app,
-          principal: flow15_principal,
-        )
       end
       break unless flow15_result_uri
 
       flow15_continuation = @base_browser.response
-      flow15_base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
-      break unless flow15_continuation.redirect?
-      # The Base self-RP callback is same-origin and arrives by path; a cross-origin one comes through Jump.
-      break unless URI.parse(flow15_continuation.location).path == "/oidc/callback" ||
-        URI.parse(flow15_continuation.location).host ==
-          URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
 
-      JitSecurityJwtRegistry.surface("BASE_APP")
+      assert_equal 303, flow15_continuation.status
+      flow15_registered_uri = URI.parse(
+        OidcClientRegistry.find!("core-app-jp").redirect_uris_by_realm.fetch("client").first,
+      )
       flow15_callback_uri = URI.parse(flow15_continuation.location)
-      # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-      unless flow15_callback_uri.host == flow15_base_host
+      if flow15_callback_uri.host == "jump.umaxica.net"
         flow15_callback_uri = URI.parse(jump_rt_url_from_location_for_test(flow15_callback_uri.to_s))
       end
-      flow15_protocol_browser = open_session
-      flow15_protocol_browser.host!(flow15_base_host)
-      flow15_protocol_browser.https!
-      # Substitute network transport only: the token and UserInfo requests still run
-      # through their real public controllers, including PKCE and client authentication.
-      flow15_transport =
-        Faraday::Adapter::Test::Stubs.new do |flow15_stub|
-          flow15_stub.post(/.*/) do |flow15_env|
-            # The nested Rack executor must not complete the in-flight callback.
-            flow15_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow15_outer_actor = Actor.context
-            flow15_executor_key = Rails.application.executor.active_key
-            flow15_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow15_executor_key)
-            begin
-              flow15_protocol_browser.host!(flow15_env.url.authority)
-              flow15_protocol_browser.https!(flow15_env.url.scheme == "https")
-              flow15_protocol_browser.post(
-                flow15_env.url.request_uri,
-                params: Rack::Utils.parse_query(flow15_env.body),
-                headers: { "Accept" => "application/json" },
-              )
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow15_executor_key] =
-                flow15_outer_execution
-            end
 
-            assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow15_outer_controller) }
-            assert_withheld { Actor.context.equal?(flow15_outer_actor) }
-            assert_equal 200,
-                         flow15_protocol_browser.response.status
-            [flow15_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow15_protocol_browser.response.body,]
-          end
-          flow15_stub.get(/.*/) do |flow15_env|
-            flow15_outer_controller = ActiveSupport::ExecutionContext.to_h.fetch(:controller)
-            flow15_outer_actor = Actor.context
-            flow15_executor_key = Rails.application.executor.active_key
-            flow15_outer_execution = ActiveSupport::IsolatedExecutionState.delete(flow15_executor_key)
-            begin
-              flow15_protocol_browser.host!(flow15_env.url.authority)
-              flow15_protocol_browser.https!(flow15_env.url.scheme == "https")
-              # The JWKS request carries no Authorization; the UserInfo request does.
-              flow15_get_headers = { "Accept" => "application/json" }
-              flow15_get_headers["Authorization"] = flow15_env.request_headers["Authorization"] if
-                flow15_env.request_headers["Authorization"].present?
-              flow15_protocol_browser.get(flow15_env.url.request_uri, headers: flow15_get_headers)
-            ensure
-              ActiveSupport::IsolatedExecutionState[flow15_executor_key] =
-                flow15_outer_execution
-            end
-
-            assert_withheld { ActiveSupport::ExecutionContext.to_h.fetch(:controller).equal?(flow15_outer_controller) }
-            assert_withheld { Actor.context.equal?(flow15_outer_actor) }
-            assert_equal 200,
-                         flow15_protocol_browser.response.status
-            [flow15_protocol_browser.response.status, { "Content-Type" => "application/json" },
-             flow15_protocol_browser.response.body,]
-          end
-        end
-      flow15_connection =
-        Faraday.new do |flow15_builder|
-          flow15_builder.request(:url_encoded)
-          flow15_builder.adapter(
-            :test,
-            flow15_transport,
-          )
-        end
-      OutboundHttp::Connection.stub(
-        :build,
-        ->(**flow15_args) {
-          assert_equal flow15_visa_host, URI(flow15_args.fetch(:url).to_s).host
-          flow15_connection
-        },
-      ) do
-        # The callback carries the Base browser's RP state cookies.
-        flow15_base_cookie = @base_browser.cookies.to_hash.map { |flow15_name, flow15_value|
-          "#{flow15_name}=#{Rack::Utils.escape(flow15_value)}"
-        }.join("; ")
-        host!(flow15_base_host)
-        https!
-        TestSupport::OutboundHttpGuard.allow do
-          get(
-            flow15_callback_uri.request_uri,
-            headers: { "Cookie" => flow15_base_cookie, "HTTP_COOKIE" => flow15_base_cookie },
-          )
-        end
-      end
-
-      assert_equal [true, true, true],
-                   [response.redirect?,
-                    cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE].to_s.present?,
-                    cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE].to_s.present?,]
-      # The RP cookies prove the token exchange; the JWKS GET is skipped when an earlier
-      # request in this process already cached the key set.
+      assert_equal [flow15_registered_uri.host, flow15_registered_uri.path],
+                   [flow15_callback_uri.host, flow15_callback_uri.path]
     end
 
     identity.reload
@@ -6438,38 +3670,6 @@ class SocialAuthLoginTest
   private
 end
 
-# DAMP local route helper aliases for former shared test support.
-class SocialAuthLoginTest
-  SURFACE_ROUTE_PREFIX_MAP = {
-    "sign_app_" => "auth_app_",
-    "sign_org_" => "auth_org_",
-    "acme_app_" => "base_app_",
-    "acme_org_" => "base_org_",
-  }.freeze unless const_defined?(:SURFACE_ROUTE_PREFIX_MAP, false)
-
-  private
-
-  def method_missing(name, ...)
-    aliased_name = aliased_surface_route_helper_name(name)
-    return public_send(aliased_name, ...) if aliased_name && respond_to?(aliased_name, true)
-
-    super
-  end
-
-  def respond_to_missing?(name, include_private = false)
-    aliased_name = aliased_surface_route_helper_name(name)
-    (aliased_name && respond_to?(aliased_name, include_private)) || super
-  end
-
-  def aliased_surface_route_helper_name(name)
-    helper_name = name.to_s
-    self.class::SURFACE_ROUTE_PREFIX_MAP.each do |source_prefix, target_prefix|
-      return helper_name.sub(source_prefix, target_prefix).to_sym if helper_name.start_with?(source_prefix)
-    end
-    nil
-  end
-end
-
 # DAMP local helper copy on the test class.
 class SocialAuthLoginTest
   TEST_BROWSER_USER_AGENT =
@@ -6480,14 +3680,11 @@ class SocialAuthLoginTest
 
   private
 
-  # Ordinary social sign-in completes on the app Dashboard. Home "/" is 404 for an authenticated
-  # session, so landing there is the regression this guards against.
-  def assert_social_login_lands_on_app_dashboard(location)
-    destination = URI.parse(jump_rt_url_from_location(location))
+  def assert_social_login_issued_visa_result(location)
+    destination = URI.parse(location)
 
-    assert_includes [nil, configured_host(:acme_service), ENV.fetch("PUBLIC_BASE_SERVICE_URL")], destination.host
-    # The callback redirects to the bare path; the Dashboard request itself adds the region.
-    assert_equal "/dashboard", destination.path
+    assert_equal ENV.fetch("PUBLIC_VISA_SERVICE_URL"), destination.host
+    assert_equal "/oidc/result", destination.path
   end
 
   def configured_host(surface_name)

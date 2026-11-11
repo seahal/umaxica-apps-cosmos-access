@@ -1,8 +1,14 @@
-# Current IdP and authentication state axes
+# Historical IdP and authentication state inventory (2026-10-06)
 
-This inventory describes the current local checkout, including pre-existing uncommitted changes,
-reconciled on 2026-10-06 against the implementation-plan checkout (branch `feature`). This is static
-implementation evidence, not deployed or live-database evidence.
+> This inventory predates the 2026-11-10 surface reset. Its route, host and writer descriptions are
+> a historical snapshot, not a current Access surface contract. Current local product surfaces are
+> Auth APP/ORG and Visa APP/ORG; operator tools are Mission, Flipper, Blazer, PgHero, Coverband and
+> Swagger. External relying parties own their callbacks and browser sessions in their own
+> repositories. Persisted state history remains subject to the deferred model/database report.
+
+The snapshot describes the local checkout, including pre-existing uncommitted changes, reconciled on
+2026-10-06 against the implementation-plan checkout (branch `feature`). It is static implementation
+evidence, not deployed or live-database evidence.
 
 `CONFIRMED` means the documented edge is present in current code; it does not mean every
 model-permitted edge has an HTTP caller. The canonical index below supersedes older investigation
@@ -11,7 +17,7 @@ writer. `UNCONFIRMED` and `UNKNOWN` remain honest dispositions for axes outside 
 Derived timestamp conditions are explicitly labeled; results, protocol nonce `state`, and lifecycle
 states are distinct.
 
-## Canonical delivered axes (2026-10-06)
+## Canonical delivered axes at snapshot time (2026-10-06)
 
 The following diagrams are the canonical state graphs for the `two.md` cycle. Each realm-specific
 diagram uses the same named transition contract unless the table explicitly identifies an actor
@@ -21,21 +27,21 @@ runtime authority.
 | Axis                      | Canonical diagrams                                                         | Delivered invariant                                                                                                                                                                                                               |
 | ------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Preference lifecycle ×5   | `idp-{app,org,com,client,operator}-preference-status.mmd`                  | Anonymous reset/sign-out replaces the retired row atomically; account preferences are created by explicit save and retired by reset. APP/ORG local destructive cutover was approved and applied; final acceptance remains pending |
-| Sign-in                   | `idp-{client,operator}-sign-in.mmd`                                         | One state reference; issuance completes the flow; session-limit resolution is a durable child and never a parent state                                                                                                            |
-| Flow-bound email OTP      | `idp-auth-email-otp-challenge.mmd`                                         | App sign-in per-ceremony generation and retained proof; delivery worker hardening remains incomplete                                                                                                                               |
+| Sign-in                   | `idp-{client,operator}-sign-in.mmd`                                        | One state reference; issuance completes the flow; session-limit resolution is a durable child and never a parent state                                                                                                            |
+| Flow-bound email OTP      | `idp-auth-email-otp-challenge.mmd`                                         | App sign-in per-ceremony generation and retained proof; delivery worker hardening remains incomplete                                                                                                                              |
 | Signup Contact OTP        | `idp-sign-up-otp-challenge.mmd`                                            | Independent APP Email/Telephone ceremony-owned keyed proof and immutable bounded result; original flow/browser and generation transport                                                                                           |
-| Authenticated Contact OTP | `idp-credential-registration-otp-challenge.mmd`                            | Independent APP/ORG Email/Telephone ceremony proof, original Root/browser, same-browser supersession and bound transport; Source-first settings finalization and bounded bootstrap evidence                                         |
-| Sign-up                   | `idp-{client,operator}-sign-up.mmd`                                         | Contact/checkpoint completion enters ordinary sign-in admission; terminal facts are retained                                                                                                                                      |
+| Authenticated Contact OTP | `idp-credential-registration-otp-challenge.mmd`                            | Independent APP/ORG Email/Telephone ceremony proof, original Root/browser, same-browser supersession and bound transport; Source-first settings finalization and bounded bootstrap evidence                                       |
+| Sign-up                   | `idp-{client,operator}-sign-up.mmd`                                        | Contact/checkpoint completion enters ordinary sign-in admission; terminal facts are retained                                                                                                                                      |
 | Visa logout request       | `idp-shared-oidc-logout-session.mmd`                                       | Per-realm browser transport binds a pending request to the current device and verified grant; completion is a presentation marker                                                                                                 |
 | OP BCL participant        | `idp-op-authority-stop-participant.mmd`                                    | One durable delivery state per stopped grant; retry, acknowledgment, refusal and deadline expiry are explicit                                                                                                                     |
-| Session-limit resolution  | `idp-{client,operator}-session-limit-resolution.mmd`                        | Actor, parent, browser, realm and optional OIDC binding are rechecked under the owner lock. Decided 2026-10-16, code pending: at most one open child per actor (the waiting unit, slot N+1); a further sign-in is refused         |
-| Admission binding ×2      | `idp-{client,operator}-auth-admission-binding.mmd`                          | D-82 is the narrow Base/Auth browser-bound exception; stale or cross-browser redemption is refused                                                                                                                                |
+| Session-limit resolution  | `idp-{client,operator}-session-limit-resolution.mmd`                       | Actor, parent, browser, realm and optional OIDC binding are rechecked under the owner lock. Decided 2026-10-16, code pending: at most one open child per actor (the waiting unit, slot N+1); a further sign-in is refused         |
+| Admission binding ×2      | `idp-{client,operator}-auth-admission-binding.mmd`                         | D-82 is the narrow Base/Auth browser-bound exception; stale or cross-browser redemption is refused                                                                                                                                |
 | O-9 sensitive admission   | `idp-sensitive-admission.mmd`                                              | Visa owns APP passkey/social and ORG passkey admission state; Base confirms its original browser through Visa before Auth writes, and sign-out cancels before local revoke. Source endpoints remain in progress                   |
 | Step-up                   | `idp-{client,operator}-step-up-ceremony.mmd`                               | Requirement and current policy travel through method choice, admission, result and mutation                                                                                                                                       |
-| RP session/token          | `idp-{client,operator}-{rp-session,token}.mmd`                              | Device-session parent, independent refresh evaluation and explicit retirement predicates                                                                                                                                          |
+| RP session/token          | `idp-{client,operator}-{rp-session,token}.mmd`                             | Device-session parent, independent refresh evaluation and explicit retirement predicates                                                                                                                                          |
 | App Secret                | `idp-client-secret-{credential,issuance,sign-in-receipt,audit-outbox}.mmd` | Identity-first claim, source/outbox local atomicity, receipt reconciliation and hold-aware collection                                                                                                                             |
 | Contact binding           | `idp-client-{email,telephone}-credential.mmd`                              | Effective binding facts and both-direction uniqueness; pending candidates do not occupy the binding                                                                                                                               |
-| Contact audit delivery    | `idp-contact-audit-outbox.mmd`                                             | App Source intents; Chronicle UUID identity match precedes Source acknowledgment                                                                                                                                                   |
+| Contact audit delivery    | `idp-contact-audit-outbox.mmd`                                             | App Source intents; Chronicle UUID identity match precedes Source acknowledgment                                                                                                                                                  |
 | External identity         | `idp-client-external-identity.mmd`, `idp-client-social-ceremony.mmd`       | Issuer/subject-only resolution, release history, no stale callback reattachment, and verified L1/L2 guidance through a fresh Base RP request                                                                                      |
 | Dead identifier archive   | `idp-email-dead-history.mmd`, `idp-telephone-dead-history.mmd`             | Independent channel archive callbacks for ordinary destruction and dedicated purge; whole-owner/bulk integration remains incomplete                                                                                               |
 
@@ -240,10 +246,10 @@ it writes no state or status value of its own.
 The six Email/Telephone ceremony models now have independent channel OTP ownership primitives. These
 do not claim that every HTTP issuance/verification path has been migrated.
 
-| Axis                   | Realm instances           | Storage                                                                                                     | Writer               | Diagram                                                           | Disposition                                                                      |
-| ---------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Axis                   | Realm instances  | Storage                                                                                                     | Writer               | Diagram                                                           | Disposition                                                                  |
+| ---------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------- | -------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Email ceremony OTP     | Client, Operator | Email ceremony transactions: purpose, generation, keyed verifier, expiry, consumed/cancelled timestamps     | EmailCeremonyOtp     | [Email primitive](./idp-email-ceremony-otp-primitive.mmd)         | APP withdrawal/recovery reentry integrated; other caller integration pending |
-| Telephone ceremony OTP | Client, Operator | Telephone ceremony transactions: purpose, generation, keyed verifier, expiry, consumed/cancelled timestamps | TelephoneCeremonyOtp | [Telephone primitive](./idp-telephone-ceremony-otp-primitive.mmd) | Model primitive delivered; caller integration pending                            |
+| Telephone ceremony OTP | Client, Operator | Telephone ceremony transactions: purpose, generation, keyed verifier, expiry, consumed/cancelled timestamps | TelephoneCeremonyOtp | [Telephone primitive](./idp-telephone-ceremony-otp-primitive.mmd) | Model primitive delivered; caller integration pending                        |
 
 The old identifier-owned OTP inventory above describes callers still awaiting migration. Its
 `OtpLockable` writer references are superseded by separate EmailOtpPolicy and TelephoneOtpPolicy.

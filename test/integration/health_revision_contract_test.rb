@@ -4,7 +4,7 @@
 require "test_helper"
 
 # The final wire contract for the health and revision endpoints, exercised end to end on two
-# surfaces (base/app and base/com).
+# retained Auth and Visa app/org surfaces.
 #
 # Two endpoint families:
 #
@@ -21,15 +21,19 @@ require "test_helper"
 class HealthRevisionContractTest < ActionDispatch::IntegrationTest
   REVISION = "0123456789abcdef0123456789abcdef01234567"
 
-  APP_HOST = ENV.fetch("PUBLIC_BASE_SERVICE_URL", "base.app.localhost")
-  COM_HOST = ENV.fetch("PUBLIC_BASE_CORPORATE_URL", "base.com.localhost")
-  EDIT_HOST = ENV.fetch("PUBLIC_EDIT_STAFF_URL", "edit.org.localhost")
+  AUTH_APP_HOST = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+  AUTH_ORG_HOST = ENV.fetch("PUBLIC_AUTH_STAFF_URL")
+  VISA_APP_HOST = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+  VISA_ORG_HOST = ENV.fetch("PUBLIC_VISA_STAFF_URL")
 
   SURFACES = {
-    APP_HOST => Health::Profiles::App,
-    COM_HOST => Health::Profiles::Com,
-    EDIT_HOST => Health::Profiles::Org,
+    AUTH_APP_HOST => Health::Profiles::SignApp,
+    AUTH_ORG_HOST => Health::Profiles::SignOrg,
+    VISA_APP_HOST => Health::Profiles::App,
+    VISA_ORG_HOST => Health::Profiles::Org,
   }.freeze
+
+  APP_HOST = AUTH_APP_HOST
 
   PROBES = %w(startup liveness readiness).freeze
 
@@ -357,7 +361,7 @@ class HealthRevisionContractTest < ActionDispatch::IntegrationTest
 
   test "a readiness outage is 503 on readiness and the machine aggregate, but liveness still passes" do
     host! APP_HOST
-    profile = Health::Profiles::App
+    profile = Health::Profiles::SignApp
     unready = Health::CheckResult.new(check: :readiness, status: :unready, surface: profile.surface_label)
 
     Health::ReadinessCheck.stub(:call, unready) do
@@ -592,7 +596,7 @@ class HealthRevisionContractTest < ActionDispatch::IntegrationTest
   # order have to survive the failing case too -- that is the case an operator reads.
   test "the text health aggregate reports the failing probe and answers 503" do
     host! APP_HOST
-    profile = Health::Profiles::App
+    profile = Health::Profiles::SignApp
 
     Health::ReadinessCheck.stub(
       :call,
@@ -606,7 +610,7 @@ class HealthRevisionContractTest < ActionDispatch::IntegrationTest
     assert_equal "no-store", response.headers["Cache-Control"]
     assert_match(
       Regexp.new(
-        "\\Atitle: Health status\\nnamespace: base/app\\nstatus: unavailable\\nstartup: ok\\n" \
+        "\\Atitle: Health status\\nnamespace: auth/app\\nstatus: unavailable\\nstartup: ok\\n" \
         "liveness: ok\\nreadiness: unavailable\\ntimestamp: [^\\n]+Z\\n\\z",
       ),
       response.body,

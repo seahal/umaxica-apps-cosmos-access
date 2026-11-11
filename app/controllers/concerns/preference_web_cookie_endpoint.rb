@@ -12,7 +12,6 @@ module PreferenceWebCookieEndpoint
 
   def show_banner?
     state = cookie_consent_state
-    return !@com_consent_decision_available if anonymous_com_claim_shape?(preference_class)
     return !@cookie_consent_decision_available if anonymous_preference_claim_shape?(preference_class)
 
     !state.fetch(:consented)
@@ -20,10 +19,6 @@ module PreferenceWebCookieEndpoint
 
   # `requested` is an already read consent decision (`cookie_consent_request`).
   def apply_cookie_consent_update!(requested)
-    if anonymous_com_claim_shape?(preference_class)
-      persist_anonymous_com_cookie_consent!(requested)
-      return
-    end
     if anonymous_preference_claim_shape?(preference_class)
       persist_anonymous_realm_cookie_consent!(requested)
       return
@@ -33,30 +28,6 @@ module PreferenceWebCookieEndpoint
   rescue StandardError => e
     Rails.logger.error("[PreferenceWebCookieEndpoint] consent update failed: #{e.class}")
     raise
-  end
-
-  def persist_anonymous_com_cookie_consent!(attrs)
-    raw_binding = cookies[PreferenceBrowserBinding::COOKIE_NAME]
-
-    issuance =
-      write_preference!(
-        operation: :save, actor: Actor.current,
-        submitted: attrs,
-      ) do |preference, decision_time, submitted|
-        raw_binding = PreferenceBrowserBinding.mint_value unless PreferenceBrowserBinding.valid_value?(raw_binding)
-        cookie = load_or_create_preference_cookie!(preference)
-        require_matching_existing_browser_binding!(cookie, raw_binding)
-        receipt = ComPreferenceConsentReceipt.find_or_initialize_by(preference_id: preference.id)
-        if receipt.new_record?
-          cookie.update!({ consented: false, functional: false, performant: false, targetable: false }.merge(submitted))
-        else
-          cookie.update!(submitted)
-        end
-        receipt.update!(version: SecureRandom.uuid, recorded_at: decision_time)
-        store_com_browser_binding!(preference.id, raw_binding)
-      end
-
-    write_browser_binding_cookie(raw_binding, expires_at: issuance.expires_at)
   end
 
   def persist_anonymous_realm_cookie_consent!(attrs)
@@ -121,18 +92,4 @@ module PreferenceWebCookieEndpoint
     }
   end
 
-  def load_or_create_preference_cookie!(preference)
-    record_class = PreferenceClassRegistry.cookie_class(preference_prefix(preference))
-    relation = record_class.where(preference_id: preference.id)
-    cookie = relation.first
-    return cookie if cookie.present?
-
-    default_attrs = {
-      targetable: false,
-      performant: false,
-      functional: false,
-      consented: false,
-    }
-    relation.create!(default_attrs)
-  end
 end

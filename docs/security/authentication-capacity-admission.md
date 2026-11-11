@@ -7,12 +7,14 @@ control described by U07 in `three.md`. It does not introduce a waiting room, a 
 flag, or a new admission state machine.
 
 The current `AuthCeremonyAdmission` and `BaseAuthAdmissionCoordinator` contracts remain security
-admissions. They are not capacity permits and must not be weakened or repurposed.
+admissions. The coordinator's `Base` constant is a retained implementation name, not a current local
+Base surface. These admissions are not capacity permits and must not be weakened or repurposed.
 
 ## Existing entry boundary
 
-Visa creates the OIDC admission for the routed surface. Base remains the browser RP that starts the
-OIDC request; Auth consumes the admission through `AuthCeremonyAdmission` and `AuthCeremonyContext`:
+Visa creates the OIDC admission for the routed APP or ORG surface. An external RP starts the OIDC
+request through its Visa registration; Auth consumes the admission through `AuthCeremonyAdmission`
+and `AuthCeremonyContext`:
 
 - `app/controllers/visa/app/oauth/authorizations_controller.rb`
 - `app/controllers/visa/org/oauth/authorizations_controller.rb`
@@ -22,8 +24,8 @@ OIDC request; Auth consumes the admission through `AuthCeremonyAdmission` and `A
 The admission is bound to the surface, intent, browser context, ceremony session, and parent
 transaction. It is one-time and replay protected. A context-free Auth request and a mismatched or
 reused admission are refused. The Auth controllers for App and Org include this boundary before
-entering the surface-local Sign In, Sign Up, or verification state machine. The corporate (`com`)
-host serves no credential ceremony and has no admission, so it has no row in this map.
+entering the surface-local Sign In, Sign Up, or verification state machine. Access has no COM
+credential host or admission route.
 
 The following existing controls remain separate:
 
@@ -40,14 +42,14 @@ The following existing controls remain separate:
 The current routes keep Sign In and Sign Up independent. They must remain independent if a future
 capacity gate is added.
 
-| Surface and flow                  | Entry or continuation boundary                                                                         | Expensive execution that needs a future second check                                                                           |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| App Sign In                       | `auth/app/sign/ins_controller.rb`, then surface-local email, passkey, secret, or challenge controllers | Password/secret verification, email OTP issue/verify, Passkey challenge/verification, TOTP/passcode work                       |
-| Org Sign In and Standby           | `auth/org/sign/ins_controller.rb` and the normal/emergency Passkey controllers                         | Operator Passkey and secret credential verification; Standby continues to forbid Step-Up                                       |
-| App Sign Up                       | `auth/app/sign/ups_controller.rb`, email/telephone and social registration controllers                 | Turnstile/provider verification, OTP issue/verify, Passkey registration, secret credential hashing and finalization            |
-| Provider callback                 | App social callback controllers and registered OIDC callback paths                                     | Provider assertion validation, callback replay checks, and the subsequent Sign In/Sign Up finalizer                            |
-| Resume/direct POST                | Every continuation controller retains the admission, flow/ticket, CSRF, expiry, and owner checks       | A future execution gate must be repeated immediately before the expensive operation; hiding an entry button is insufficient    |
-| Completed App Sign Up handoff     | `finalize_sign_up_from_checkpoint!` enters canonical Sign In admission                                 | Sign In guardrails and Base session issuance remain authoritative; registration completion is not a capacity or session bypass |
+| Surface and flow              | Entry or continuation boundary                                                                         | Expensive execution that needs a future second check                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| App Sign In                   | `auth/app/sign/ins_controller.rb`, then surface-local email, passkey, secret, or challenge controllers | Password/secret verification, email OTP issue/verify, Passkey challenge/verification, TOTP/passcode work                       |
+| Org Sign In and Standby       | `auth/org/sign/ins_controller.rb` and the normal/emergency Passkey controllers                         | Operator Passkey and secret credential verification; Standby continues to forbid Step-Up                                       |
+| App Sign Up                   | `auth/app/sign/ups_controller.rb`, email/telephone and social registration controllers                 | Turnstile/provider verification, OTP issue/verify, Passkey registration, secret credential hashing and finalization            |
+| Provider callback             | Auth APP social callbacks and external RP callbacks in their own repositories                          | Provider assertion validation, callback replay checks, and the subsequent Sign In/Sign Up finalizer                            |
+| Resume/direct POST            | Every continuation controller retains the admission, flow/ticket, CSRF, expiry, and owner checks       | A future execution gate must be repeated immediately before the expensive operation; hiding an entry button is insufficient    |
+| Completed App Sign Up handoff | `finalize_sign_up_from_checkpoint!` enters canonical Sign In admission                                 | Sign In guardrails and Visa session issuance remain authoritative; registration completion is not a capacity or session bypass |
 
 This map is a boundary inventory, not a claim that every expensive operation already has an
 execution-capacity limiter. The current controls prevent unauthorised or stale flow entry, but do
@@ -77,7 +79,7 @@ unchanged.
 ## Verification state
 
 The current boundary audit is recorded in `five.md`, `six.md`, and the U07 ledger in `three.md`. The
-existing Base/Auth and OIDC tests cover admission binding, prompt handling, replay refusal, and
+existing Visa/Auth and OIDC tests cover admission binding, prompt handling, replay refusal, and
 surface separation. A future gate requires additional tests for normal admission, explicit denial,
 direct execution requests, callback/resume paths, surface separation, and store failure according to
 the accepted outage policy.

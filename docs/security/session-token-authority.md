@@ -1,75 +1,36 @@
 # Session And Token Authority
 
-## Current Visa OP / Base RP Authority (2026-10-24)
+## Current Access ownership
 
-Visa is the sole physical OIDC Identity Provider and Authorization Server for the active app and
-org authentication realms. Visa owns the Browser Session and the surface-local authority state.
-Base is the Base browser relying party and owns its host-local RP Session beneath that authority.
-The five active first-party browser RPs (`core-app`, `core-org`, `side-app`, `side-org`, and
-`edit-org`) receive their Access and Refresh credentials from the corresponding Visa token endpoint
-and store those credentials only in host-only RP cookies on the RP host. A browser RP callback does
-not call the generic root `log_in` path or create a second actor token.
+Visa APP and ORG are the only local OpenID Provider and Authorization Server surfaces. Visa owns
+their OP device/session state, root and grant authority, and OIDC token issuance, refresh,
+revocation, and logout.
 
-The Base Self-RP follows the same rule: its RP credentials and callback remain on `www.umaxica.app`
-and `.org`, while authorization, token, UserInfo, revocation and end-session requests are
-sent to the corresponding `visa.umaxica.*` host. Visa and Base cookies are host-only and are never
-treated as interchangeable credentials.
+Auth APP and ORG own credential-ceremony continuity. Auth does not issue a general login session, OP
+refresh token, downstream token, or session-bound step-up freshness. Credential evidence becomes
+authority only when the owning session authority validates and commits it.
 
-Auth owns credential ceremony continuity only. Auth does not act as an OIDC RP, exchange RP codes,
-or issue Visa Browser Session or RP Session authority. The RP Access JWT is validated locally at the
-browser API boundary using the exact registered RP audience/client binding. Exchanged and refreshed
-OIDC Access JWTs carry the RP Session identifier in the protocol `sid` claim and the parent Visa
-Browser Session public identifier in the private `umx_base_sid` claim. Normal bearer validation uses
-the verified JWT claims, the active Base Browser Session binding, and the actor resource; it does
-not perform an RP Session database lookup. Refresh, revoke, and logout remain Visa/RP-Session
-operations. Revoking only an RP Session therefore stops refresh and new issuance, while an
-already-issued Access JWT remains usable until its natural expiry and verifier clock-skew boundary.
+Access does not provide local Browser RP routes for Base, Core, Warp, Palm, Edit, Tech, or other
+external relying parties. Visa's external RP client registrations remain available. Each RP owner
+controls its callback, host-local session and cookies, access/refresh credential storage, and local
+logout completion. A Visa OP cookie never authorizes mutation of an external RP session, and an RP
+credential never substitutes for the Visa OP session.
 
-The older `acme/www` and `sign/id` wording below is retained as migration history. It must not be
-used to infer current physical ownership where it conflicts with the Visa/Auth/Base-RP boundary
-above.
+Models, migrations, and database connections associated with removed RP surfaces remain pending the
+separate model/database report. Persisted history does not establish that an RP route, controller,
+session writer, or token issuer remains active in Access.
 
-> **Historical note:** The earlier Acme/Core/Sign component model is retained in the lower sections
-> for migration traceability. The current physical authority is defined by `adr/visa-op-host.md`:
-> Visa is the only IdP/Authorization Server, Auth is ceremony-only, and Base plus each first-party
-> RP owns only its host-local credential transport.
+## Step-up evidence
 
-## Historical Migration Authority
+Auth may perform an admitted credential ceremony, but successful ceremony output is evidence only.
+The authority that owns the affected session and protected operation must validate the evidence,
+recheck current policy, and commit any freshness state. Access does not create an external RP
+session or make an external RP's step-up decision.
 
-`acme/www` owns all user sessions, refresh token families, OAuth/OIDC token authority, access-token
-issuance, downstream token issuance, session management, logout, revoke, compromise state, and
-step-up freshness confirmation.
+## Historical decisions
 
-`sign/id` must not issue, refresh, rotate, revoke, list, or display user sessions. It must not issue
-refresh tokens, access tokens, downstream tokens, or step-up freshness.
-
-## Physical Storage
-
-Logical authority moves now; physical DB movement is out of scope. Existing sign-side token tables,
-models, services, or controller names do not imply sign-side authority. During migration they are
-compatibility placement only unless a current ADR explicitly says otherwise.
-
-## Downstream Trust
-
-`core`, `line`, and future downstream services trust acme-issued downstream tokens only. They must
-reject sign-issued session, access, and downstream tokens.
-
-## Step-Up Freshness
-
-`sign/id` may execute the credential ceremony for step-up. `acme/www` decides whether the signed
-result satisfies the requested purpose and stores any resulting freshness on the acme session.
-
-## Related
-
-- `docs/security/logout-session-management.md`
-- `docs/security/downstream-token-authority.md`
-- `docs/security/step-up-ceremony-delegation.md`
-
-## Delivered reconciliation (2026-10-24)
-
-Visa owns the Root/Browser Session and OIDC authority; Base and the other first-party surfaces own
-only their RP credential contracts and host-local sessions. A valid parent security context may
-authorize an OIDC request under its explicit prompt/max-age rules but never acts as a missing RP
-credential. RP sessions are parented by stable DeviceSessions; refresh uses device-session-first
-rotation and bounded encrypted coalescing. Auth owns ceremony continuity only, and step-up freshness
-is accepted by the owning RP after the operation and current-policy checks.
+Older Acme/Core/Sign and Base/RP authority descriptions are preserved in accepted decisions and
+dated records. They do not change the current local ownership above. See the
+[Visa OP host decision](../../adr/visa-op-host.md), the
+[external RP registration boundary](../architecture/base-auth-seven-rp-boundary.md), and the
+[logout contract](logout-session-management.md).

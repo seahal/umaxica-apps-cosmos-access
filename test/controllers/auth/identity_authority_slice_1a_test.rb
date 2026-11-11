@@ -8,21 +8,21 @@ class Auth::IdentityAuthoritySlice1ATest < ActionDispatch::IntegrationTest
   test "auth does not expose authorization-server authority routes" do
     assert_raises(ActionController::RoutingError) do
       Rails.application.routes.recognize_path(
-        "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL", "auth.app.localhost")}/oauth/token",
+        "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL")}/oauth/token",
         method: :post,
       )
     end
 
     assert_raises(ActionController::RoutingError) do
       Rails.application.routes.recognize_path(
-        "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL", "auth.app.localhost")}/oauth/userinfo",
+        "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL")}/oauth/userinfo",
         method: :get,
       )
     end
 
     assert_raises(ActionController::RoutingError) do
       Rails.application.routes.recognize_path(
-        "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL", "auth.app.localhost")}/oidc/jwks",
+        "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL")}/oidc/jwks",
         method: :get,
       )
     end
@@ -31,7 +31,7 @@ class Auth::IdentityAuthoritySlice1ATest < ActionDispatch::IntegrationTest
   test "auth settings sessions route is retired" do
     assert_raises(ActionController::RoutingError) do
       Rails.application.routes.recognize_path(
-        "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL", "auth.app.localhost")}/settings/sessions",
+        "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL")}/settings/sessions",
         method: :get,
       )
     end
@@ -40,7 +40,7 @@ class Auth::IdentityAuthoritySlice1ATest < ActionDispatch::IntegrationTest
   test "auth withdrawal route is retired" do
     assert_raises(ActionController::RoutingError) do
       Rails.application.routes.recognize_path(
-        "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL", "auth.app.localhost")}/settings/withdrawal/new",
+        "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL")}/settings/withdrawal/new",
         method: :get,
       )
     end
@@ -48,11 +48,11 @@ class Auth::IdentityAuthoritySlice1ATest < ActionDispatch::IntegrationTest
 
   test "auth sign in and sign up entry routes still resolve on auth" do
     sign_in = Rails.application.routes.recognize_path(
-      "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL", "auth.app.localhost")}/sign/in",
+      "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL")}/sign/in",
       method: :get,
     )
     sign_up = Rails.application.routes.recognize_path(
-      "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL", "auth.app.localhost")}/sign/up",
+      "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL")}/sign/up",
       method: :get,
     )
 
@@ -62,66 +62,29 @@ class Auth::IdentityAuthoritySlice1ATest < ActionDispatch::IntegrationTest
     assert_equal "show", sign_up.fetch(:action)
   end
 
-  test "auth sign out lifecycle routes use the explicit ceremony contract" do
-    route = Rails.application.routes.recognize_path(
-      "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL", "auth.app.localhost")}/sign/out/new",
-      method: :get,
-    )
-
-    assert_equal "auth/app/sign/outs", route.fetch(:controller)
-    assert_equal "new", route.fetch(:action)
-
-    route = Rails.application.routes.recognize_path(
-      "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL", "auth.app.localhost")}/sign/out/edit",
-      method: :get,
-    )
-
-    assert_equal "auth/app/sign/outs", route.fetch(:controller)
-    assert_equal "edit", route.fetch(:action)
-
-    route = Rails.application.routes.recognize_path(
-      "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL", "auth.app.localhost")}/sign/out",
-      method: :post,
-    )
-
-    assert_equal "auth/app/sign/outs", route.fetch(:controller)
-    assert_equal "create", route.fetch(:action)
-
-    route = Rails.application.routes.recognize_path(
-      "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL", "auth.app.localhost")}/sign/out",
-      method: :delete,
-    )
-
-    assert_equal "auth/app/sign/outs", route.fetch(:controller)
-    assert_equal "destroy", route.fetch(:action)
-
-    route = Rails.application.routes.recognize_path(
-      "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL", "auth.app.localhost")}/sign/out",
-      method: :get,
-    )
-
-    assert_equal "auth/app/sign/outs", route.fetch(:controller)
-    assert_equal "show", route.fetch(:action)
+  test "Auth sign-out relay routes are absent" do
+    %i(get post patch put delete).each do |method|
+      assert_raises(ActionController::RoutingError) do
+        Rails.application.routes.recognize_path(
+          "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL")}/sign/out",
+          method: method,
+        )
+      end
+    end
   end
 
-  test "base authority owns logout and auth remains rp only" do
-    sign_out = Rails.application.routes.recognize_path(
-      "https://#{ENV.fetch("PRIVATE_BASE_SERVICE_URL", "www.app.localhost")}/sign/out/new",
-      method: :get,
-    )
+  test "Visa owns OIDC logout while Auth has no sign-out route" do
     oidc_logout = Rails.application.routes.recognize_path(
       "https://#{Rails.configuration.x.boot_config.fetch(:hosts).visa_service.host}/oidc/logout",
       method: :get,
     )
 
-    assert_equal "base/app/sign_outs", sign_out.fetch(:controller)
-    assert_equal "new", sign_out.fetch(:action)
     assert_equal "visa/app/oidc/logouts", oidc_logout.fetch(:controller)
     assert_equal "show", oidc_logout.fetch(:action)
 
     assert_raises(ActionController::RoutingError) do
       Rails.application.routes.recognize_path(
-        "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL", "auth.app.localhost")}/oidc/logout",
+        "https://#{ENV.fetch("PRIVATE_AUTH_SERVICE_URL")}/oidc/logout",
         method: :get,
       )
     end

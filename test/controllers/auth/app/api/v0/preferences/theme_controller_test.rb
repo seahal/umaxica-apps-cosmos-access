@@ -11,7 +11,7 @@ class Auth::App::Api::V0::Preferences::ThemeControllerTest < ActionDispatch::Int
 
   setup do
     _ = PreferenceBase # ensure autoload of JwtConfiguration/Token defined in same file
-    @host = CoreHostNormalization.normalize(JitIdHostEnv.service_url) || "auth.app.localhost"
+    @host = "auth.app.localhost"
     host! @host
   end
 
@@ -41,33 +41,6 @@ class Auth::App::Api::V0::Preferences::ThemeControllerTest < ActionDispatch::Int
     assert_response :ok
     assert_equal "dr", response.parsed_body["theme"]
     assert_nil response.headers["Set-Cookie"]
-  end
-
-  test "PATCH cannot change the Preference theme on the read-only Auth host" do
-    token = encode_preference_jwt(
-      preferences: { "theme" => "system" },
-      host: @host,
-      public_id: "pref-app-public-id",
-    )
-    cookies[PreferenceCookieName.anonymous_jwt] = token
-
-    with_preference_realm_issuers do
-      patch auth_app_api_v0_preferences_theme_path, params: { theme: "dark" }, as: :json
-    end
-
-    assert_response :forbidden
-    assert_no_preference_state_cookies
-  end
-
-  test "PATCH cannot create Preference state for an anonymous visitor on Auth" do
-    cookies.delete(PreferenceCookieName.anonymous_jwt)
-
-    assert_no_difference -> { AppPreference.count } do
-      patch auth_app_api_v0_preferences_theme_path, params: { theme: "dark" }, as: :json
-    end
-
-    assert_response :forbidden
-    assert_no_preference_state_cookies
   end
 
   private

@@ -7,6 +7,45 @@ require "test_helper"
 class SocialLoginSocTest < ActionDispatch::IntegrationTest
   self.fixture_table_names = []
 
+  private
+
+  def admit_social_auth!(browser, intent:, visa_browser: nil)
+    auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+    browser.host!(auth_host)
+    browser.https!
+    base_browser_nonce = SecureRandom.urlsafe_base64(32)
+    issuance = OidcTestEntry.issue!(surface: "app", intent:, base_browser_nonce:, base_token: nil)
+    if visa_browser
+      visa_browser.session[BaseAdmissionBrowserBinding::BROWSER_NONCE_SESSION_KEY] = base_browser_nonce
+    end
+    entry_path = (intent == "sign_up") ? auth_app_sign_up_path(ri: "jp") : auth_app_sign_in_path(ri: "jp")
+    admit_auth_ceremony_entry!(entry_path, reference: issuance.reference, browser:)
+    target = URI.parse(browser.response.location)
+    raise RuntimeError, "Auth admission redirected outside Auth" if target.host && target.host != auth_host
+
+    browser.get(
+      target.request_uri, headers: { "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document" },
+    )
+    raise RuntimeError, "Auth admission did not render its entry page" unless browser.response.successful?
+
+    issuance
+  end
+
+  def social_admission_binding_for(browser)
+    ceremony = ClientAuthCeremonySession.find_active_by_raw_sid(browser.cookies["auth_sid"])
+    ClientAuthAdmissionBinding.find_by!(admitted_auth_ceremony_session_id: ceremony.id)
+  end
+
+  def set_social_provider_fixture(browser, provider, subject)
+    OmniAuth.config.mock_auth[provider.to_sym] = OmniAuth::AuthHash.new(
+      provider:, uid: subject, info: { name: "SOC provider fixture" },
+      credentials: { token: "provider-fixture", expires_at: 1.hour.from_now.to_i },
+      extra: { id_info: { nonce: browser.session[:social_auth_nonce] } },
+    )
+  end
+
+  public
+
   setup do
     @previous_protection = ActionController::Base.allow_forgery_protection
     ActionController::Base.allow_forgery_protection = true
@@ -37,65 +76,12 @@ class SocialLoginSocTest < ActionDispatch::IntegrationTest
         ClientAppleIdentity.create!(
           user: actor, uid: subject, provider: "apple", status_id: ClientAppleIdentityStatus::ACTIVE,
         )
-        base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
         auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-        visa_host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
-        base = open_session
         auth = open_session
-        visa = open_session
-        browsers = { base_host => base, auth_host => auth, visa_host => visa }
-        navigation = { "Sec-Fetch-Mode" => "navigate",
-                       "Sec-Fetch-Dest" => "document",
-                       "Sec-Fetch-Site" => "cross-site", }
         auth_headers = { "Origin" => "https://#{auth_host}", "Sec-Fetch-Site" => "same-origin" }
-        base_headers = { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" }
-        base.host!(base_host)
-        base.https!
-        auth.host!(auth_host)
-        auth.https!
-        visa.host!(visa_host)
-        visa.https!
-        base.get(
-          "/sign",
-          params: { ri: "jp" }, headers: navigation,
-        )
+        admit_social_auth!(auth, intent: "sign_in")
 
-        assert_equal 200, base.response.status
-        form = base.response.parsed_body.at_css("form")
-        fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-        base.post(form["action"], params: fields, headers: base_headers)
-
-        assert_equal 303, base.response.status
-        current = base
-        20.times do
-          if current.response.redirect?
-            target = URI.parse(current.response.location)
-            if target.host == "jump.umaxica.net"
-              payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-              target = URI.parse(payload.fetch("url"))
-            end
-            target = URI.join("https://#{current.host}", target.to_s)
-            current = browsers.fetch(target.host)
-            current.get(target.request_uri, headers: navigation)
-            next
-          end
-          form = current.response.parsed_body.at_css(
-            "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-            "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-          )
-          break unless form
-
-          target = URI.join("https://#{current.host}", form["action"])
-          fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-          current = browsers.fetch(target.host)
-          current.post(
-            target.request_uri,
-            params: fields,
-            headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-          )
-        end
-
-        assert_equal [auth, 200, "/sign/in"], [current, current.response.status, current.request.path]
+        assert_equal [200, "/sign/in"], [auth.response.status, auth.request.path]
         binding = ClientAuthAdmissionBinding.find_by!(
           admitted_auth_ceremony_session_id:
             ClientAuthCeremonySession.find_active_by_raw_sid(auth.cookies["auth_sid"]).id,
@@ -149,106 +135,12 @@ class SocialLoginSocTest < ActionDispatch::IntegrationTest
             user: actor, uid: subject, provider: provider, status_id: ClientAppleIdentityStatus::ACTIVE,
           )
         end
-        base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
         auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-        visa_host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
-        base = open_session
         auth = open_session
-        visa = open_session
-        browsers = { base_host => base, auth_host => auth, visa_host => visa }
-        navigation = { "Sec-Fetch-Mode" => "navigate",
-                       "Sec-Fetch-Dest" => "document",
-                       "Sec-Fetch-Site" => "cross-site", }
         auth_headers = { "Origin" => "https://#{auth_host}", "Sec-Fetch-Site" => "same-origin" }
-        base_headers = { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" }
-        base.host!(base_host)
-        base.https!
-        auth.host!(auth_host)
-        auth.https!
-        visa.host!(visa_host)
-        visa.https!
-        base.get(
-          "/sign",
-          params: { ri: "jp" }, headers: navigation,
-        )
+        admit_social_auth!(auth, intent: sign_up ? "sign_up" : "sign_in")
 
-        assert_equal 200, base.response.status
-        form = base.response.parsed_body.at_css("form")
-        fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-        base.post(form["action"], params: fields, headers: base_headers)
-
-        assert_equal 303, base.response.status
-        current = base
-        20.times do
-          if current.response.redirect?
-            target = URI.parse(current.response.location)
-            if target.host == "jump.umaxica.net"
-              payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-              target = URI.parse(payload.fetch("url"))
-            end
-            target = URI.join("https://#{current.host}", target.to_s)
-            current = browsers.fetch(target.host)
-            current.get(target.request_uri, headers: navigation)
-            next
-          end
-          form = current.response.parsed_body.at_css(
-            "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-            "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-          )
-          break unless form
-
-          target = URI.join("https://#{current.host}", form["action"])
-          fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-          current = browsers.fetch(target.host)
-          current.post(
-            target.request_uri,
-            params: fields,
-            headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-          )
-        end
-
-        assert_equal [auth, 200, "/sign/in"], [current, current.response.status, current.request.path]
-        if sign_up
-          props = JSON.parse(auth.response.parsed_body.at_css("script[data-page='app']").text).fetch("props")
-          form = props.fetch("switch_form")
-          auth.post(
-            form.fetch("action"),
-            params: { to: "sign_up", authenticity_token: form.fetch("authenticity_token") },
-            headers: auth_headers,
-          )
-
-          assert_equal 303, auth.response.status
-          current = auth
-          20.times do
-            if current.response.redirect?
-              target = URI.parse(current.response.location)
-              if target.host == "jump.umaxica.net"
-                payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-                target = URI.parse(payload.fetch("url"))
-              end
-              target = URI.join("https://#{current.host}", target.to_s)
-              current = browsers.fetch(target.host)
-              current.get(target.request_uri, headers: navigation)
-              next
-            end
-            form = current.response.parsed_body.at_css(
-              "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-              "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-            )
-            break unless form
-
-            target = URI.join("https://#{current.host}", form["action"])
-            fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-            current = browsers.fetch(target.host)
-            current.post(
-              target.request_uri,
-              params: fields,
-              headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-            )
-          end
-
-          assert_equal [auth, 200, "/sign/up"], [current, current.response.status, current.request.path]
-        end
+        assert_equal [200, sign_up ? "/sign/up" : "/sign/in"], [auth.response.status, auth.request.path]
         binding = ClientAuthAdmissionBinding.find_by!(
           admitted_auth_ceremony_session_id:
             ClientAuthCeremonySession.find_active_by_raw_sid(auth.cookies["auth_sid"]).id,
@@ -283,238 +175,41 @@ class SocialLoginSocTest < ActionDispatch::IntegrationTest
                                   auth.cookies[AuthenticationBase::REFRESH_COOKIE_KEY],]
       end
 
-      test "SOC-8: #{provider} abandoned #{sign_up ? "signup" : "signin"} permits two fresh browser entries" do
-        base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+      test "SOC-8: #{provider} abandoned #{sign_up ? "signup" : "signin"} permits fresh OIDC browser entries" do
         auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-        visa_host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
-        base = open_session
-        auth = open_session
-        visa = open_session
-        browsers = { base_host => base, auth_host => auth, visa_host => visa }
-        navigation = { "Sec-Fetch-Mode" => "navigate",
-                       "Sec-Fetch-Dest" => "document",
-                       "Sec-Fetch-Site" => "cross-site", }
-        auth_headers = { "Origin" => "https://#{auth_host}", "Sec-Fetch-Site" => "same-origin" }
-        base_headers = { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" }
-        base.host!(base_host)
-        base.https!
-        auth.host!(auth_host)
-        auth.https!
-        visa.host!(visa_host)
-        visa.https!
-        # Owner decision: each fresh admission must reach the first page with 200 after abandonment.
-        parent_ids = []
-        3.times do |attempt|
-          base.get(
-            "/sign",
-            params: { ri: "jp" }, headers: navigation,
+        transaction_ids = []
+        binding_ids = []
+
+        3.times do
+          auth = open_session
+          issuance = admit_social_auth!(auth, intent: sign_up ? "sign_up" : "sign_in")
+          transaction_ids << issuance.transaction.id
+          binding = ClientAuthAdmissionBinding.find_by!(entry_ref: issuance.reference)
+          binding_ids << binding.id
+
+          assert_equal auth_host, auth.host
+          assert_equal [200, sign_up ? "/sign/up" : "/sign/in"], [auth.response.status, auth.request.path]
+          assert_predicate issuance.transaction, :pending?
+          assert_not_predicate(
+            ClientAuthCeremonySession.find(binding.admitted_auth_ceremony_session_id),
+            :authentication_evidence_recorded?,
           )
-
-          assert_equal 200, base.response.status
-          form = base.response.parsed_body.at_css("form")
-          fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-          base.post(form["action"], params: fields, headers: base_headers)
-
-          assert_equal 303, base.response.status
-          current = base
-          20.times do
-            if current.response.redirect?
-              target = URI.parse(current.response.location)
-              if target.host == "jump.umaxica.net"
-                payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-                target = URI.parse(payload.fetch("url"))
-              end
-              target = URI.join("https://#{current.host}", target.to_s)
-              current = browsers.fetch(target.host)
-              current.get(target.request_uri, headers: navigation)
-              next
-            end
-            form = current.response.parsed_body.at_css(
-              "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-              "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-            )
-            break unless form
-
-            target = URI.join("https://#{current.host}", form["action"])
-            fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-            current = browsers.fetch(target.host)
-            current.post(
-              target.request_uri,
-              params: fields,
-              headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-            )
-          end
-
-          assert_equal [auth, 200, "/sign/in"], [current, current.response.status, current.request.path]
-          if sign_up
-            props = JSON.parse(auth.response.parsed_body.at_css("script[data-page='app']").text).fetch("props")
-            form = props.fetch("switch_form")
-            auth.post(
-              form.fetch("action"),
-              params: { to: "sign_up", authenticity_token: form.fetch("authenticity_token") },
-              headers: auth_headers,
-            )
-
-            assert_equal 303, auth.response.status
-            current = auth
-            20.times do
-              if current.response.redirect?
-                target = URI.parse(current.response.location)
-                if target.host == "jump.umaxica.net"
-                  payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-                  target = URI.parse(payload.fetch("url"))
-                end
-                target = URI.join("https://#{current.host}", target.to_s)
-                current = browsers.fetch(target.host)
-                current.get(target.request_uri, headers: navigation)
-                next
-              end
-              form = current.response.parsed_body.at_css(
-                "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-                "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-              )
-              break unless form
-
-              target = URI.join("https://#{current.host}", form["action"])
-              fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-              current = browsers.fetch(target.host)
-              current.post(
-                target.request_uri,
-                params: fields,
-
-                headers: { "Origin" => "https://#{target.host}",
-                           "Sec-Fetch-Site" => "same-origin", },
-              )
-            end
-
-            assert_equal [auth, 200, "/sign/up"], [current, current.response.status, current.request.path]
-          end
-          binding = ClientAuthAdmissionBinding.find_by!(
-            admitted_auth_ceremony_session_id:
-              ClientAuthCeremonySession.find_active_by_raw_sid(auth.cookies["auth_sid"]).id,
-          )
-          transaction = ClientOidcAuthorizationTransaction.find(binding.authorization_transaction_id)
-          ceremony = ClientAuthCeremonySession.find(binding.admitted_auth_ceremony_session_id)
-          csrf = auth.response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
-          parent_ids << transaction.id
-
-          assert_equal attempt + 1, parent_ids.uniq.size
-          assert_no_difference(
-            ["Client.count", "ClientExternalIdentity.count", "ClientSignUpFlow.count",
-             "ClientToken.count",],
-          ) do
-            auth.post(
-              "/social/#{provider}/#{sign_up ? "registration" : "session"}",
-              params: { ri: "jp" },
-
-              headers: auth_headers.merge("X-CSRF-Token" => csrf),
-            )
-          end
-          assert_equal 307, auth.response.status
-          assert_not_predicate ceremony.reload, :authentication_evidence_recorded?
+          assert_equal [nil, nil], [auth.cookies[AuthenticationBase::ACCESS_COOKIE_KEY],
+                                    auth.cookies[AuthenticationBase::REFRESH_COOKIE_KEY],]
         end
+
+        assert_equal 3, transaction_ids.uniq.size
+        assert_equal 3, binding_ids.uniq.size
       end
     end
 
     test "SOC-9: #{provider} provider refusal ends the attempt without authority" do
-      base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
       auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-      visa_host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
-      base = open_session
       auth = open_session
-      visa = open_session
-      browsers = { base_host => base, auth_host => auth, visa_host => visa }
-      navigation = { "Sec-Fetch-Mode" => "navigate",
-                     "Sec-Fetch-Dest" => "document",
-                     "Sec-Fetch-Site" => "cross-site", }
       auth_headers = { "Origin" => "https://#{auth_host}", "Sec-Fetch-Site" => "same-origin" }
-      base_headers = { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" }
-      base.host!(base_host)
-      base.https!
-      auth.host!(auth_host)
-      auth.https!
-      visa.host!(visa_host)
-      visa.https!
-      base.get(
-        "/sign",
-        params: { ri: "jp" }, headers: navigation,
-      )
+      admit_social_auth!(auth, intent: "sign_up")
 
-      assert_equal 200, base.response.status
-      form = base.response.parsed_body.at_css("form")
-      fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-      base.post(form["action"], params: fields, headers: base_headers)
-
-      assert_equal 303, base.response.status
-      current = base
-      20.times do
-        if current.response.redirect?
-          target = URI.parse(current.response.location)
-          if target.host == "jump.umaxica.net"
-            payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-            target = URI.parse(payload.fetch("url"))
-          end
-          target = URI.join("https://#{current.host}", target.to_s)
-          current = browsers.fetch(target.host)
-          current.get(target.request_uri, headers: navigation)
-          next
-        end
-        form = current.response.parsed_body.at_css(
-          "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-          "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-        )
-        break unless form
-
-        target = URI.join("https://#{current.host}", form["action"])
-        fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-        current = browsers.fetch(target.host)
-        current.post(
-          target.request_uri,
-          params: fields,
-          headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-        )
-      end
-
-      assert_equal [auth, 200, "/sign/in"], [current, current.response.status, current.request.path]
-      props = JSON.parse(auth.response.parsed_body.at_css("script[data-page='app']").text).fetch("props")
-      form = props.fetch("switch_form")
-      auth.post(
-        form.fetch("action"),
-        params: { to: "sign_up", authenticity_token: form.fetch("authenticity_token") },
-        headers: auth_headers,
-      )
-
-      assert_equal 303, auth.response.status
-      current = auth
-      20.times do
-        if current.response.redirect?
-          target = URI.parse(current.response.location)
-          if target.host == "jump.umaxica.net"
-            payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-            target = URI.parse(payload.fetch("url"))
-          end
-          target = URI.join("https://#{current.host}", target.to_s)
-          current = browsers.fetch(target.host)
-          current.get(target.request_uri, headers: navigation)
-          next
-        end
-        form = current.response.parsed_body.at_css(
-          "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-          "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-        )
-        break unless form
-
-        target = URI.join("https://#{current.host}", form["action"])
-        fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-        current = browsers.fetch(target.host)
-        current.post(
-          target.request_uri,
-          params: fields,
-          headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-        )
-      end
-
-      assert_equal [auth, 200, "/sign/up"], [current, current.response.status, current.request.path]
+      assert_equal [200, "/sign/up"], [auth.response.status, auth.request.path]
       binding = ClientAuthAdmissionBinding.find_by!(
         admitted_auth_ceremony_session_id:
           ClientAuthCeremonySession.find_active_by_raw_sid(auth.cookies["auth_sid"]).id,
@@ -546,115 +241,72 @@ class SocialLoginSocTest < ActionDispatch::IntegrationTest
       next if provider == "apple" && step == "confirmation"
 
       test "SOC-10: #{provider} cancellation at #{step} ends its parent once and returns to RP" do
-        sign_up = true
         subject = "soc10-#{SecureRandom.hex(8)}"
-        base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
         auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
         visa_host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
-        base = open_session
+        jump_host = URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
+        client = OidcClientRegistry.find!("core-app-jp")
+        registered_redirect_uri = URI.parse(client.redirect_uris_by_realm.fetch("client").first)
+        state = SecureRandom.urlsafe_base64(32)
+        parameters = {
+          response_type: "code",
+          client_id: client.client_id,
+          redirect_uri: registered_redirect_uri.to_s,
+          code_challenge: OidcTestEntry::CODE_CHALLENGE,
+          code_challenge_method: "S256",
+          state:,
+          nonce: SecureRandom.urlsafe_base64(32),
+          scope: "openid profile",
+          prompt: "create",
+        }
+
         auth = open_session
-        visa = open_session
-        browsers = { base_host => base, auth_host => auth, visa_host => visa }
+        auth.host!(visa_host)
+        auth.https!
         navigation = { "Sec-Fetch-Mode" => "navigate",
                        "Sec-Fetch-Dest" => "document",
                        "Sec-Fetch-Site" => "cross-site", }
         auth_headers = { "Origin" => "https://#{auth_host}", "Sec-Fetch-Site" => "same-origin" }
-        base_headers = { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" }
-        base.host!(base_host)
-        base.https!
-        auth.host!(auth_host)
-        auth.https!
-        visa.host!(visa_host)
-        visa.https!
-        base.get(
-          "/sign",
-          params: { ri: "jp" }, headers: navigation,
-        )
+        auth.get("/oauth/authorize", params: parameters, headers: navigation.merge("Sec-Fetch-Site" => "same-origin"))
+        transaction = ClientOidcAuthorizationTransaction.find_by!(state:)
 
-        assert_equal 200, base.response.status
-        form = base.response.parsed_body.at_css("form")
-        fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-        base.post(form["action"], params: fields, headers: base_headers)
+        12.times do
+          break if auth.host == auth_host && auth.response.successful? && auth.request.path == "/sign/up"
+          break unless auth.response.redirect?
 
-        assert_equal 303, base.response.status
-        current = base
-        20.times do
-          if current.response.redirect?
-            target = URI.parse(current.response.location)
-            if target.host == "jump.umaxica.net"
-              payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-              target = URI.parse(payload.fetch("url"))
-            end
-            target = URI.join("https://#{current.host}", target.to_s)
-            current = browsers.fetch(target.host)
-            current.get(target.request_uri, headers: navigation)
-            next
+          target = URI.parse(auth.response.location.to_s)
+          target = URI.parse("https://#{auth.host}#{target}") if target.host.blank?
+          if target.host == jump_host
+            token = Rack::Utils.parse_query(target.query.to_s).fetch("rt")
+            issuer = JitSecurityJwtRegistry.surface("VISA_APP")
+            claims, = JWT.decode(
+              token,
+              JitSecurityJwtRegistry.public_key_for(issuer.id, issuer.current_kid),
+              true,
+              algorithms: ["ES384"],
+              verify_iss: true,
+              iss: "https://#{auth.host}",
+              verify_aud: true,
+              aud: Rails.configuration.x.boot_config.fetch(:jump).audience,
+            )
+            target = URI.parse(claims.fetch("url"))
           end
-          form = current.response.parsed_body.at_css(
-            "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-            "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-          )
-          break unless form
 
-          target = URI.join("https://#{current.host}", form["action"])
-          fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-          current = browsers.fetch(target.host)
-          current.post(
-            target.request_uri,
-            params: fields,
-            headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-          )
+          auth.host!(target.host)
+          auth.get(target.request_uri, headers: navigation)
         end
 
-        assert_equal [auth, 200, "/sign/in"], [current, current.response.status, current.request.path]
-        props = JSON.parse(auth.response.parsed_body.at_css("script[data-page='app']").text).fetch("props")
-        form = props.fetch("switch_form")
-        auth.post(
-          form.fetch("action"),
-          params: { to: "sign_up", authenticity_token: form.fetch("authenticity_token") },
-          headers: auth_headers,
-        )
-
-        assert_equal 303, auth.response.status
-        current = auth
-        20.times do
-          if current.response.redirect?
-            target = URI.parse(current.response.location)
-            if target.host == "jump.umaxica.net"
-              payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-              target = URI.parse(payload.fetch("url"))
-            end
-            target = URI.join("https://#{current.host}", target.to_s)
-            current = browsers.fetch(target.host)
-            current.get(target.request_uri, headers: navigation)
-            next
-          end
-          form = current.response.parsed_body.at_css(
-            "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-            "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-          )
-          break unless form
-
-          target = URI.join("https://#{current.host}", form["action"])
-          fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-          current = browsers.fetch(target.host)
-          current.post(
-            target.request_uri,
-            params: fields,
-            headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-          )
-        end
-
-        assert_equal [auth, 200, "/sign/up"], [current, current.response.status, current.request.path]
+        assert_equal [auth_host, 200, "/sign/up"], [auth.host, auth.response.status, auth.request.path]
         binding = ClientAuthAdmissionBinding.find_by!(
           admitted_auth_ceremony_session_id:
             ClientAuthCeremonySession.find_active_by_raw_sid(auth.cookies["auth_sid"]).id,
         )
-        transaction = ClientOidcAuthorizationTransaction.find(binding.authorization_transaction_id)
         ceremony = ClientAuthCeremonySession.find(binding.admitted_auth_ceremony_session_id)
+        registered_redirect_uri = URI.parse(transaction.redirect_uri)
+        rp_host = registered_redirect_uri.host
         csrf = auth.response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
         auth.post(
-          "/social/#{provider}/#{sign_up ? "registration" : "session"}",
+          "/social/#{provider}/registration",
           params: { ri: "jp" },
 
           headers: auth_headers.merge("X-CSRF-Token" => csrf),
@@ -674,6 +326,7 @@ class SocialLoginSocTest < ActionDispatch::IntegrationTest
 
         assert_equal 200, auth.response.status
         flow = ClientSignUpFlow.find_by!(auth_admission_binding_id: binding.id)
+        csrf = auth.response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
         props = JSON.parse(auth.response.parsed_body.at_css("script[data-page='app']").text).fetch("props")
         confirmation_action = props.fetch("action")
         cancel_action = confirmation_action
@@ -700,49 +353,81 @@ class SocialLoginSocTest < ActionDispatch::IntegrationTest
           csrf = auth.response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
           cancel_action = birthdate_action
         end
+        pending_client_id = flow.reload.principal_id
         assert_no_difference(["Client.count", "ClientExternalIdentity.count", "ClientToken.count"]) do
           auth.delete(
             cancel_action, params: { checkpoint_version: flow.reload.checkpoint_version },
                            headers: auth_headers.merge("X-CSRF-Token" => csrf),
           )
         end
-        assert_equal 303, auth.response.status
-        current = auth
+        assert_equal(
+          303, auth.response.status,
+          "cancel refused at #{step}: flow_status=#{ClientSignUpFlow::STATUS_NAMES.fetch(flow.reload.status_id)} " \
+          "cancelable=#{flow.sign_up_cancelable?} principal_present=#{flow.principal_id.present?} " \
+          "pending_contact_type=#{flow.pending_contact_type} " \
+          "pending_contact_id_present=#{flow.pending_contact_id.present?}",
+        )
+        rp_uri = nil
         20.times do
-          if current.response.redirect?
-            target = URI.parse(current.response.location)
-            if target.host == "jump.umaxica.net"
-              payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-              target = URI.parse(payload.fetch("url"))
+          if auth.response.redirect?
+            target = URI.parse(auth.response.location.to_s)
+            target = URI.parse("https://#{auth.host}#{target}") if target.host.blank?
+            if target.host == jump_host
+              token = Rack::Utils.parse_query(target.query.to_s).fetch("rt")
+              issuer_id = (auth.host == auth_host) ? "AUTH_APP" : "VISA_APP"
+              issuer = JitSecurityJwtRegistry.surface(issuer_id)
+              claims, = JWT.decode(
+                token,
+                JitSecurityJwtRegistry.public_key_for(issuer.id, issuer.current_kid),
+                true,
+                algorithms: ["ES384"],
+                verify_iss: true,
+                iss: "https://#{auth.host}",
+                verify_aud: true,
+                aud: Rails.configuration.x.boot_config.fetch(:jump).audience,
+              )
+              target = URI.parse(claims.fetch("url"))
             end
-            target = URI.join("https://#{current.host}", target.to_s)
-            current = browsers.fetch(target.host)
-            current.get(target.request_uri, headers: navigation)
+            if target.host == rp_host
+              rp_uri = target
+              break
+            end
+
+            auth.host!(target.host)
+            auth.get(target.request_uri, headers: navigation)
             next
           end
-          form = current.response.parsed_body.at_css(
-            "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-            "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-          )
+
+          form = auth.response.parsed_body.at_css("form#visa-authorization-continuation-form")
           break unless form
 
-          target = URI.join("https://#{current.host}", form["action"])
+          target = URI.join("https://#{auth.host}", form["action"])
           fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-          current = browsers.fetch(target.host)
-          current.post(
+          auth.host!(target.host)
+          auth.post(
             target.request_uri,
             params: fields,
             headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
           )
         end
 
-        assert_equal base, current
+        assert_equal [rp_uri.host, rp_uri.path], [rp_host, URI.parse(transaction.redirect_uri).path]
+        assert_equal transaction.state, Rack::Utils.parse_nested_query(rp_uri.query).fetch("state")
+        assert_equal "access_denied", Rack::Utils.parse_nested_query(rp_uri.query).fetch("error")
         assert_predicate transaction.reload, :canceled?
         assert_predicate ceremony.reload, :cancelled?
         assert_not_predicate flow.reload, :completed?
+        if pending_client_id
+          pending_client = Client.find(pending_client_id)
+
+          assert_predicate pending_client.discard_at, :present?
+          assert_operator pending_client.purge_eligible_at, :>, Time.current
+        end
+
         assert_equal 0, ClientExternalIdentity.where(provider: provider, subject: subject).count
-        assert_equal [nil, nil], [base.cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE],
-                                  base.cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE],]
+        cancellation_query = Rack::Utils.parse_nested_query(rp_uri.query)
+
+        assert_empty cancellation_query.keys & %w(code access_token id_token)
         terminal_state = [transaction.attributes, ceremony.attributes, flow.attributes]
         auth.delete(
           cancel_action, params: { checkpoint_version: flow.checkpoint_version },
@@ -759,104 +444,15 @@ class SocialLoginSocTest < ActionDispatch::IntegrationTest
       test "SOC-11: #{provider} GET of #{earlier} page after advancing preserves all state" do
         sign_up = true
         subject = "soc11-#{SecureRandom.hex(8)}"
-        base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
         auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-        visa_host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
-        base = open_session
         auth = open_session
-        visa = open_session
-        browsers = { base_host => base, auth_host => auth, visa_host => visa }
         navigation = { "Sec-Fetch-Mode" => "navigate",
                        "Sec-Fetch-Dest" => "document",
                        "Sec-Fetch-Site" => "cross-site", }
         auth_headers = { "Origin" => "https://#{auth_host}", "Sec-Fetch-Site" => "same-origin" }
-        base_headers = { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" }
-        base.host!(base_host)
-        base.https!
-        auth.host!(auth_host)
-        auth.https!
-        visa.host!(visa_host)
-        visa.https!
-        base.get(
-          "/sign",
-          params: { ri: "jp" }, headers: navigation,
-        )
+        admit_social_auth!(auth, intent: "sign_up")
 
-        assert_equal 200, base.response.status
-        form = base.response.parsed_body.at_css("form")
-        fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-        base.post(form["action"], params: fields, headers: base_headers)
-
-        assert_equal 303, base.response.status
-        current = base
-        20.times do
-          if current.response.redirect?
-            target = URI.parse(current.response.location)
-            if target.host == "jump.umaxica.net"
-              payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-              target = URI.parse(payload.fetch("url"))
-            end
-            target = URI.join("https://#{current.host}", target.to_s)
-            current = browsers.fetch(target.host)
-            current.get(target.request_uri, headers: navigation)
-            next
-          end
-          form = current.response.parsed_body.at_css(
-            "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-            "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-          )
-          break unless form
-
-          target = URI.join("https://#{current.host}", form["action"])
-          fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-          current = browsers.fetch(target.host)
-          current.post(
-            target.request_uri,
-            params: fields,
-            headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-          )
-        end
-
-        assert_equal [auth, 200, "/sign/in"], [current, current.response.status, current.request.path]
-        props = JSON.parse(auth.response.parsed_body.at_css("script[data-page='app']").text).fetch("props")
-        form = props.fetch("switch_form")
-        auth.post(
-          form.fetch("action"),
-          params: { to: "sign_up", authenticity_token: form.fetch("authenticity_token") },
-          headers: auth_headers,
-        )
-
-        assert_equal 303, auth.response.status
-        current = auth
-        20.times do
-          if current.response.redirect?
-            target = URI.parse(current.response.location)
-            if target.host == "jump.umaxica.net"
-              payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-              target = URI.parse(payload.fetch("url"))
-            end
-            target = URI.join("https://#{current.host}", target.to_s)
-            current = browsers.fetch(target.host)
-            current.get(target.request_uri, headers: navigation)
-            next
-          end
-          form = current.response.parsed_body.at_css(
-            "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-            "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-          )
-          break unless form
-
-          target = URI.join("https://#{current.host}", form["action"])
-          fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-          current = browsers.fetch(target.host)
-          current.post(
-            target.request_uri,
-            params: fields,
-            headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-          )
-        end
-
-        assert_equal [auth, 200, "/sign/up"], [current, current.response.status, current.request.path]
+        assert_equal [200, "/sign/up"], [auth.response.status, auth.request.path]
         binding = ClientAuthAdmissionBinding.find_by!(
           admitted_auth_ceremony_session_id:
             ClientAuthCeremonySession.find_active_by_raw_sid(auth.cookies["auth_sid"]).id,
@@ -911,9 +507,14 @@ class SocialLoginSocTest < ActionDispatch::IntegrationTest
         end
         snapshot = [flow.reload.attributes, ceremony.reload.attributes, transaction.reload.attributes]
         assert_no_difference(["Client.count", "ClientExternalIdentity.count", "ClientToken.count"]) do
-          auth.get((earlier == "first") ? "/sign/up?ri=jp" : confirmation_action, headers: navigation)
+          auth.get(
+            (earlier == "first") ? "/sign/up?ri=jp" : confirmation_action,
+            params: { ri: "jp" }, headers: navigation,
+          )
         end
-        assert_equal 409, auth.response.status
+        redirect_path = auth.response.location && URI.parse(auth.response.location).path
+
+        assert_equal 409, auth.response.status, "unexpected refusal redirect to #{redirect_path}"
         cookie_names =
           Array(auth.response.headers["Set-Cookie"]).flat_map { |header|
             header.split(
@@ -947,106 +548,12 @@ class SocialLoginSocTest < ActionDispatch::IntegrationTest
             )
           end
         end
-        base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
         auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-        visa_host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
-        base = open_session
         auth = open_session
-        visa = open_session
-        browsers = { base_host => base, auth_host => auth, visa_host => visa }
-        navigation = { "Sec-Fetch-Mode" => "navigate",
-                       "Sec-Fetch-Dest" => "document",
-                       "Sec-Fetch-Site" => "cross-site", }
         auth_headers = { "Origin" => "https://#{auth_host}", "Sec-Fetch-Site" => "same-origin" }
-        base_headers = { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" }
-        base.host!(base_host)
-        base.https!
-        auth.host!(auth_host)
-        auth.https!
-        visa.host!(visa_host)
-        visa.https!
-        base.get(
-          "/sign",
-          params: { ri: "jp" }, headers: navigation,
-        )
+        admit_social_auth!(auth, intent: sign_up ? "sign_up" : "sign_in")
 
-        assert_equal 200, base.response.status
-        form = base.response.parsed_body.at_css("form")
-        fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-        base.post(form["action"], params: fields, headers: base_headers)
-
-        assert_equal 303, base.response.status
-        current = base
-        20.times do
-          if current.response.redirect?
-            target = URI.parse(current.response.location)
-            if target.host == "jump.umaxica.net"
-              payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-              target = URI.parse(payload.fetch("url"))
-            end
-            target = URI.join("https://#{current.host}", target.to_s)
-            current = browsers.fetch(target.host)
-            current.get(target.request_uri, headers: navigation)
-            next
-          end
-          form = current.response.parsed_body.at_css(
-            "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-            "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-          )
-          break unless form
-
-          target = URI.join("https://#{current.host}", form["action"])
-          fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-          current = browsers.fetch(target.host)
-          current.post(
-            target.request_uri,
-            params: fields,
-            headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-          )
-        end
-
-        assert_equal [auth, 200, "/sign/in"], [current, current.response.status, current.request.path]
-        if sign_up
-          props = JSON.parse(auth.response.parsed_body.at_css("script[data-page='app']").text).fetch("props")
-          form = props.fetch("switch_form")
-          auth.post(
-            form.fetch("action"),
-            params: { to: "sign_up", authenticity_token: form.fetch("authenticity_token") },
-            headers: auth_headers,
-          )
-
-          assert_equal 303, auth.response.status
-          current = auth
-          20.times do
-            if current.response.redirect?
-              target = URI.parse(current.response.location)
-              if target.host == "jump.umaxica.net"
-                payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-                target = URI.parse(payload.fetch("url"))
-              end
-              target = URI.join("https://#{current.host}", target.to_s)
-              current = browsers.fetch(target.host)
-              current.get(target.request_uri, headers: navigation)
-              next
-            end
-            form = current.response.parsed_body.at_css(
-              "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-              "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-            )
-            break unless form
-
-            target = URI.join("https://#{current.host}", form["action"])
-            fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-            current = browsers.fetch(target.host)
-            current.post(
-              target.request_uri,
-              params: fields,
-              headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-            )
-          end
-
-          assert_equal [auth, 200, "/sign/up"], [current, current.response.status, current.request.path]
-        end
+        assert_equal [200, sign_up ? "/sign/up" : "/sign/in"], [auth.response.status, auth.request.path]
         binding = ClientAuthAdmissionBinding.find_by!(
           admitted_auth_ceremony_session_id:
             ClientAuthCeremonySession.find_active_by_raw_sid(auth.cookies["auth_sid"]).id,
@@ -1085,8 +592,7 @@ class SocialLoginSocTest < ActionDispatch::IntegrationTest
       end
     end
 
-    test "SOC-13: #{provider} registered signup guidance starts a fresh signin that reaches Base Dashboard" do
-      sign_up = true
+    test "SOC-13: #{provider} registered signup refusal preserves a fresh OIDC sign-in" do
       subject = "soc13-#{SecureRandom.hex(8)}"
       actor = Client.create!(
         security_mode_id: SecurityModeConfigurable::NORMAL,
@@ -1095,326 +601,99 @@ class SocialLoginSocTest < ActionDispatch::IntegrationTest
       case provider
       when "google"
         ClientGoogleIdentity.create!(
-          user: actor, uid: subject, provider: provider, status_id: ClientGoogleIdentityStatus::ACTIVE,
+          user: actor, uid: subject, provider:, status_id: ClientGoogleIdentityStatus::ACTIVE,
         )
       when "apple"
         ClientAppleIdentity.create!(
-          user: actor, uid: subject, provider: provider, status_id: ClientAppleIdentityStatus::ACTIVE,
+          user: actor, uid: subject, provider:, status_id: ClientAppleIdentityStatus::ACTIVE,
         )
       end
-      BaseSelectorBootstrapAuthority.call(surface: :app, principal: actor)
-      base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+
       auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+      base_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
       visa_host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
-      base = open_session
-      auth = open_session
-      visa = open_session
-      browsers = { base_host => base, auth_host => auth, visa_host => visa }
-      navigation = { "Sec-Fetch-Mode" => "navigate",
-                     "Sec-Fetch-Dest" => "document",
-                     "Sec-Fetch-Site" => "cross-site", }
-      auth_headers = { "Origin" => "https://#{auth_host}", "Sec-Fetch-Site" => "same-origin" }
-      base_headers = { "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin" }
-      base.host!(base_host)
-      base.https!
-      auth.host!(auth_host)
-      auth.https!
-      visa.host!(visa_host)
-      visa.https!
-      base.get(
-        "/sign",
-        params: { ri: "jp" }, headers: navigation,
+      client = OidcClientRegistry.find!("core-app-jp")
+      expected_redirect_uri = client.redirect_uris_by_realm.fetch("client").first
+      headers = { "Origin" => "https://#{auth_host}", "Sec-Fetch-Site" => "same-origin" }
+
+      sign_up = open_session
+      sign_up_issuance = admit_social_auth!(sign_up, intent: "sign_in")
+      admit_browser_to_sign_up!(sign_up)
+      sign_up_binding = social_admission_binding_for(sign_up)
+      sign_up_transaction = ClientOidcAuthorizationTransaction.find(sign_up_binding.authorization_transaction_id)
+      sign_up_ceremony = ClientAuthCeremonySession.find(sign_up_binding.admitted_auth_ceremony_session_id)
+      csrf = sign_up.response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
+      sign_up.post(
+        "/social/#{provider}/registration", params: { ri: "jp" },
+                                            headers: headers.merge("X-CSRF-Token" => csrf),
       )
 
-      assert_equal 200, base.response.status
-      form = base.response.parsed_body.at_css("form")
-      fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-      base.post(form["action"], params: fields, headers: base_headers)
-
-      assert_equal 303, base.response.status
-      current = base
-      20.times do
-        if current.response.redirect?
-          target = URI.parse(current.response.location)
-          if target.host == "jump.umaxica.net"
-            payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-            target = URI.parse(payload.fetch("url"))
-          end
-          target = URI.join("https://#{current.host}", target.to_s)
-          current = browsers.fetch(target.host)
-          current.get(target.request_uri, headers: navigation)
-          next
-        end
-        form = current.response.parsed_body.at_css(
-          "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-          "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-        )
-        break unless form
-
-        target = URI.join("https://#{current.host}", form["action"])
-        fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-        current = browsers.fetch(target.host)
-        current.post(
-          target.request_uri,
-          params: fields,
-          headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-        )
+      assert_equal 307, sign_up.response.status
+      state = sign_up.session.fetch(SocialCallbackGuard::SOCIAL_STATE_SESSION_KEY)
+      set_social_provider_fixture(sign_up, provider, subject)
+      assert_no_difference(["Client.count", "ClientExternalIdentity.count", "ClientToken.count"]) do
+        sign_up.get("/social/#{provider}/callback", params: { state:, ri: "jp" }, headers: headers)
       end
 
-      assert_equal [auth, 200, "/sign/in"], [current, current.response.status, current.request.path]
-      props = JSON.parse(auth.response.parsed_body.at_css("script[data-page='app']").text).fetch("props")
-      form = props.fetch("switch_form")
-      auth.post(
-        form.fetch("action"),
-        params: { to: "sign_up", authenticity_token: form.fetch("authenticity_token") },
-        headers: auth_headers,
+      assert_equal 400, sign_up.response.status
+      assert_nil sign_up.response.location
+      assert_empty sign_up.response.parsed_body.css("main a")
+      assert_not_includes sign_up.response.body, base_host
+      assert_not_predicate sign_up_ceremony.reload, :authentication_evidence_recorded?
+      assert_equal "pending", sign_up_transaction.reload.status_name
+      assert_equal [nil, nil], [sign_up.cookies[AuthenticationBase::ACCESS_COOKIE_KEY],
+                                sign_up.cookies[AuthenticationBase::REFRESH_COOKIE_KEY],]
+
+      fresh = open_session
+      fresh_issuance = admit_social_auth!(fresh, intent: "sign_in")
+      fresh_binding = social_admission_binding_for(fresh)
+      fresh_transaction = ClientOidcAuthorizationTransaction.find(fresh_binding.authorization_transaction_id)
+      fresh_ceremony = ClientAuthCeremonySession.find(fresh_binding.admitted_auth_ceremony_session_id)
+      fresh_csrf = fresh.response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
+
+      assert_not_equal sign_up_issuance.transaction.id, fresh_issuance.transaction.id
+      assert_not_equal sign_up_binding.id, fresh_binding.id
+      assert_equal expected_redirect_uri, fresh_transaction.redirect_uri
+      fresh.post(
+        "/social/#{provider}/session", params: { ri: "jp" },
+                                       headers: headers.merge("X-CSRF-Token" => fresh_csrf),
       )
 
-      assert_equal 303, auth.response.status
-      current = auth
-      20.times do
-        if current.response.redirect?
-          target = URI.parse(current.response.location)
-          if target.host == "jump.umaxica.net"
-            payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-            target = URI.parse(payload.fetch("url"))
-          end
-          target = URI.join("https://#{current.host}", target.to_s)
-          current = browsers.fetch(target.host)
-          current.get(target.request_uri, headers: navigation)
-          next
-        end
-        form = current.response.parsed_body.at_css(
-          "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-          "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-        )
-        break unless form
-
-        target = URI.join("https://#{current.host}", form["action"])
-        fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-        current = browsers.fetch(target.host)
-        current.post(
-          target.request_uri,
-          params: fields,
-          headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-        )
+      assert_equal 307, fresh.response.status
+      state = fresh.session.fetch(SocialCallbackGuard::SOCIAL_STATE_SESSION_KEY)
+      set_social_provider_fixture(fresh, provider, subject)
+      assert_no_difference(["Client.count", "ClientExternalIdentity.count", "ClientToken.count"]) do
+        fresh.get("/social/#{provider}/callback", params: { state:, ri: "jp" }, headers: headers)
       end
 
-      assert_equal [auth, 200, "/sign/up"], [current, current.response.status, current.request.path]
-      binding = ClientAuthAdmissionBinding.find_by!(
-        admitted_auth_ceremony_session_id:
-          ClientAuthCeremonySession.find_active_by_raw_sid(auth.cookies["auth_sid"]).id,
-      )
-      transaction = ClientOidcAuthorizationTransaction.find(binding.authorization_transaction_id)
-      ceremony = ClientAuthCeremonySession.find(binding.admitted_auth_ceremony_session_id)
-      csrf = auth.response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
-      auth.post(
-        "/social/#{provider}/#{sign_up ? "registration" : "session"}",
-        params: { ri: "jp" },
+      assert_equal 303, fresh.response.status
+      handoff = URI.parse(fresh.response.location)
 
-        headers: auth_headers.merge("X-CSRF-Token" => csrf),
-      )
+      assert_equal auth_host, handoff.host
+      assert_equal "/sign/in/check", handoff.path
+      assert_predicate fresh_ceremony.reload, :authentication_evidence_recorded?
+      assert_equal provider, fresh_ceremony.authentication_method
+      assert_equal "pending", fresh_transaction.reload.status_name
+      assert_equal [nil, nil], [fresh.cookies[AuthenticationBase::ACCESS_COOKIE_KEY],
+                                fresh.cookies[AuthenticationBase::REFRESH_COOKIE_KEY],]
+      snapshot = [fresh_binding.reload.attributes, fresh_transaction.reload.attributes,
+                  fresh_ceremony.reload.attributes,]
+      fresh.get("/social/#{provider}/callback", params: { state:, ri: "jp" }, headers: headers)
 
-      assert_equal 307, auth.response.status
-      state = auth.session.fetch(SocialCallbackGuard::SOCIAL_STATE_SESSION_KEY)
-      OmniAuth.config.mock_auth[provider.to_sym] = OmniAuth::AuthHash.new(
-        provider: provider, uid: subject, info: { name: "SOC provider fixture" },
-        credentials: { token: "provider-fixture", expires_at: 1.hour.from_now.to_i },
-        extra: { id_info: { nonce: auth.session[:social_auth_nonce] } },
-      )
-      auth.get("/social/#{provider}/callback", params: { state: state, ri: "jp" }, headers: auth_headers)
+      assert_equal 403, fresh.response.status
+      assert_equal snapshot, [fresh_binding.reload.attributes, fresh_transaction.reload.attributes,
+                              fresh_ceremony.reload.attributes,]
 
-      assert_equal 400, auth.response.status
-      link = auth.response.parsed_body.at_css("main a")
-
-      assert link
-      fresh = URI.parse(link["href"])
-
-      assert_equal [base_host, "/sign"], [fresh.host, fresh.path]
-      old_binding = binding
-      old_transaction = transaction
-      old_ceremony = ceremony
-      old_snapshot = [old_binding.reload.attributes, old_transaction.reload.attributes, old_ceremony.reload.attributes]
-      base.get(fresh.request_uri, headers: navigation)
-
-      assert_equal 200, base.response.status
-      form = base.response.parsed_body.at_css("form")
-      fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-      base.post(form["action"], params: fields, headers: base_headers)
-
-      assert_equal 303, base.response.status
-      current = base
-      20.times do
-        if current.response.redirect?
-          target = URI.parse(current.response.location)
-          if target.host == "jump.umaxica.net"
-            payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-            target = URI.parse(payload.fetch("url"))
-          end
-          target = URI.join("https://#{current.host}", target.to_s)
-          current = browsers.fetch(target.host)
-          current.get(target.request_uri, headers: navigation)
-          next
-        end
-        form = current.response.parsed_body.at_css(
-          "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-          "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-        )
-        break unless form
-
-        target = URI.join("https://#{current.host}", form["action"])
-        fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-        current = browsers.fetch(target.host)
-        current.post(
-          target.request_uri,
-          params: fields,
-          headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-        )
-      end
-
-      assert_equal [auth, 200, "/sign/in"], [current, current.response.status, current.request.path]
-      binding = ClientAuthAdmissionBinding.find_by!(
-        admitted_auth_ceremony_session_id:
-          ClientAuthCeremonySession.find_active_by_raw_sid(auth.cookies["auth_sid"]).id,
-      )
-      transaction = ClientOidcAuthorizationTransaction.find(binding.authorization_transaction_id)
-      ceremony = ClientAuthCeremonySession.find(binding.admitted_auth_ceremony_session_id)
-      csrf = auth.response.parsed_body.at_css('meta[name="csrf-token"]')["content"]
-
-      assert_not_equal old_binding.id, binding.id
-      assert_not_equal old_transaction.id, transaction.id
-      sign_up = false
-      auth.post(
-        "/social/#{provider}/#{sign_up ? "registration" : "session"}",
-        params: { ri: "jp" },
-
-        headers: auth_headers.merge("X-CSRF-Token" => csrf),
+      fresh.get(
+        "/sign/oidc/handoff", params: { ri: "jp" },
+                              headers: { "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document" },
       )
 
-      assert_equal 307, auth.response.status
-      state = auth.session.fetch(SocialCallbackGuard::SOCIAL_STATE_SESSION_KEY)
-      OmniAuth.config.mock_auth[provider.to_sym] = OmniAuth::AuthHash.new(
-        provider: provider, uid: subject, info: { name: "SOC provider fixture" },
-        credentials: { token: "provider-fixture", expires_at: 1.hour.from_now.to_i },
-        extra: { id_info: { nonce: auth.session[:social_auth_nonce] } },
-      )
-      assert_no_difference(
-        ["Client.count", "ClientExternalIdentity.count", "ClientSignUpFlow.count",
-         "ClientToken.count",],
-      ) do
-        auth.get("/social/#{provider}/callback", params: { state: state, ri: "jp" }, headers: auth_headers)
-      end
-      assert_equal 303, auth.response.status
-      assert_predicate ceremony.reload, :authentication_evidence_recorded?
-      assert_equal provider, ceremony.authentication_method
+      assert_equal 303, fresh.response.status
+      result_location = URI.parse(jump_rt_url_from_location_for_test(fresh.response.location))
 
-      # Replace network transport only; Visa protocol and Base client JWKS use real endpoints.
-      protocol = open_session
-      protocol.host!(visa_host)
-      protocol.https!
-      transport =
-        Faraday::Adapter::Test::Stubs.new do |stub|
-          stub.post(/.*/) do |env|
-            assert_equal [visa_host, "/oauth/token"], [env.url.host, env.url.path]
-            executor_key = Rails.application.executor.active_key
-            outer_execution = ActiveSupport::IsolatedExecutionState.delete(executor_key)
-            begin
-              protocol.host!(env.url.authority)
-              protocol.https!(env.url.scheme == "https")
-              protocol.post(
-                env.url.request_uri, params: Rack::Utils.parse_query(env.body),
-                                     headers: { "Accept" => "application/json" },
-              )
-            ensure
-              ActiveSupport::IsolatedExecutionState[executor_key] = outer_execution
-            end
-
-            assert_equal 200, protocol.response.status,
-                         protocol.response.parsed_body.slice("error", "error_description").inspect
-            [protocol.response.status, { "Content-Type" => "application/json" }, protocol.response.body]
-          end
-          stub.get(/.*/) do |env|
-            get_browser = open_session
-
-            assert_includes [visa_host, base_host], env.url.host
-            assert_includes(
-              ["/.well-known/jwks.json", "/oauth/userinfo", "/api/v0/avatar/app/dashboard-identity"], env.url.path,
-            )
-            executor_key = Rails.application.executor.active_key
-            outer_execution = ActiveSupport::IsolatedExecutionState.delete(executor_key)
-            begin
-              headers = { "Accept" => "application/json" }
-              if env.request_headers["X-Client-Assertion"].present?
-                headers["X-Client-Assertion"] = env.request_headers["X-Client-Assertion"]
-              end
-              headers["Authorization"] =
-                env.request_headers["Authorization"] if env.request_headers["Authorization"].present?
-              get_browser.host!(env.url.authority)
-              get_browser.https!(env.url.scheme == "https")
-              get_browser.get(env.url.request_uri, headers: headers)
-            ensure
-              ActiveSupport::IsolatedExecutionState[executor_key] = outer_execution
-            end
-
-            assert_equal 200, get_browser.response.status,
-                         get_browser.response.parsed_body.slice("error", "error_description").inspect
-            [get_browser.response.status, { "Content-Type" => "application/json" }, get_browser.response.body]
-          end
-        end
-      connection =
-        Faraday.new do |builder|
-          builder.request(:url_encoded)
-          builder.adapter(:test, transport)
-        end
-      previous_transport_permission = TestSupport::OutboundHttpGuard::ALLOWED.value
-      begin
-        TestSupport::OutboundHttpGuard::ALLOWED.value = true
-        OutboundHttp::Connection.stub(
-          :build, ->(**options) {
-                    assert_includes [visa_host, base_host], URI.parse(options.fetch(:url).to_s).host
-                    connection
-                  },
-        ) do
-          current = auth
-          20.times do
-            if current.response.redirect?
-              target = URI.parse(current.response.location)
-              if target.host == "jump.umaxica.net"
-                payload, = JWT.decode(Rack::Utils.parse_query(target.query).fetch("rt"), nil, false)
-                target = URI.parse(payload.fetch("url"))
-              end
-              target = URI.join("https://#{current.host}", target.to_s)
-              current = browsers.fetch(target.host)
-              current.get(target.request_uri, headers: navigation)
-              next
-            end
-            form = current.response.parsed_body.at_css(
-              "form[id$='continuation-form'], form[id$='confirmation-form'], " \
-              "form#oidc-authorization-handoff-form, form#oidc-authorization-exit-form",
-            )
-            break unless form
-
-            target = URI.join("https://#{current.host}", form["action"])
-            fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-            current = browsers.fetch(target.host)
-            current.post(
-              target.request_uri,
-              params: fields,
-              headers: { "Origin" => "https://#{target.host}", "Sec-Fetch-Site" => "same-origin" },
-            )
-          end
-        end
-      ensure
-        TestSupport::OutboundHttpGuard::ALLOWED.value = previous_transport_permission
-      end
-
-      assert_equal [base, 200, "/dashboard"], [current, base.response.status, base.request.path]
-      assert_predicate base.cookies[OidcRpBrowserCredentialContract::ACCESS_COOKIE], :present?
-      assert_predicate base.cookies[OidcRpBrowserCredentialContract::REFRESH_COOKIE], :present?
-      assert_equal 1, ClientToken.where(user_id: actor.id).count
-      assert_equal "consumed", transaction.reload.status_name
-      assert_equal old_snapshot,
-                   [old_binding.reload.attributes, old_transaction.reload.attributes, old_ceremony.reload.attributes]
+      assert_equal visa_host, result_location.host
+      assert_equal "/oidc/result", result_location.path
     end
   end
 end

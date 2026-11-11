@@ -22,7 +22,7 @@ module VisaOrgOidcLogoutEndpoint
   private
 
   def logout_home_url
-    Rails.configuration.x.boot_config.fetch(:hosts).base_staff.to_s
+    JumpRtSurface.return_origin("BASE_ORG")
   end
 
   def preference_write_context = PREFERENCE_WRITE_CONTEXT

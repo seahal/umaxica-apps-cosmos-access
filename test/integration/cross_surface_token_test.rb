@@ -17,8 +17,8 @@ class CrossSurfaceTokenTest < ActionDispatch::IntegrationTest
   CHECK_PATH = "/edge/v0/token/check"
 
   setup do
-    @app_host = ENV.fetch("PRIVATE_VISA_SERVICE_URL")
-    @org_host = ENV.fetch("PRIVATE_VISA_STAFF_URL")
+    @app_host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
+    @org_host = ENV.fetch("PUBLIC_VISA_STAFF_URL")
     @user = clients(:one)
     @staff = operators(:one)
     ClientToken.where(user: @user).delete_all
@@ -66,9 +66,9 @@ class CrossSurfaceTokenTest < ActionDispatch::IntegrationTest
   end
 
   test "app preference token is ignored by the org cookie endpoint" do
-    host = ENV.fetch("PUBLIC_BASE_STAFF_URL")
+    host = ENV.fetch("PUBLIC_AUTH_STAFF_URL")
     token = preference_token_for(
-      host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
+      host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
       preference_type: "AppPreference",
       public_id: "app-pref-public-id",
       preferences: { "consented" => true },
@@ -84,9 +84,9 @@ class CrossSurfaceTokenTest < ActionDispatch::IntegrationTest
   end
 
   test "org preference token is ignored by the app cookie endpoint" do
-    host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+    host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     token = preference_token_for(
-      host: ENV.fetch("PUBLIC_BASE_STAFF_URL"),
+      host: ENV.fetch("PUBLIC_AUTH_STAFF_URL"),
       preference_type: "OrgPreference",
       public_id: "org-pref-public-id",
       preferences: { "consented" => true },
@@ -315,7 +315,7 @@ class CrossSurfaceTokenTest
   end
 
   def seed_social_auth_session(provider:, intent: "login", user: nil, entry: nil, ri: "jp", rt: nil, referer: nil)
-    host = configured_host(:sign_service)
+    host = configured_host(:auth_service)
     host!(host) if respond_to?(:host!)
     normalized_provider = SocialIdentifiable.normalize_provider(provider)
     continue_path =

@@ -151,29 +151,10 @@ module AuthenticationRedirects
   end
 
   def sign_in_welcome_path(pt: nil, id: nil, cycle: nil)
-    surface = sign_in_surface
-    attrs = { ri: current_region_identifier }
-    safe_pt = signed_pt_token(pt)
-    attrs[AuthIoKeys::Params::PT] = safe_pt if safe_pt.present?
-    attrs.merge!(sign_in_flow_binding_params(cycle)) if cycle
     _ = id
-
-    case surface
-    when :app
-      base_app_welcome_url(
-        **attrs,
-        host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
-        protocol: "https",
-      )
-    when :org
-      base_org_welcome_url(
-        **attrs,
-        host: ENV.fetch("PUBLIC_BASE_STAFF_URL"),
-        protocol: "https",
-      )
-    else
-      raise UnknownSignInSurfaceError, "#{self.class.name} has no sign-in welcome destination"
-    end
+    _ = pt
+    _ = cycle
+    raise ActionController::BadRequest, "No relying-party welcome return is available"
   end
 
   def sign_in_flow_binding_params(cycle, phase: nil)
@@ -190,26 +171,12 @@ module AuthenticationRedirects
 
   def sign_in_dashboard_path(pt: nil)
     _ = pt
-
-    case sign_in_surface
-    when :app
-      base_app_dashboard_url(
-        ri: params[:ri],
-        host: ENV.fetch("PUBLIC_BASE_SERVICE_URL"),
-        protocol: "https",
-      )
-    when :org
-      base_org_dashboard_url(
-        ri: params[:ri],
-        host: ENV.fetch("PUBLIC_BASE_STAFF_URL"),
-        protocol: "https",
-      )
-    else
-      raise UnknownSignInSurfaceError, "#{self.class.name} has no sign-in dashboard destination"
-    end
+    raise ActionController::BadRequest, "No relying-party dashboard return is available"
   end
 
   def after_welcome_path
+    return after_login_path if oidc_authentication_ceremony?
+
     sign_in_dashboard_path
   end
 
@@ -415,7 +382,6 @@ module AuthenticationRedirects
   def surface_from_controller_name
     case self.class.name
     when /::App::/ then "app"
-    when /::Com::/ then "com"
     when /::Org::/ then "org"
     end
   end

@@ -26,7 +26,6 @@ class EmailDeliveryTest < ActionDispatch::IntegrationTest
       admission_intent = "sign_up"
       admission_host = {
         "app" => ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
-        "com" => ENV.fetch("PUBLIC_AUTH_CORPORATE_URL"),
         "org" => ENV.fetch("PUBLIC_AUTH_STAFF_URL"),
       }.fetch(admission_surface)
       admission_browser.host!(admission_host)

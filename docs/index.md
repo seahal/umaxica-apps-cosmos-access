@@ -27,16 +27,19 @@ dirty-worktree qualification.
 For current redirect guidance, use signed `ReturnTargetToken` handling rather than the deprecated
 `safe_path_from_encoded_rt` helper.
 
-Current content-model references:
+Model and architecture references:
 
-- `docs/architecture/umaxica-v1-architecture-lock.md` records the v1 Identity / Persona /
-  Organization / Unit / Avatar / Group resource model, Avatar DB vs content DB boundary, actor
-  snapshot exclusion, Avatar lifecycle states, known violations, and guard-rail scope before
-  implementation.
-- `docs/architecture/avatar-social-graph.md` records the Avatar-to-Avatar follow, block, and mute
-  boundary and the current implementation gaps.
-- `docs/architecture/model-database-inventory.md` is the current-state model/database placement map
-  used for future authority and placement decisions.
+These references preserve accepted model/storage decisions and historical implementations; they do
+not establish current route ownership or prove that a model has a live writer. Current local product
+routes are Auth APP/ORG and Visa APP/ORG, plus Mission, Flipper, Blazer, PgHero, Coverband and
+Swagger.
+
+- `docs/architecture/umaxica-v1-architecture-lock.md` preserves the pre-reset v1 Identity / Persona
+  / Organization / Unit / Avatar / Group resource and storage design.
+- `docs/architecture/avatar-social-graph.md` preserves the Avatar-to-Avatar follow, block, and mute
+  model boundary; it is not a current local route contract.
+- `docs/architecture/model-database-inventory.md` is a pre-reset placement snapshot; the current
+  model/database usage classification is recorded in the 2026-11-10 hard-reset evidence report.
 - `adr/principal-zenith-physical-consolidation.md` records the accepted physical consolidation of
   `*_principal` migration history into matching `*_zenith` databases. The retained `*_principal`
   connection keys are compatibility seams, not a regional-ready application store.
@@ -61,7 +64,8 @@ Current content-model references:
 - `docs/architecture/dashboard-navigation.md`
 - `docs/architecture/controller-lifecycle.md`
 - `docs/architecture/avatar-account-bridge.md`
-- `docs/architecture/docs-help-news-content-boundary.md`
+- `docs/architecture/docs-help-news-content-boundary.md` is a short retirement record for former
+  content routes, not a current Access contract.
 - `docs/architecture/i18n.md`
 - `docs/architecture/preference.md`
 - `docs/security/session-limit.md`
@@ -77,7 +81,8 @@ Current content-model references:
 - `docs/security/logout-session-management.md`
 - `docs/security/inertia-history-and-props.md`
 - `docs/security/preference-settings-authority.md`
-- `docs/architecture/sign-settings-to-acme-identity.md`
+- `docs/architecture/sign-settings-to-acme-identity.md` records a superseded Base identity
+  migration; it is not current route guidance.
 - `docs/security/downstream-token-authority.md`
 - `docs/security/redirect-vs-ceremony-result.md`
 - `docs/qa/identity-authority-regression-checklist.md`
@@ -102,8 +107,10 @@ Current content-model references:
 - `docs/security/sign-in-first-registration-handoff.md`
 - `docs/security/sign-up-sequence.md`
 - `docs/security/passkey-lifecycle-and-audit.md`
-- `docs/security/app-com-withdrawal-timing.md`
-- `docs/security/logout-sequence.md`
+- `docs/security/app-com-withdrawal-timing.md` preserves former APP/COM storage timing; it does not
+  describe a current local withdrawal route.
+- `docs/security/logout-sequence.md` documents Visa OP logout and user-approved external RP
+  registrations; Access serves no local RP callback or logout surface.
 - `docs/security/refresh-token-rotation.md`
 - `docs/security/identifier-hmac-emergency-rotation.md`
 - `docs/security/cookie-domain-scope.md`

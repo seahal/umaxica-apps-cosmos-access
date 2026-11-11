@@ -472,8 +472,7 @@ class OidcInitiatedSignInCompletionTest < ActionDispatch::IntegrationTest
     assert_equal ["secret", nil, nil],
                  [ceremony.authentication_method, credential.consumed_at,
                   ClientSecretLookupQuery.call(client: @user, secret: "a" * 32),]
-    # This origin's service worker re-fetches navigations, which arrive with destination `empty`.
-    follow_redirect_to_oidc_handoff!(destination: "empty")
+    follow_redirect_to_oidc_handoff!
     post_oidc_handoff!
 
     assert_response :see_other

@@ -25,9 +25,6 @@
 :root[data-edition="app"] {
   --ui-tint: oklch(63.7% 0.237 25.331);
 }
-:root[data-edition="com"] {
-  --ui-tint: oklch(58.5% 0.233 277.117);
-}
 :root[data-edition="org"] {
   --ui-tint: oklch(72.3% 0.219 149.579);
 }

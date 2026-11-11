@@ -62,8 +62,6 @@ class AssociationContractTest < ActiveSupport::TestCase
   def framework_model?(model)
     model.name.start_with?(
       "ActionMailbox::",
-      "ActionText::",
-      "ActiveStorage::",
       "ActionPushNative::",
       "SolidQueue::",
     )

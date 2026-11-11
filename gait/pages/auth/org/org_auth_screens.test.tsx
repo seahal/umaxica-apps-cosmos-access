@@ -17,7 +17,6 @@ import OrgVerificationPasskeyPage from "@/pages/auth/org/verification/passkeys/n
 import OrgPasskeySettingsNew from "@/pages/auth/org/verification/registration/passkeys/new";
 import OrgVerificationSetup from "@/pages/auth/org/verification/setups/new";
 import OrgVerificationEntry from "@/pages/auth/org/verifications/show";
-import OrgPasskeySettingsEdit from "@/pages/base/org/identity/passkeys/show";
 
 import { mount } from "../../../support/react";
 
@@ -34,12 +33,6 @@ vi.mock("@/features/auth/passkeys/PasskeyAuthenticationPanel", () => ({
 }));
 
 vi.mock("@/features/auth/passkeys/PasskeyRegistrationPanel", () => ({
-  default: ({ submit_label: submitLabel }: { submit_label: string }) => (
-    <button type="button">{submitLabel}</button>
-  ),
-}));
-
-vi.mock("@/features/auth/passkeys/StepUpPasskeyForm", () => ({
   default: ({ submit_label: submitLabel }: { submit_label: string }) => (
     <button type="button">{submitLabel}</button>
   ),
@@ -64,19 +57,15 @@ describe("OrgSignUpEntry", () => {
     description: "登録は招待制です",
     recruit: { prompt: "興味がありますか", label: "採用情報", href: "/careers" },
     sign_in_link: { label: "ログイン", href: "/org/sign/in" },
-    cancel_link: { label: "Cancel", href: BACK.href },
   };
 
-  it("replaces the top back link with a trailing Cancel link on org sign-up", () => {
+  it("renders only the recruiting and sign-in destinations on org sign-up", () => {
     const markup = renderToStaticMarkup(<OrgSignUpEntry {...props} />);
     const page = new DOMParser().parseFromString(markup, "text/html").body.lastElementChild;
-    const cancel = page?.lastElementChild;
-    expect(cancel?.tagName).toBe("P");
-    expect(cancel?.textContent).toBe("Cancel");
-    expect(cancel?.closest("a, button, form")).toBeNull();
-    expect(cancel?.querySelector("a")?.getAttribute("href")).toBe(BACK.href);
-    expect(cancel?.querySelector("button, form")).toBeNull();
     expect(page?.querySelector("header a")).toBeNull();
+    expect(markup).toContain('href="/careers"');
+    expect(markup).toContain('href="/org/sign/in"');
+    expect(markup).not.toContain('href="/org"');
   });
 
   it("offers the recruiting route and the sign-in link", () => {
@@ -95,7 +84,6 @@ describe("OrgSignUpEntry", () => {
         description={null}
         recruit={null}
         sign_in_link={null}
-        cancel_link={null}
       />,
     );
 
@@ -347,37 +335,6 @@ describe("Org passkey ceremony pages", () => {
     );
 
     expect(screen.container.textContent).toContain("登録する");
-  });
-
-  it("renders passkey rename", () => {
-    const screen = mount(
-      <OrgPasskeySettingsEdit
-        title="パスキーの名前"
-        description="名前を変更します"
-        back_link={BACK}
-        passkey={{
-          public_id: "pk_1",
-          description: "MacBook",
-          created_at: null,
-          last_used_at: null,
-        }}
-        form={{
-          action: "/org/settings/passkeys/pk_1",
-          description: "MacBook",
-          label: "名前",
-          submit_label: "更新",
-        }}
-        destroy={{
-          action: "/org/settings/passkeys/pk_1",
-          label: "削除",
-          confirm: "このパスキーを削除しますか？",
-        }}
-        error={null}
-      />,
-    );
-
-    expect(screen.container.querySelector<HTMLInputElement>("input")?.value).toBe("MacBook");
-    expect(screen.container.textContent).toContain("更新");
   });
 
   it("renders the verification passkey challenge", () => {

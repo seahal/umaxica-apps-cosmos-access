@@ -8,7 +8,7 @@ require "ostruct"
 class JumpRtIssuerTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
-  HostSet = Struct.new(:sign_service)
+  HostSet = Struct.new(:auth_service)
   Origin =
     Data.define(:host) do
       def to_s = "https://#{host}"
@@ -437,15 +437,13 @@ class JumpRtIssuerTest < ActiveSupport::TestCase
   test "resolves issuer namespace from controller class name" do
     assert_equal "AUTH_APP", JumpRtSurface.namespace_for_controller("Auth::App::DashboardsController")
     assert_equal "AUTH_ORG", JumpRtSurface.namespace_for_controller("Auth::Org::DashboardsController")
-    assert_equal "BASE_APP", JumpRtSurface.namespace_for_controller("Base::App::RootsController")
-    assert_equal "CORE_ORG", JumpRtSurface.namespace_for_controller("Core::Org::RootsController")
-    %w(Auth Base Core).each do |service|
-      assert_raises(JumpRtConfigurationError) do
-        JumpRtSurface.namespace_for_controller("#{service}::Com::RootsController")
-      end
+    assert_equal "VISA_APP", JumpRtSurface.namespace_for_controller("Visa::App::AuthorizationsController")
+    assert_equal "VISA_ORG", JumpRtSurface.namespace_for_controller("Visa::Org::AuthorizationsController")
+    assert_raises(JumpRtConfigurationError) do
+      JumpRtSurface.namespace_for_controller("Auth::Com::RootsController")
     end
     assert_raises(JumpRtConfigurationError) do
-      JumpRtSurface.namespace_for_controller("Jump::App::RootsController")
+      JumpRtSurface.namespace_for_controller("Foreign::App::RootsController")
     end
   end
 
@@ -460,52 +458,10 @@ class JumpRtIssuerTest < ActiveSupport::TestCase
     end
   end
 
-  test "Core and Palm issuer origins match their public JWKS origins" do
-    %w(APP ORG).each do |tld|
-      assert_equal "https://jp.umaxica.#{tld.downcase}", JumpRtSurface.issuer_origin("CORE_#{tld}")
-    end
-    assert_raises(JumpRtConfigurationError) { JumpRtSurface.issuer_origin("CORE_COM") }
-    assert_equal "PALM_APP", JumpRtSurface.namespace_for_controller("Palm::App::Sign::OutsController")
-    assert_equal "https://palm-jp.umaxica.app", JumpRtSurface.issuer_origin("PALM_APP")
-    assert_raises(JumpRtConfigurationError) do
-      JumpRtSurface.namespace_for_controller("Palm::Com::RootsController")
-    end
-  end
-
-  test "Warp app and org use independent Jump RT issuers while OIDC side client identifiers remain fixed" do
-    assert_equal "WARP_APP", JumpRtSurface.namespace_for_controller("Warp::App::RootsController")
-    assert_equal "WARP_ORG", JumpRtSurface.namespace_for_controller("Warp::Org::RootsController")
-    assert_equal "https://www-jp.umaxica.app", JumpRtSurface.issuer_origin("WARP_APP")
-    assert_equal "https://www-jp.umaxica.org", JumpRtSurface.issuer_origin("WARP_ORG")
-    assert_raises(JumpRtConfigurationError) do
-      JumpRtSurface.namespace_for_controller("Warp::Com::RootsController")
-    end
-    warp_app = OidcClientStoresStaticClientStore.clients.fetch("warp-app-jp")
-
-    assert_equal "warp-app-jp", warp_app.fetch(:aud)
-    assert_equal "WARP_APP_JP", warp_app.fetch(:jwt_namespace)
-  end
-
-  test "Edit has no Jump issuer while its OIDC private key client remains configured" do
-    %w(Info::Org Docs::App Docs::Com).each do |publishing_surface|
-      assert_raises(JumpRtConfigurationError) do
-        JumpRtSurface.namespace_for_controller("Edit::Org::Publishing::#{publishing_surface}::EntriesController")
-      end
-    end
-    assert_raises(JumpRtConfigurationError) do
-      JumpRtIssuer.call(namespace: "EDIT_ORG", url: "https://www.umaxica.org/oauth/authorize", dst: "internal")
-    end
-    assert_raises(JitSecurityJwtRegistry::ConfigurationError) do
-      JitSecurityJwtRegistry.surface("EDIT_ORG")
-    end
-    assert_equal "EDIT_ORG_WW", JitSecurityJwtRegistry.oidc_client("EDIT_ORG_WW").namespace
-    assert_equal "edit-org-ww", OidcClientRegistry.find!("edit-org-ww").client_id
-  end
-
   test "normalizes unsupported issuer surface names by raising" do
     error =
       assert_raises(JumpRtConfigurationError) do
-        JumpRtSurface.normalize_namespace("jump_app")
+        JumpRtSurface.normalize_issuer_namespace("jump_app")
       end
 
     assert_match(/unsupported Jump RT issuer surface/, error.message)

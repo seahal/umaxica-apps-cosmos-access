@@ -1,4 +1,4 @@
-// The sign-out confirmation screen, replacing `app/views/base/shared/sign_outs/edit.html.erb`.
+// The shared confirmation screen for Visa's app and org OIDC logout routes.
 //
 // Whether a session is still active is a server decision: `form` is absent when there is nothing
 // left to sign out of, so the button cannot be offered by the client on its own.

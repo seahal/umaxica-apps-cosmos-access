@@ -8,7 +8,9 @@
 # JumpRT token families.
 module SecurityTokenLifetimes
   AUTH_ACCESS_JWT_TTL = 5.minutes
-  # RFC 9068 Access JWT lifetime for Base-issued RP access tokens.
+  # Maximum browser access JWT lifetime used when sizing OP back-channel logout delivery grace.
+  BROWSER_ACCESS_JWT_TTL = 10.minutes
+  # RFC 9068 Access JWT lifetime for registered external RP access tokens.
   OIDC_ACCESS_JWT_TTL = AUTH_ACCESS_JWT_TTL
   # Fixed clock-skew leeway (seconds) for Access JWT exp/nbf/iat - must
   # match SecurityJwtRfc9068AccessTokenProfile::CLOCK_SKEW_LEEWAY_SECONDS.

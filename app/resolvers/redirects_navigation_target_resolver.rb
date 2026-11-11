@@ -15,28 +15,10 @@ class RedirectsNavigationTargetResolver
         ri: params[:ri],
       )
     },
-    dashboard: ->(routes, params) {
-      routes.public_send(
-        "base_#{RedirectsNavigationTargetResolver.surface(params)}_root_path",
-        ri: params[:ri],
-      )
-    },
-    settings_security: ->(routes, params) {
-      routes.public_send(
-        "auth_#{RedirectsNavigationTargetResolver.surface(params)}_settings_path",
-        ri: params[:ri],
-      )
-    },
-    signed_out: ->(_routes, params) {
-      "/sign/out#{RedirectsNavigationTargetResolver.query(params.slice(:ri))}"
-    },
-    home: ->(_routes, params) { "/#{RedirectsNavigationTargetResolver.query(params.slice(:ri))}" },
   }.freeze
 
   SCOPES = {
-    authentication: %i(checkpoint selector dashboard signed_out home).freeze,
-    settings: %i(settings_security dashboard home).freeze,
-    public: %i(home signed_out).freeze,
+    authentication: %i(checkpoint selector).freeze,
   }.freeze
 
   def self.call(key, routes:, params: {}, scope: nil, source: :explicit_nt)
@@ -69,11 +51,6 @@ class RedirectsNavigationTargetResolver
 
   def self.surface(params)
     params[:surface].presence || "app"
-  end
-
-  def self.query(values)
-    compact = values.compact_blank
-    compact.present? ? "?#{compact.to_query}" : ""
   end
 
   private

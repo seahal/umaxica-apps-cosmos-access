@@ -22,19 +22,21 @@ ceremony; it does not select the parent transaction's decision time. Cross-datab
 pass their clock into these writers.
 
 The three concrete transaction models remain surface-local (`ClientOidcAuthorizationTransaction`,
-`VisitorOidcAuthorizationTransaction`, and `OperatorOidcAuthorizationTransaction`). The model state
-machine is independent of Auth-local ceremony continuity. Auth receives and returns only purpose-
-and surface-bound opaque protocol state; it does not own the Visa transaction, Root Session, or Base
-RP Session authority. Base receives the resulting authorization response as a browser RP and does
-not become the OIDC authority.
+`VisitorOidcAuthorizationTransaction`, and `OperatorOidcAuthorizationTransaction`); their persisted
+history is distinct from current route ownership and is covered by the deferred model/database
+inventory. The model state machine is independent of Auth-local ceremony continuity. Auth receives
+and returns only purpose- and surface-bound opaque protocol state; it does not own the Visa
+transaction, Root Session, or external RP Session authority. Registered external relying parties
+receive the authorization response through callback routes in their own repositories; they do not
+create local RP routes in Access.
 
-For first-party browser RP client IDs, an ordinary authorization request is recorded with the
-neutral `authentication` intent even if a caller supplies `screen_hint=signup` or
+For registered external browser RP client IDs, an ordinary authorization request is recorded with
+the neutral `authentication` intent even if a caller supplies `screen_hint=signup` or
 `screen_hint=signin`. The RP therefore does not select the credential ceremony. The current neutral
 handoff enters Auth through its sign-in route, where Auth retains its existing internal Sign in /
-Sign up choice and special-purpose ceremonies remain separate. Native/Palm clients and deprecated
-shared browser clients keep their existing purpose-specific behavior until their explicit migration
-slice.
+Sign up choice and special-purpose ceremonies remain separate. User-approved external RP
+registrations retain their registered redirect URIs and client-specific behavior; those
+registrations do not add local callback routes or browser sessions to Access.
 
 The state transition checks are exercised through the public coordinator/model API, including
 authenticated-result overwrite rejection and concurrent result registration. Authorization-code

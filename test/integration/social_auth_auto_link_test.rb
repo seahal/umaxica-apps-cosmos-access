@@ -32,7 +32,7 @@ class SocialAuthAutoLinkTest < ActionDispatch::IntegrationTest
     user_count_before = Client.count
 
     bootstrap_auth_sign_in_admission!
-    switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+    admit_browser_to_sign_up!(integration_session)
     post auth_app_social_apple_registration_path(ri: "jp")
     state = social_auth_state_from_response
     setup_apple_mock_auth(uid: apple_uid)
@@ -285,7 +285,7 @@ class SocialAuthAutoLinkTest
     target = URI.parse(response.location) if response.redirect?
     continuation = target&.path == "/social/authentication/completion"
     if continuation
-      host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
+      host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
       host!(host)
       https!
       headers = { "Host" => host, "Origin" => "https://#{host}", "Sec-Fetch-Site" => "same-origin" }
@@ -302,7 +302,7 @@ class SocialAuthAutoLinkTest
 
       headers = {
         "Host" => URI.parse(form["action"]).host,
-        "Origin" => "https://#{configured_host(:sign_service)}",
+        "Origin" => "https://#{configured_host(:auth_service)}",
         "Sec-Fetch-Site" => "same-site",
       }
     end

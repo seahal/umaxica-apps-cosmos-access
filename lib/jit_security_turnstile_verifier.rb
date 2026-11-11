@@ -5,6 +5,7 @@ require "json"
 require "uri"
 require "jit_security_turnstile_config"
 
+# TODO: AUDIT external access: calls Cloudflare Turnstile siteverify.
 class JitSecurityTurnstileVerifier
   VERIFY_URI = URI("https://challenges.cloudflare.com/turnstile/v0/siteverify").freeze
   # siteverify sits on the request path, and this call previously ran on the

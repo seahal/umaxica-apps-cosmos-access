@@ -90,10 +90,10 @@ passwords are fixed development-only literals declared inline in `compose.yaml`,
 be provisioned before the first `up`. The one manual prerequisite is the `UID` and `GID` lines in
 the gitignored repository-root `.env`, because `$UID` and `$GID` are bash builtins rather than
 exported variables and Compose cannot read them directly (see
-`docs/operations/development-credential-provisioning.md`). Global and Edge do not share a host
-Podman network; the Edge Worker uses Cloudflare Workers VPC to reach this tunnel.
-`devcontainer.json` declares no `postCreateCommand`; run `bundle install` and
-`bun install --frozen-lockfile` by hand inside `core`.
+`docs/operations/development-credential-provisioning.md`). Access and Edge do not share a host
+Podman network. Access uses only `cloudflare-tunnel`; Workers VPC belongs to Press and has no
+connector in this Access stack. `devcontainer.json` declares no `postCreateCommand`; run
+`bundle install` and `bun install --frozen-lockfile` by hand inside `core`.
 
 The Podman-specific properties are Compose concerns and need no flags: `userns_mode: keep-id`,
 `user: !reset null`, the `bind.selinux: Z` labels on the workspace and on the read-only

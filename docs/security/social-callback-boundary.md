@@ -1,79 +1,43 @@
 # Social Callback Boundary
 
-> **Legacy Sign/Acme vocabulary:** The signed result handoff in this document is historical context
-> for the former delegation model. In the current Rails OIDC architecture, Auth remains
-> ceremony-only, Visa is the OIDC and Root Session authority, and Base is the browser RP; use the
-> current Auth/Visa result contract for new work.
+Auth APP/ORG routes own social-provider callback verification as part of credential ceremonies. Visa
+owns the OIDC transaction and local session/token authority. External relying parties receive Visa's
+registered OIDC response and own their callback and local session in their own repositories.
 
-## Boundary
+## Callback and ceremony binding
 
-Social provider callbacks may terminate on `sign/id` because provider redirect URLs require stable
-credential ceremony endpoints. `sign/id` validates the provider response and returns signed evidence
-to `acme/www`.
+An APP provider-start request records the admitted Auth ceremony identifier only as a callback
+correlation value in the Rails session. Before consuming OAuth state, the callback resolves the
+current host-only Auth ceremony cookie and requires the same active ceremony row. A mismatch is
+refused without consuming state or writing authentication evidence; the correlation value does not
+grant admission or select an actor.
 
-`sign/id` must not make the final account linking, account creation, session creation, preference,
-authorization, token, or freshness decision.
+For APP registration, a provider POST stores callback state, provider, and the Apple nonce when
+applicable. It does not create a sign-up flow or record Auth evidence. A verified callback locks the
+Admission Binding and Auth Ceremony, rechecks admission, cancellation, prior flow, and evidence,
+then records only the evidence allowed by the current Auth flow. Callback state, provider
+assertions, and nonce remain bound to that flow.
 
-## Responsibilities
+For credential linking, the Auth APP route binds the verified provider candidate to the signed-in
+current actor and requires the route's CSRF, session, device, and step-up checks. It cannot select
+another actor or issue a Visa token. A failed persistence commit cannot be presented as a successful
+link.
 
-For an APP login, the provider-start request records the admitted Auth ceremony row ID only as a
-callback-attempt correlation value in the Rails session. Before the callback consumes OAuth state,
-it resolves the current host-only `auth_sid` and requires the same active ceremony row. A mismatch
-returns the shared 409 refusal without consuming state or writing authentication evidence; the
-correlation value does not grant admission or select an actor.
+## Authority
 
-For APP sign-up, the Google/Apple registration POST stores callback state, provider and the Apple
-nonce when applicable, but creates no `ClientSignUpFlow` and records no Auth evidence. The user can
-return to the initial sign-up page and choose another method. A later provider POST consumes the
-previous callback state present in its current server-side session before issuing its replacement.
-After that consume commits, the old callback state is refused. Concurrent provider starts made from
-stale signed-cookie sessions are not yet associated with one persisted Admission generation; their
-ordering is unverified. Only a verified successful callback locks the Admission Binding and then the
-Auth Ceremony, rechecks the active sign-up admission, absence of cancellation, prior Flow and
-evidence, and creates/advances the Flow with callback evidence. A callback refuses when Email,
-Telephone or another social Flow already belongs to the admission.
-
-A refusal for a known superseded or already-consumed callback state does not clear or commit the
-session. This prevents an in-flight callback carrying an older signed-cookie snapshot from
-overwriting the newer session cookie after a restart. This does not serialize concurrent provider
-starts from stale snapshots.
-
-`sign/id` may:
-
-- validate OAuth/OIDC provider callback state and nonce;
-- validate provider subject and provider claims needed for the credential ceremony;
-- bind callback evidence to an acme transaction;
-- return a signed ceremony result.
-
-Visa owns:
-
-- account lookup and account linking decisions;
-- sign-up finalization;
-- Root Session issuance;
-- authorization and policy decisions;
-- downstream token issuance.
+- Auth validates provider callback state, nonce, issuer/subject claims, and ceremony ownership.
+- Auth owns only credential evidence and linking operations exposed by retained Auth routes.
+- Visa owns OIDC authorization, local sessions, account/token authority, and step-up freshness.
+- Each external RP validates Visa's OIDC response and establishes its own browser session.
 
 ## Object-level authorization
 
-OmniAuth callback controllers do not call Action Policy `authorize!` or `authorized_scope`. They are
-authentication and state-verification endpoints: login and sign-up have no authenticated actor or
-record to authorize, and `link` always binds to the signed-in `current_resource`. Protection comes
-from the authentication mode, callback state (CSRF/replay) validation, provider assertion
-verification, and session binding of the intent. A future screen where an operator manages another
-staff member's links MUST design object-level authorization in its own controller.
+Provider callback endpoints with no authenticated actor use their explicit authentication mode,
+callback-state checks, and admitted flow binding. A credential-link operation is a different
+authenticated boundary and authorizes the current actor and candidate before mutation. Do not
+combine callback verification and account-link authorization into a route that can act on an
+arbitrary actor.
 
-The APP social-link callback stages a receiver-local POST form with `strict-origin` in its response
-and HTML metadata. The subsequent POST retains CSRF, session, device and Step-Up checks; its
-referrer carries no callback path or query.
-
-The current APP link-completion controller holds the Client lock while it validates the candidate,
-grant and device. It consumes the candidate, grant and operation-scoped Step-Up in the OP device
-transaction before attempting the Zenith identity link and its audit outbox write. If the Zenith
-link fails after that OP commit, the spent authorization cannot be reused; a new ceremony is
-required. The implementation currently performs this final link in Auth, although the historical
-responsibility list above assigns linking decisions to Visa.
-
-## Related
-
-- `docs/security/social-login-provider-scope.md`
-- `docs/security/ceremony-grant-result.md`
+See [Social Login Provider Scope](social-login-provider-scope.md),
+[Credential Gateway](credential-gateway.md), and the accepted
+[`visa-op-host` decision](../../adr/visa-op-host.md).

@@ -11,8 +11,7 @@ class SecurityJwtPreferenceTokenCodec
   TOKEN_TYPE = "JWT"
   AudienceMismatchError = Class.new(StandardError)
 
-  # --- WU-7 section 4.2: the anonymous com writer claims shape -------------------
-  # Wire values match the named com option records. Readers must validate without querying a DB.
+  # Wire values match the named app/org option records. Readers validate without querying a DB.
   ANONYMOUS_PREFERENCE_VALUES = {
     "theme" => %w(light dark system),
     "language" => %w(ja en),
@@ -26,7 +25,7 @@ class SecurityJwtPreferenceTokenCodec
     "page_size" => %w(10 20 50 100 infinity),
   }.freeze
 
-  ANONYMOUS_REALMS = %w(app com org).freeze
+  ANONYMOUS_REALMS = %w(app org).freeze
   ANONYMOUS_CLAIMS = %w(iss sub aud iat exp jti preferences).freeze
 
   class << self
@@ -115,7 +114,6 @@ class SecurityJwtPreferenceTokenCodec
     def anonymous_realm_for_preference_type(preference_type)
       case preference_type
       when "AppPreference" then "app"
-      when "ComPreference" then "com"
       when "OrgPreference" then "org"
       else
         raise ArgumentError, "unsupported anonymous preference model: #{preference_type.inspect}"
@@ -134,7 +132,7 @@ class SecurityJwtPreferenceTokenCodec
     def local_anonymous_realm_for_host(host)
       return unless Rails.env.local?
 
-      %w(app com org).find do |realm|
+      %w(app org).find do |realm|
         host == "#{realm}.localhost" || host.end_with?(".#{realm}.localhost")
       end
     end
@@ -142,15 +140,18 @@ class SecurityJwtPreferenceTokenCodec
     def configured_anonymous_realm_for_host(host)
       hosts = Rails.configuration.x.boot_config.fetch(:hosts)
       realm_hosts = {
-        "app" => hosts.base_service&.host,
-        "com" => hosts.base_corporate&.host,
-        "org" => hosts.base_staff&.host,
+        "app" => [hosts.auth_service&.host, hosts.visa_service&.host],
+        "org" => [hosts.auth_staff&.host, hosts.visa_staff&.host],
       }
       matched =
         realm_hosts.filter_map do |realm, configured_host|
-          next if configured_host.blank?
+          next unless configured_host.any?(&:present?)
 
-          realm if registrable_domain(host) == registrable_domain(configured_host)
+          realm_match =
+            configured_host.compact.any? do |candidate|
+              registrable_domain(host) == registrable_domain(candidate)
+            end
+          realm if realm_match
         end
       return if matched.length > 1
 

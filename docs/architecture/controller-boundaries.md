@@ -14,9 +14,10 @@ Authentication classification must be declared and audited explicitly by concret
 metadata, not inferred from `OpenController`, `PrivateController`, or `GuestController` inheritance.
 Missing declarations resolve to `:deny_all`.
 
-Active Auth sign boundaries are surface-local: `Auth::App::Sign::*Controller` and
-`Auth::Org::Sign::*Controller` own their own base classes. Auth com sign-in was retired; Base com
-continues only as an anonymous public and Preference surface.
+Auth APP/ORG and Visa APP/ORG are the only product controller surfaces in this repository. Auth owns
+credential ceremonies and provider callbacks; Visa owns OpenID Provider authority. Each surface has
+its own controller lifecycle. The mounted operator tools are separate host-constrained engines or
+Rack applications, not product controller surfaces.
 
 ## Current Boundaries
 
@@ -69,9 +70,9 @@ allow/deny belong to CloudFront + AWS WAF. ALB and ECS networking own origin gat
 
 ### Legacy Compatibility Controllers
 
-`OpenController`, `PrivateController`, and `GuestController` may exist temporarily as compatibility
-classes while routes are migrated, but they are not the source of truth for authentication
-classification.
+Legacy `OpenController`, `PrivateController`, and `GuestController` wrappers in retained code are
+not the source of truth for authentication classification. Do not add new wrappers or use their
+names to infer access behavior.
 
 `OpenController` compatibility descendants represent authentication-aware endpoints that should move
 under surface-local `ApplicationController` with explicit `:open` declarations.
@@ -81,15 +82,9 @@ under surface-local `ApplicationController` with explicit `:open` declarations.
 Private controllers run the full surface pipeline for authentication, verification, authorization,
 preferences, current actor setup, and request finishing in the established order.
 
-Common examples:
-
-- dashboards;
-- signed-in user settings under `/setting`;
-- operator-controlled configuration under Base ORG `/settings` (the owner-approved WU-X1 migration);
-  Auth ORG has no `/settings` route, and Auth APP's remaining settings routes are under the accepted
-  O-11 migration;
-- credential management;
-- authenticated APIs tied to the current actor.
+Current examples are authenticated actor operations explicitly exposed by Auth APP/ORG or Visa
+APP/ORG. Each action must retain its owning surface's authorization, session, and verification
+checks; no retired product surface contributes an access path.
 
 `GuestController` is a compatibility wrapper for flows that authenticated actors must not enter.
 
@@ -127,8 +122,8 @@ Preferred retirement paths:
   explicit `:open` declarations;
 - use explicit controller/action authentication metadata for private, guest-only, optional, and bare
   behavior;
-- keep surface behavior local to `app`, `com`, and `org` unless an existing shared concern already
-  provides a safe abstraction.
+- keep behavior local to the retained Auth/Visa APP and ORG surfaces unless an existing shared
+  concern already provides a safe abstraction.
 
 When an exception is migrated, keep the security checks intact: CSRF behavior, callback state,
 nonce, DPoP, DBSC challenge, session-limit gate, historical status-103 rejection, and step-up

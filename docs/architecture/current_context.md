@@ -92,16 +92,17 @@ The resolved context includes:
 
 ## Surface Actors
 
-Authenticated `app` and `org` requests use these runtime actor names. The public `com` surface has
-no authenticated actor; `Actor.tld` still identifies its surface as `:com`.
+Authenticated APP and ORG requests on the retained Auth and Visa surfaces use these runtime actor
+names. This document does not define actors for removed product surfaces or for mounted operator
+tools.
 
-| Surface | Actor type  | Helper           |
-| ------- | ----------- | ---------------- |
-| `app`   | `:client`   | `Actor.client`   |
-| `org`   | `:operator` | `Actor.operator` |
+| Audience | Actor type  | Helper           |
+| -------- | ----------- | ---------------- |
+| `app`    | `:client`   | `Actor.client`   |
+| `org`    | `:operator` | `Actor.operator` |
 
-`Actor.whoami` returns the current actor type. `Actor.tld` returns the current surface label:
-`:app`, `:com`, `:org`, `:net`, or `:dev`.
+`Actor.whoami` returns the current actor type. `Actor.tld` returns the current surface label: `:app`
+or `:org` for the retained Auth and Visa application surfaces.
 
 Storage names may still contain compatibility prefixes such as `user_*` or `staff_*`. Those storage
 names do not change the runtime current-context API.
@@ -113,25 +114,22 @@ Preference is exposed as an immutable value object through `Actor.preferences`.
 Request code should not read preference state from controller instance variables, raw JWT claims, or
 legacy current-context APIs when `Actor.preferences` is available.
 
-`Actor::Preference` contains the resolved display preference used by authenticated app/org flows.
-In normal authenticated requests it is initialized from the verified realm Preference JWT, then supported
-request-local context values such as `ri`, `lx`, `ct`, and `tz` are overlaid when explicitly
-present. That overlay affects only the current request and must not be copied back to the database
-or JWT.
+`Actor::Preference` contains the resolved display preference used by authenticated app/org flows. In
+normal authenticated requests it is initialized from the verified realm Preference JWT, then
+supported request-local context values such as `ri`, `lx`, `ct`, and `tz` are overlaid when
+explicitly present. That overlay affects only the current request and must not be copied back to the
+database or JWT.
 
-Base preference edit screens read account-local values from the actor's Preference records. They do
-not refresh a shared Preference JWT from account storage. On Base app/org GET or HEAD, if the JWT is
-valid but its language or experience display cookie is missing or does not match, Base may rebuild
-those two display cookies from the verified snapshot, active anonymous row and explicit actor
-values. This read does not update or reissue the JWT, change row lifecycle, or extend expiry.
-Invalid or missing JWTs are not repaired from the Preference database. Other read-only hosts render
-from the verified JWT without reading the Preference database or issuing or deleting Preference
-cookies.
+Auth and Visa APP/ORG callers use the Preference projection and write boundaries described in
+[`preference.md`](preference.md). A Preference read does not authorize a removed surface to query or
+mutate rows. Invalid or missing JWTs are not repaired from the Preference database. Any read-only
+display-cookie projection must use verified state and must not update or reissue the JWT, change row
+lifecycle, or extend expiry.
 
 - localization: `language`, `region`, `timezone`
 - presentation: `theme`, `motion`, `density`, `items_per_page`
 - format defaults: `currency`, `date_format`, `time_format`
-- consent receipts, browser binding and Web Push state are separate Base-owned records; they are not
+- consent receipts, browser binding and Web Push state are separate persisted records; they are not
   hydrated from the Preference JWT into `Actor.preferences` and are not authorized by display
   cookies
 
@@ -172,8 +170,8 @@ authorization-library interface, not a `User` model or application-facing curren
 Do not rename the Action Policy subject to `actor`: `Actor` is already the request-local current
 context facade. Controllers should continue wiring Action Policy with
 `authorize :user, through: :current_client` or `:current_operator` as appropriate for the surface.
-Policies read token claims through `Actor.authz.token_claims`, not by
-falling back into authentication storage.
+Policies read token claims through `Actor.authz.token_claims`, not by falling back into
+authentication storage.
 
 `Actor.signed_in?` is the request-level predicate for an authenticated actor. It is true when the
 current actor type is `:client` or `:operator`.

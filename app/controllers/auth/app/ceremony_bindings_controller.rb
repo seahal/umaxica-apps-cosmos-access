@@ -124,42 +124,19 @@ module Auth
       end
 
       def ceremony_binding_confirmation_url(binding)
-        admission = o9_admission_for_binding(binding)
-        if admission
-          return base_app_identity_sensitive_admission_confirmation_url(
-            admission_ref: admission.public_ref, entry_ref: binding.entry_ref,
-            ri: params[:ri], lx: normalized_locale(params[:lx]),
-            host: base_rp_host, protocol: "https",
-          )
-        end
-
         query = { binding_ref: binding.confirmation_ref, ri: params[:ri], lx: normalized_locale(params[:lx]) }.compact
         case binding.purpose
-        when *AuthAdmissionBinding::PARENT_PURPOSES.fetch(:authorization_transaction)
-          visa_app_ceremony_binding_confirmation_url(
-            **query, host: visa_authority_host, protocol: "https",
-          )
-        when *AuthAdmissionBinding::PARENT_PURPOSES.fetch(:step_up_ceremony_transaction)
-          base_app_ceremony_binding_confirmation_url(
-            **query, host: base_rp_host, protocol: "https",
-          )
+        when *AuthAdmissionBinding::PARENT_PURPOSES.values.flatten
+          visa_ceremony_binding_confirmation_url(**query)
         else
           raise ArgumentError, "unsupported ceremony binding purpose"
         end
       end
 
-      def o9_admission_for_binding(binding)
-        admission_model = ClientVisaSensitiveAdmission
-        social_model = ClientVisaSocialLinkAdmission
-        admission_model.connection_owner.connected_to(role: :writing) do
-          records = [
-            admission_model.find_by(auth_admission_binding_id: binding.id),
-            social_model.find_by(auth_admission_binding_id: binding.id),
-          ].compact
-          raise ActiveRecord::RecordNotFound unless records.length <= 1
-
-          records.first
-        end
+      def visa_ceremony_binding_confirmation_url(**query)
+        visa_app_ceremony_binding_confirmation_url(
+          **query, host: visa_authority_host, protocol: "https",
+        )
       end
 
       def current_auth_session_matches_binding?(binding)
@@ -183,6 +160,10 @@ module Auth
 
       def auth_service_host
         ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+      end
+
+      def visa_authority_host
+        ENV.fetch("PUBLIC_VISA_SERVICE_URL")
       end
     end
   end

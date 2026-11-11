@@ -10,32 +10,32 @@ unresolved gaps explicit.
 | ----- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | F3    | Ceremony cleanup            | `config/recurring.yml` schedules every dedicated ceremony transaction purge job in production.                                                                                                                                                                                         | Cleanup observability is still service-specific.                                                                               |
 | F1    | Timing protection           | `MinimumResponseBudget` defaults on when included; credential endpoint contract tests pin coverage.                                                                                                                                                                                    | Additional endpoint families need review as added.                                                                             |
-| F7    | OP route contract           | Visa routes expose discovery, JWKS, `/oauth/*`, and `/oidc/logout`; Base routes retain the browser-RP callback and host-local session contract.                                                                                                                                    | Edge/Jump deployment still needs the separately owned Visa graph update.                                                       |
-| F2    | Flash removal               | `auth/app/sign/in/sessions` now uses explicit render state instead of Rails flash.                                                                                                                                                                                                     | Other auth/base surfaces still need migration.                                                                                 |
-| F5/F6 | Route terminology and TODOs | Route comments no longer describe Base as a credential gateway, and stale degraded-entrypoint text is removed.                                                                                                                                                                         | None for the comments changed in this slice.                                                                                   |
-| F4    | Session commit seam         | App sign-in, including Google and Apple sign-up after Finalization, routes through `AuthenticationSessionCommitter`.                                                                                                                                                                                                  | Full authority migration remains transitional.                                                                                 |
+| F7    | OP route contract           | Visa APP/ORG expose discovery, JWKS, `/oauth/*`, `/oidc/logout`, and DBSC; Auth APP/ORG expose credential ceremonies and provider callbacks. External RPs own their callback and local session.                                                                                        | Edge/Jump deployment remains separately owned.                                                                                 |
+| F2    | Flash removal               | `auth/app/sign/in/sessions` now uses explicit render state instead of Rails flash.                                                                                                                                                                                                     | Review remaining Auth/Visa routes as their behavior changes.                                                                   |
+| F5/F6 | Route terminology and TODOs | Route comments preserve the distinction between Auth ceremony ownership and Visa OP authority.                                                                                                                                                                                         | None for the comments changed in this slice.                                                                                   |
+| F4    | Session commit seam         | App sign-in, including Google and Apple sign-up after Finalization, routes through `AuthenticationSessionCommitter`.                                                                                                                                                                   | Full authority migration remains transitional.                                                                                 |
 | F7b   | Admission control key shape | Telephone verification pacing uses IP plus telephone blind-index digest, never the raw number.                                                                                                                                                                                         | Other credential rate-limit keys need review.                                                                                  |
 | F8    | Auth security events        | `AuthenticationSecurityEventEmitter` writes sanitized events to `Chronicle` under the existing security retention policy and also emits a redacted operational log; the existing SMS transport records enqueue/provider acceptance/failure facts without recipient or message content. | Email provider receipts, provider callback/retry contracts, and taxonomy-wide caller migration remain separate follow-up work. |
 
-## Current Route Matrix
+## Current Route Matrix (2026-11-10)
 
-| Route family                        | Owner in this repository | Responsibility                                                    |
-| ----------------------------------- | ------------------------ | ----------------------------------------------------------------- |
-| `/.well-known/openid-configuration` | `visa.{app,com,org}`    | Per-realm OP discovery document.                                  |
-| `/.well-known/jwks.json`            | `visa.{app,com,org}`    | Per-realm Visa and Jump signing-key publication.                  |
-| `/oauth/authorize`                  | `visa.{app,com,org}`    | Per-realm OP authorization endpoint.                              |
-| `/oauth/token`                      | `visa.{app,com,org}`    | Per-realm OP token endpoint.                                      |
-| `/oauth/userinfo`                   | `visa.{app,com,org}`    | Per-realm OP UserInfo endpoint.                                   |
-| `/oauth/revoke`                     | `visa.{app,com,org}`    | Per-realm OP token revocation endpoint.                           |
-| `/oidc/callback`                    | `www.{app,com,org}`     | Base first-party RP callback.                                     |
-| `/oidc/logout`                      | `visa.{app,com,org}`    | Per-realm OP end-session endpoint; Base launches to it.           |
-| `/social/:provider/sign/in`         | `auth`                   | Sign ceremony entry into social sign-in.                          |
-| `/social/:provider/sign/up`         | `auth`                   | Sign ceremony entry into social sign-up.                          |
-| `/social/:provider/callback`        | `auth`                   | Social provider callback handled as credential ceremony evidence. |
+| Route family                            | Owner in this repository | Responsibility                                          |
+| --------------------------------------- | ------------------------ | ------------------------------------------------------- |
+| `/.well-known/openid-configuration`     | Visa APP/ORG             | Per-realm OP discovery document.                        |
+| `/.well-known/jwks.json`                | Visa APP/ORG             | Per-realm Visa signing-key publication.                 |
+| `/oauth/authorize`                      | Visa APP/ORG             | Per-realm OP authorization endpoint.                    |
+| `/oauth/token`                          | Visa APP/ORG             | Per-realm OP token endpoint.                            |
+| `/oauth/userinfo`                       | Visa APP/ORG             | Per-realm OP UserInfo endpoint.                         |
+| `/oauth/revoke`                         | Visa APP/ORG             | Per-realm OP token revocation endpoint.                 |
+| `/oidc/logout`                          | Visa APP/ORG             | Per-realm OP end-session flow.                          |
+| `/edge/v0/token/dbsc`                   | Visa APP/ORG             | Per-realm DBSC registration endpoint.                   |
+| `/sign/*` and social provider callbacks | Auth APP/ORG             | Credential ceremony entry and provider callback routes. |
 
-`/oauth/*` is Visa OP-only. Base first-party RP callbacks stay under `/oidc/callback`, and social
-federation entry/callback routes stay under `/social` on Auth. The host boundary and Jump edge
-catalog are documented in `docs/operations/jump-rt-visa-edges.md`.
+`/oauth/*`, OIDC logout, JWKS, and DBSC are Visa-owned. Auth has no OIDC RP callback or local
+external-RP session. Social federation entry and callback routes are Auth-owned credential
+ceremonies. Visa's approved external RP registrations remain in the client registry; registered
+callback and logout URIs resolve to external repositories. The host boundary and Jump edge catalog
+are documented in `docs/operations/jump-rt-visa-edges.md`.
 
 ## Ceremony Cleanup Lifecycle
 

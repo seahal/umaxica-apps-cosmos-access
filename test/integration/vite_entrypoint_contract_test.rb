@@ -28,7 +28,7 @@ class ViteEntrypointContractTest < ActiveSupport::TestCase
   test "every Inertia layout loads the entrypoint belonging to its own surface" do
     layouts = inertia_layouts
 
-    assert_equal 13, layouts.size, "expected one Inertia layout per user-facing FQDN"
+    assert_equal 4, layouts.size, "expected one Inertia layout per Auth and Visa FQDN"
 
     layouts.each do |layout|
       family, surface = layout.relative_path_from(LAYOUT_ROOT).each_filename.first(2)
@@ -74,27 +74,6 @@ class ViteEntrypointContractTest < ActiveSupport::TestCase
                     "#{source} must expose the shared boot function the entrypoints call"
     assert_includes contents, "surfacePageResolver(modules, surface, SurfaceLayout)",
                     "#{source} must resolve pages through the surface resolver"
-  end
-
-  # The base family typography is not a surface of its own: it is imported by the three base surface
-  # stylesheets and by nothing else, so a family rule cannot reach the Auth, Warp, Palm, or Core
-  # surfaces.
-  BASE_FAMILY_IMPORT = %(@import "../base_family.css";)
-  BASE_FAMILY_STYLESHEETS = %w(base_app.css base_com.css base_org.css).freeze
-
-  test "the base family typography is imported by every base surface stylesheet and no other" do
-    expected = BASE_FAMILY_STYLESHEETS.map { |name| SURFACE_STYLESHEET_ROOT.join(name) }
-
-    expected.each do |stylesheet|
-      assert_path_exists stylesheet
-      assert_includes stylesheet.read, BASE_FAMILY_IMPORT,
-                      "#{stylesheet} must load the base family typography"
-    end
-
-    (Dir.glob(SURFACE_STYLESHEET_ROOT.join("*.css")).map { |path| Pathname.new(path) } - expected).each do |stylesheet|
-      assert_not_includes stylesheet.read, BASE_FAMILY_IMPORT,
-                          "#{stylesheet} is not a base surface and must not load the base family typography"
-    end
   end
 
   # CSS carries the same boundary as the page glob: one FQDN links one surface stylesheet, and that

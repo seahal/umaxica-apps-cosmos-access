@@ -6,9 +6,8 @@ require "test_helper"
 # Pins the provider x surface allow matrix enforced by the /social/* middleware.
 #
 # The matrix is deny-by-default: a host that owns no auth surface classifies as
-# :unknown and gets no provider at all. Rails Host Authorization admits many more
-# hosts than the three auth origins (warp, base, core, help, info, palm, guid...),
-# and none of them may start or complete an external sign-in ceremony.
+# :unknown and gets no provider at all. Rails Host Authorization may admit many
+# hosts, but only Auth APP and Auth ORG may start or complete external sign-in.
 class OmniauthSocialProviderHostMatrixTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
@@ -31,15 +30,6 @@ class OmniauthSocialProviderHostMatrixTest < ActiveSupport::TestCase
     assert_denied host: app_auth_host, provider: "entra"
   end
 
-  # config/routes/base.rb mounts the app-surface provider callbacks and the
-  # /social/authentication continuation/completion pair on the base service
-  # host, so it is part of the app surface too -- and must still refuse Entra.
-  test "the app base host allows Google and Apple and denies Entra" do
-    assert_allowed host: app_base_host, provider: "google"
-    assert_allowed host: app_base_host, provider: "apple"
-    assert_denied host: app_base_host, provider: "entra"
-  end
-
   test "the org auth host allows Entra and denies Google and Apple" do
     assert_allowed host: org_auth_host, provider: "entra"
     assert_denied host: org_auth_host, provider: "google"
@@ -55,14 +45,8 @@ class OmniauthSocialProviderHostMatrixTest < ActiveSupport::TestCase
     assert_denied host: org_auth_host, path: "/social/apple/callback"
   end
 
-  test "com hosts allow no external provider" do
-    com_hosts.each do |host|
-      PROVIDERS.each { |provider| assert_denied host: host, provider: provider }
-    end
-  end
-
-  test "hosts that own no auth surface allow no external provider" do
-    non_auth_hosts.each do |host|
+  test "Visa hosts allow no external provider" do
+    [@hosts.visa_service.host, @hosts.visa_staff.host].each do |host|
       PROVIDERS.each do |provider|
         assert_denied host: host, provider: provider
       end
@@ -71,52 +55,19 @@ class OmniauthSocialProviderHostMatrixTest < ActiveSupport::TestCase
 
   test "non-provider social paths remain app-surface only" do
     assert_allowed host: app_auth_host, path: "/social/authentication/completion"
-    assert_allowed host: app_base_host, path: "/social/authentication/completion"
     assert_denied host: org_auth_host, path: "/social/authentication/completion"
-    assert_denied host: non_auth_hosts.first, path: "/social/authentication/completion"
+    assert_denied host: @hosts.visa_service.host, path: "/social/authentication/completion"
   end
 
   test "paths outside /social are not touched by the matrix" do
-    assert_allowed host: non_auth_hosts.first, path: "/settings"
+    assert_allowed host: @hosts.visa_service.host, path: "/settings"
   end
 
   private
 
   def app_auth_host = @hosts.auth_service.host
 
-  def app_base_host = @hosts.base_service.host
-
   def org_auth_host = @hosts.auth_staff.host
-
-  def com_hosts
-    [@hosts.auth_corporate.host, @hosts.base_corporate.host].uniq
-  end
-
-  # Representative hosts that Rails Host Authorization admits but that own no
-  # auth surface, drawn from the same boot host families the app really has.
-  def non_auth_hosts
-    [
-      @hosts.warp_service, @hosts.warp_staff,
-      @hosts.base_staff,
-      @hosts.core_service, @hosts.core_staff,
-      @hosts.help_service, @hosts.info_service,
-      @hosts.palm_service, @hosts.guid_service,
-    ].map(&:host).uniq - app_hosts - [org_auth_host, *com_hosts]
-  end
-
-  # Every host that legitimately serves an app-surface /social/* path: the auth
-  # origin plus the base origin, in both their public and private forms.
-  def app_hosts
-    (
-      [app_auth_host, app_base_host] +
-        OmniAuthSocialProviderHostMatrix::APP_HOST_ENV_KEYS.filter_map { |key|
-          value = ENV.fetch(key, nil)
-          next if value.blank?
-
-          ConfigValues.build(value, allow_localhost: true).uri&.host
-        }
-    ).uniq
-  end
 
   def call(host:, path:)
     @downstream_called = false

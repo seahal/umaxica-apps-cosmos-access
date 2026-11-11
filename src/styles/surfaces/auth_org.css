@@ -19,7 +19,8 @@
 @source "../../pages/auth/org";
 @source "../../layouts";
 @source "../../components";
-@source "../../features";
+@source "../../features/auth";
+@source "../../features/turnstile";
 
 /*
  * The ERB this surface renders. Tailwind only emits a utility it has seen written down, so without
@@ -31,8 +32,6 @@
 @source "../../../app/views/shared";
 @source "../../../app/views/auth/org";
 @source "../../../app/views/auth/shared";
-@source "../../../app/views/sign/shared";
-@source "../../../app/views/sign/org";
 
 /*
  * Edition identity: one hue per TLD so an FQDN is recognisable on sight. `theme.css` mixes both the

@@ -2,72 +2,25 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require_relative "../../../../support/oidc_auth_admission_test_helper"
 
 # What the POST entry writes before handing the request to the OmniAuth request
 # phase. The handoff itself and the absence of a GET entry are covered by
 # test/integration/social_ceremony_entry_contract_test.rb.
 class Auth::App::Social::CeremonyEntryTest < ActionDispatch::IntegrationTest
+  include OidcAuthAdmissionTestHelper
+
   setup do
-    ri = "jp"
-    @base_browser = open_session
-    base_host = ENV.fetch("PUBLIC_BASE_SERVICE_URL")
     auth_host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-    @base_browser.host!(base_host)
-    @base_browser.https!
-    @base_browser.get("/sign", params: { ri: ri, pt: "/dashboard?ri=#{ri}" })
-    form = Nokogiri::HTML(@base_browser.response.body).at_css("form")
-    fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-    @base_browser.post(
-      form["action"], params: fields, headers: {
-        "Origin" => "https://#{base_host}", "Sec-Fetch-Site" => "same-origin",
-      },
+    host! auth_host
+    https!
+    issuance = OidcTestEntry.issue!(
+      surface: "app", intent: "sign_in", base_browser_nonce: SecureRandom.urlsafe_base64(32), base_token: nil,
     )
-    JitSecurityJwtRegistry.surface("BASE_APP")
-    # The Base sign entry hands the browser to the Visa OP authorize endpoint, which
-    # relays an unauthenticated browser to the Auth sign-in entry. The Auth admission
-    # then runs its ceremony-binding confirmation on Visa and redeems the reference,
-    # so the chain must be followed until Auth renders the sign-in page itself.
-    admission_browser = @base_browser
-    12.times do |admission_index|
-      raise RuntimeError, "Social admission stopped before a redirect" unless admission_browser.response.redirect?
+    admit_auth_ceremony_entry!(auth_app_sign_in_path(ri: "jp"), reference: issuance.reference)
+    follow_redirect!
 
-      target = URI.parse(admission_browser.response.location)
-      # A same-origin hop moves by path; only a cross-origin hop carries a Jump rt.
-      3.times do
-        break unless target.host == "jump.umaxica.net"
-
-        unwrapped = URI.parse(jump_rt_url_from_location_for_test(target.to_s))
-        break if unwrapped.to_s == target.to_s
-
-        target = unwrapped
-      end
-      if admission_index.zero?
-        raise RuntimeError,
-              "Base authorization host mismatch" unless target.host == visa_host_for_test_base_host(base_host)
-      elsif admission_index == 1
-        raise RuntimeError, "Auth admission host mismatch" unless target.host == auth_host
-      end
-      next_browser =
-        if target.host.nil?
-          admission_browser
-        elsif target.host == auth_host
-          self
-        else
-          @base_browser
-        end
-      next_browser.host!(target.host) if target.host
-      next_browser.https!
-      next_browser.get(
-        target.request_uri, headers: {
-          "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document",
-        },
-      )
-      admission_browser = next_browser
-      break if next_browser == self && !response.redirect?
-    end
-
-    assert_equal [auth_host, 200], [request.host, response.status]
-    host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+    assert_response :success
   end
 
   test "sign-in entry binds provider state to the admitted SID without a signed social grant" do
@@ -98,7 +51,7 @@ class Auth::App::Social::CeremonyEntryTest < ActionDispatch::IntegrationTest
         provider: provider, uid: "entry-flow-#{provider}-#{SecureRandom.hex(4)}", info: { name: "Fixture" },
         credentials: { token: "fixture", expires_at: 1.hour.from_now.to_i },
       )
-      switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+      admit_browser_to_sign_up!(integration_session)
       # The entry hands off to the provider without issuing a Flow; the verified
       # callback issues the attempt's one Flow (AppSocialCeremonyEntry).
       assert_no_difference("ClientSignUpFlow.count") do
@@ -140,7 +93,7 @@ class Auth::App::Social::CeremonyEntryTest < ActionDispatch::IntegrationTest
       provider: "google", uid: "entry-flow-#{SecureRandom.hex(4)}", info: { name: "Fixture" },
       credentials: { token: "fixture", expires_at: 1.hour.from_now.to_i },
     )
-    switch_browser_to_sign_up!(integration_session, base_browser: @base_browser)
+    admit_browser_to_sign_up!(integration_session)
     post(auth_app_social_google_registration_path(ri: "jp"))
 
     assert_response :temporary_redirect

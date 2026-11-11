@@ -1,9 +1,13 @@
-# Step-Up Operation Inventory
+# Historical Step-Up Operation Inventory (Pre-Reset)
 
-This inventory records the step-up operations that are in the current Rails implementation. The
-runtime requirement is owned by the Base action policy and is carried through the Base admission,
-Auth ceremony, result delivery, Base acceptance, and the protected mutation. The scope catalog is
-only a destination validator; it is not a policy source.
+> This inventory records the broader pre-reset Base/Auth operation matrix. Base product routes and
+> their action policies were retired in the surface reset, so its route entries are not current
+> Access acceptance criteria. Auth APP/ORG credential ceremonies and Visa APP/ORG session authority
+> remain. See the current Auth/Visa ceremony and step-up contracts for retained behavior. Persisted
+> model history is deferred to the model/database report.
+
+The scope catalog described below is a destination validator, not a policy source. This file is
+preserved as implementation history; it does not assign current route or authorization ownership.
 
 ## Requirement vocabulary
 
@@ -73,8 +77,8 @@ capability | `Base::Org::Iam::*`, `operator_capability` | Existing Action Policy
 read-only screen checks proof without taking a row lock, while mutations recheck under the owner
 lock | The screen returns grantable capabilities only after proof succeeds; mutations re-evaluate
 capability, tenant and target resource | Refuse without disclosing grant options or changing a
-grant | | org | Operator / support resource | Read the session-revocation screen or revoke
-Client sessions | `Base::Org::Support::Clients::*`, `support_session_revoke` | Existing support
+grant | | org | Operator / support resource | Read the session-revocation screen or revoke Client
+sessions | `Base::Org::Support::Clients::*`, `support_session_revoke` | Existing support
 authorization plus Step-Up; the read-only screen checks proof without taking a row lock, while the
 mutation rechecks under the owner lock | The screen returns the active-session count only after
 proof succeeds; the mutation rechecks target actor, tenant and sessions | Refuse without disclosing

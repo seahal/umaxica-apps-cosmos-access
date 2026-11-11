@@ -1,12 +1,15 @@
 # App Withdrawal Timing
 
-Client withdrawal confirmation snapshots three deadlines: recovery after one hour, early irreversible
-termination after seven days, and normal retention purge eligibility after 31 days. The existing
-`UMAXICA_APP_COM_WITHDRAWAL_*` environment-key names are retained for this Client policy; no Visitor
-withdrawal caller remains.
-Recovery and early-termination timestamps are persisted on the principal; the existing
-`purge_eligible_at` remains the retention deadline. Previously confirmed rows are never shortened by
-a later configuration change.
+> Historical storage and lifecycle policy for the former Base APP/COM withdrawal routes. Those local
+> routes and writers were retired in the surface reset. Persisted withdrawal facts remain subject to
+> the deferred model/database report; this file is not a current operator procedure.
+
+Client withdrawal confirmation snapshots three deadlines: recovery after one hour, early
+irreversible termination after seven days, and normal retention purge eligibility after 31 days. The
+existing `UMAXICA_APP_COM_WITHDRAWAL_*` environment-key names are retained for this Client policy;
+no Visitor withdrawal caller remains. Recovery and early-termination timestamps are persisted on the
+principal; the existing `purge_eligible_at` remains the retention deadline. Previously confirmed
+rows are never shortened by a later configuration change.
 
 `Umaxica::Withdrawal::TimingPolicyValue` accepts positive integer seconds and requires the strict
 ordering recovery < early termination < retention. Development and test may override any subset of

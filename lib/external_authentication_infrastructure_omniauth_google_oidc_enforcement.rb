@@ -5,6 +5,7 @@ require "json"
 require "securerandom"
 require "active_support/security_utils"
 
+# TODO: AUDIT external access: calls Google OIDC endpoints.
 module ExternalAuthenticationInfrastructureOmniauthGoogleOidcEnforcement
   ALLOWED_ISSUERS = ["accounts.google.com", "https://accounts.google.com"].freeze
   ALLOWED_ALGORITHMS = ["RS256"].freeze

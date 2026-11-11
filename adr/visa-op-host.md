@@ -29,13 +29,12 @@ RP-initiated logout. Auth owns credential ceremonies and provider callbacks; pro
 registrations do not move to Visa.
 
 The public and development host contracts are explicit. Visa app and org use
-`VISA_{SERVICE,STAFF}_URL` or their public deployment equivalents
-`PUBLIC_VISA_{SERVICE,STAFF}_URL`, with `visa.{app,org}.localhost` as local hosts. The retired COM
-realm has no Visa issuer or protocol routes. The legacy corporate host setting remains part of
-host-family configuration, but it does not name an OIDC or Jump issuer. Base keeps its existing
-`BASE_*` / `PUBLIC_BASE_*` host contract; Base com remains an anonymous public Preference surface,
-not a browser RP. Missing required production configuration fails closed; no host wildcard or
-Base-to-Visa fallback is permitted.
+`VISA_{SERVICE,STAFF}_URL` or their public deployment equivalents `PUBLIC_VISA_{SERVICE,STAFF}_URL`,
+with `visa.{app,org}.localhost` as local hosts. The retired COM realm has no Visa issuer or protocol
+routes. The legacy corporate host setting remains part of host-family configuration, but it does not
+name an OIDC or Jump issuer. Base keeps its existing `BASE_*` / `PUBLIC_BASE_*` host contract; Base
+com remains an anonymous public Preference surface, not a browser RP. Missing required production
+configuration fails closed; no host wildcard or Base-to-Visa fallback is permitted.
 
 Visa OIDC and authority credentials use independent `VISA_APP` and `VISA_ORG` JWT namespaces and key
 sets. Base retains `BASE_APP` and `BASE_ORG` for Base-owned Jump and RP responsibilities. Corporate
@@ -51,8 +50,8 @@ never infers a Visa/Base role from the request host.
 
 Visa and Base use host-only cookies and Rails sessions. Visa cannot clear Base cookies, and Base
 cannot use its RP credential as Visa authority proof. Cross-host navigation uses the Rails-side Jump
-edge catalog in `docs/operations/jump-rt-visa-edges.md`; this repository does not modify the separate
-Edge/Jump service or verify its deployment configuration.
+edge catalog in `docs/operations/jump-rt-visa-edges.md`; this repository does not modify the
+separate Edge/Jump service or verify its deployment configuration.
 
 ## Consequences
 
@@ -81,11 +80,22 @@ methods of the abstract base, not endpoint actions. The retired COM protocol has
 issuer compatibility path.
 
 The existing protocol exemption from region canonicalization applies to the app and org bases. Rate
-limiting remains on the inherited protocol pipeline;
-each concrete endpoint explicitly registers request-size validation. The Visa hosts route nothing at
-`/` (owner decision, 2026-11-02); the protocol BareControllers and their machine-facing endpoints
-retain their existing transport.
+limiting remains on the inherited protocol pipeline; each concrete endpoint explicitly registers
+request-size validation. The Visa hosts route nothing at `/` (owner decision, 2026-11-02); the
+protocol BareControllers and their machine-facing endpoints retain their existing transport.
 
 The implementation is covered by the host exclusivity, Base route withdrawal, issuer/JWKS,
 ceremony-binding purpose, Jump edge catalog, OIDC browser, logout and static invariant tests. The
 Rails-side Jump handoff is documented but external Edge integration is not claimed.
+
+### Independent Authority lifecycle (2026-11-08)
+
+`Visa::{App,Org}::AuthorityController` directly inherit the repository `::ApplicationController` and
+declare the OP root-session callback pipeline locally. They do not inherit either
+`Base::{App,Org}::AuthorityController`. The Visa App callback order matches the former applied Base
+App Authority order; Visa Org matches the former applied Base Org order with the
+`enforce_second_passkey_gate!` callback omitted. The Org gate is RP-side passkey-management policy;
+Visa protocol and authorization continuation must remain reachable without redirecting to a Base
+management screen. Visa uses its own App and Org layouts, and routes verification/setup destinations
+to the matching Auth host. A protected Visa request without a valid OIDC return fails explicitly
+instead of falling back to a Base or Auth home page.

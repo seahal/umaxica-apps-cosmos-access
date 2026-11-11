@@ -5,6 +5,7 @@ module ExternalSignIn
   # Fetches and caches the Entra ID JWKS for a specific tenant.
   # Returns a callable suitable for the JWT gem's jwks: option.
   # Cache is invalidated when the JWT gem signals kid_not_found (key rotation).
+  # TODO: AUDIT external access: fetches Microsoft Entra ID JWKS.
   class EntraJwksCache
     class FetchError < StandardError; end
 

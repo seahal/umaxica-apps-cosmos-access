@@ -21,9 +21,9 @@ export default defineConfig({
     }),
   ],
   server: {
-    // Development is also reached through the public app/com/org hostnames. Keep Vite's
+    // Development is also reached through the public app and org hostnames. Keep Vite's
     // DNS-rebinding protection enabled while allowing only domains owned by this deployment.
-    allowedHosts: [".umaxica.app", ".umaxica.com", ".umaxica.org"],
+    allowedHosts: [".umaxica.app", ".umaxica.org"],
   },
   resolve: {
     // One alias, matching `paths` in tsconfig.app.json. Every additional alias is a second

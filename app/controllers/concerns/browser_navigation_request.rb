@@ -3,13 +3,12 @@
 
 # Fetch Metadata test for "the browser is navigating here". `Sec-Fetch-Mode: navigate` is set only
 # by the browser and no page script can request that mode, so it carries the proof. The destination
-# is `document` for a direct navigation and `empty` when this origin's service worker re-fetches the
-# navigation (`fetch(event.request)` in app/views/pwa/service-worker.js). A destination that names a
-# frame or another embedding context is not a top-level navigation.
+# is `document` for a top-level navigation. A destination that names a frame or another embedding
+# context is not a top-level navigation.
 module BrowserNavigationRequest
   extend ActiveSupport::Concern
 
-  NAVIGATION_DESTINATIONS = %w(document empty).freeze
+  NAVIGATION_DESTINATIONS = %w(document).freeze
 
   private
 
@@ -23,7 +22,7 @@ module BrowserNavigationRequest
     browser_navigation_request? && request.headers["Sec-Fetch-Dest"].to_s == "document"
   end
 
-  # Browser-set Fetch Metadata only: distinguishes a service-worker re-fetch from another refusal.
+  # Browser-set Fetch Metadata used to diagnose a refused top-level navigation.
   def log_invalid_admission_navigation
     Rails.logger.warn(
       JitLogEvent.format(
