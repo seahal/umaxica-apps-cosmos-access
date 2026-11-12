@@ -29,7 +29,7 @@ module RuntimeRole
     rp-palm-app-jp
   ).freeze
   # Canonical domain authorities: their own stores and protocol secrets only.
-  DOMAIN_ROLES = %w(domain-publishing domain-avatar domain-org).freeze
+  DOMAIN_ROLES = %w(domain-org).freeze
 
   ALL = ([SHARED] + OP_ROLES + AUTH_ROLES + RP_ROLES + DOMAIN_ROLES).freeze
 
@@ -114,8 +114,8 @@ module RuntimeRole
   ).freeze
 
   VISA_OP_PREFIXES = %w(
-    ceremony_binding_confirmations edge/v0/token oauth oidc roots sign_byes sign/in well_known
-    api/v0/sensitive_admissions api/v0/sensitive_admission_sessions
+    ceremony_binding_confirmations edge/v0/token oauth oidc roots sign_byes sign/in well_known unavailable_ceremonies
+    api/v0/revocation_commands api/v0/sensitive_admissions api/v0/sensitive_admission_sessions
   ).freeze
   VISA_ANY_PREFIXES = %w(
     health healths revisions robots csp_violation_reports api/v0/healths api/v0/revisions
@@ -123,14 +123,10 @@ module RuntimeRole
 
   # Owner APIs of the canonical domain authorities (R5-WU12/13/14).
   BASE_DOMAIN_PREFIXES = {
-    "api/v0/avatar" => "domain-avatar",
-    "api/v0/publishing" => "domain-publishing",
     "api/v0/iam" => "domain-org",
     "api/v0/support" => "domain-org",
     "api/v0/tech_capability_checks" => "op-base-org",
   }.freeze
-
-  CONTENT_FAMILIES = %w(docs help info news guid).freeze
 
   # The single role allowed to serve a routed controller, or ANY_ROLE. An unclassified controller
   # raises: a new route must be assigned an owner explicitly, never inherit one by accident.
@@ -156,7 +152,6 @@ module RuntimeRole
     when "base" then base_route_owner(realm, rest.to_s)
     when "visa" then visa_route_owner(realm, rest.to_s)
     when "unknown_hosts" then ANY_ROLE
-    when *CONTENT_FAMILIES then "domain-publishing"
     else raise UnownedRoute, "no runtime role owns #{controller_path.inspect}"
     end
   end

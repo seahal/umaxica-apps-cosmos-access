@@ -4,6 +4,8 @@
 require "test_helper"
 
 class RefreshTokenSharedTest < ActiveSupport::TestCase
+  self.fixture_table_names = %w(client_tokens client_device_sessions)
+
   class DummyToken
     include RefreshTokenShared
   end
@@ -70,25 +72,11 @@ class RefreshTokenSharedTest < ActiveSupport::TestCase
   end
 
   test "lock_refresh_token_record_by_digest locks only unconsumed unexpired rows" do
-    actor = Client.create!(
-      security_mode_id: SecurityModeConfigurable::NORMAL,
-      status_id: ClientStatus::ACTIVE,
-    )
+    token = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
     eligible_digest = ClientToken.digest_refresh_token("eligible-refresh")
     used_digest = ClientToken.digest_refresh_token("used-refresh")
     expired_digest = ClientToken.digest_refresh_token("expired-refresh")
-    eligible = ClientToken.create!(
-      authentication_epoch: 0, user: actor, refresh_token_digest: eligible_digest,
-      discard_at: 1.hour.from_now,
-    )
-    ClientToken.create!(
-      authentication_epoch: 0, user: actor, refresh_token_digest: used_digest,
-      discard_at: 1.hour.from_now, rotated_at: Time.current,
-    )
-    ClientToken.create!(
-      authentication_epoch: 0, user: actor, refresh_token_digest: expired_digest,
-      discard_at: 1.minute.ago,
-    )
+    token.update!(refresh_token_digest: eligible_digest, discard_at: 1.hour.from_now, rotated_at: nil)
 
     record = ClientToken.lock_refresh_token_record_by_digest(
       eligible_digest,
@@ -97,13 +85,15 @@ class RefreshTokenSharedTest < ActiveSupport::TestCase
       expires_at_column: :discard_at,
     )
 
-    assert_equal eligible.id, record.id
+    assert_equal token.id, record.id
+    token.update!(refresh_token_digest: used_digest, rotated_at: Time.current)
     assert_nil ClientToken.lock_refresh_token_record_by_digest(
       used_digest,
       digest_column: :refresh_token_digest,
       unused_column: :rotated_at,
       expires_at_column: :discard_at,
     )
+    token.update!(refresh_token_digest: expired_digest, rotated_at: nil, discard_at: Time.current)
     assert_nil ClientToken.lock_refresh_token_record_by_digest(
       expired_digest,
       digest_column: :refresh_token_digest,

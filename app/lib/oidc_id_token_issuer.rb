@@ -5,10 +5,10 @@ class OidcIdTokenIssuer < ApplicationService
   TOKEN_TTL = SecurityJwtOidcIdTokenCodec::TOKEN_TTL
   TOKEN_TYPE = SecurityJwtOidcIdTokenCodec::TOKEN_TYPE
 
-  def initialize(resource:, client:, nonce:, issued_at: Time.current.utc, expires_at: nil, acr: nil, amr: nil,
+  def initialize(resource_type:, client:, nonce:, issued_at: Time.current.utc, expires_at: nil, acr: nil, amr: nil,
                  jwt_issuer_id: nil, issuer: nil, subject: nil, sid: nil, auth_time: nil, step_up_until: nil)
     super()
-    @resource = resource
+    @resource_type = resource_type
     @client = client
     @nonce = nonce
     @issued_at = issued_at.utc
@@ -32,12 +32,12 @@ class OidcIdTokenIssuer < ApplicationService
 
   private
 
-  attr_reader :resource, :client, :nonce, :issued_at, :expires_at, :acr, :amr, :jwt_issuer_id,
+  attr_reader :resource_type, :client, :nonce, :issued_at, :expires_at, :acr, :amr, :jwt_issuer_id,
               :issuer, :subject, :sid, :auth_time, :step_up_until
 
   def payload
     SecurityJwtOidcIdTokenCodec.build_payload(
-      resource: resource,
+      resource_type: resource_type,
       client: client,
       nonce: nonce,
       issued_at: issued_at,

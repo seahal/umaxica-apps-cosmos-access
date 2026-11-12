@@ -129,7 +129,7 @@ class AuthCeremonySessionTest < ActiveSupport::TestCase
 
       first.admit!(admission_purpose: "authentication_handoff", authorization_transaction_ref: ref)
 
-      assert_raises(ActiveRecord::RecordNotUnique) do
+      assert_raises(ActiveRecord::RecordInvalid) do
         second.admit!(admission_purpose: "authentication_handoff", authorization_transaction_ref: ref)
       end
     end
@@ -193,7 +193,7 @@ class AuthCeremonySessionTest < ActiveSupport::TestCase
       transaction_ref = "conflicting-#{model.name}"
       previous.admit!(admission_purpose: "authentication_handoff", authorization_transaction_ref: transaction_ref)
 
-      assert_raises(ActiveRecord::RecordNotUnique) do
+      assert_raises(ActiveRecord::RecordInvalid) do
         model.rotate_and_admit!(
           admission_purpose: "authentication_handoff",
           previous_raw_sid: previous_sid,

@@ -9,19 +9,7 @@ require "test_helper"
 # safe one: revoke rather than spare, refuse rather than trust, raise rather than
 # guess.
 class SessionIdentityHelperRefusalsTest < ActiveSupport::TestCase
-  fixtures :clients, :client_statuses, :client_visibilities
-
-  # The sign-in email state is either a real address the surface holds or a dummy
-  # stood up so an unknown address is answered identically to a known one.
-  test "an email authentication state without a record is a dummy" do
-    real = SignAppInEmailAuthenticationState.new(id: 7, address: "person@example.com")
-    dummy = SignAppInEmailAuthenticationState.new(id: nil, address: "unknown@example.com")
-
-    assert_predicate real, :existing?
-    assert_not real.dummy?
-    assert_not dummy.existing?
-    assert_predicate dummy, :dummy?
-  end
+  self.fixture_table_names = []
 
   # A stored public key that is not usable JWK material is server-side state, not
   # a client-supplied proof, and is reported separately so operations does not

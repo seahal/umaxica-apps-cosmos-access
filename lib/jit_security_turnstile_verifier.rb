@@ -152,6 +152,11 @@ class JitSecurityTurnstileVerifier
       cdata: response["cdata"],
       expires_at: parse_expires_at(response["challenge_ts"]),
     )
+  rescue ActiveRecord::RecordInvalid => e
+    raise unless e.record.is_a?(TurnstileReplay) && e.record.errors.size == 1 &&
+      e.record.errors.of_kind?(:token_digest, :taken)
+
+    failure("turnstile replay detected")
   rescue ActiveRecord::RecordNotUnique
     failure("turnstile replay detected")
   end

@@ -10,8 +10,6 @@ module Security
       self.fixture_table_names = []
 
       POLICY_ROOTS = [
-        Auth::App::ApplicationController,
-        Auth::Org::ApplicationController,
         Auth::App::BareController,
         Auth::Org::BareController,
         Auth::App::Apple::NotificationsController,
@@ -19,10 +17,12 @@ module Security
         Visa::Org::AuthorityController,
         Visa::App::BareController,
         Visa::Org::BareController,
+        Visa::App::Api::V0::RevocationCommandsController,
         Visa::App::Api::V0::SensitiveAdmissionSessionsController,
         Visa::App::Api::V0::SensitiveAdmissionsController,
         Visa::App::Oauth::TokensController,
         Visa::App::Oauth::RevocationsController,
+        Visa::Org::Api::V0::RevocationCommandsController,
         Visa::Org::Api::V0::SensitiveAdmissionSessionsController,
         Visa::Org::Api::V0::SensitiveAdmissionsController,
         Visa::Org::Oauth::RevocationsController,

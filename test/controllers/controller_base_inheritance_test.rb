@@ -13,11 +13,6 @@ class ControllerBaseInheritanceTest < ActiveSupport::TestCase
     Visa::Org::BareController,
   ].freeze
 
-  AUTH_APPLICATION_CONTROLLERS = [
-    Auth::App::ApplicationController,
-    Auth::Org::ApplicationController,
-  ].freeze
-
   VISA_AUTHORITY_CONTROLLERS = [
     Visa::App::AuthorityController,
     Visa::Org::AuthorityController,
@@ -44,13 +39,6 @@ class ControllerBaseInheritanceTest < ActiveSupport::TestCase
 
     assert_empty violations,
                  "BareController must inherit ActionController::Base directly:\n#{violations.join("\n")}"
-  end
-
-  test "Auth application controllers inherit directly from ActionController base" do
-    AUTH_APPLICATION_CONTROLLERS.each do |controller|
-      assert_equal ActionController::Base, controller.superclass
-      assert_includes controller.ancestors, RateLimit
-    end
   end
 
   test "Visa authority controllers inherit from the shared application controller" do

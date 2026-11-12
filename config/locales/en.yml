@@ -28,17 +28,6 @@ en:
       app_enforcement_appeal:
         reason_code: Appeal reason
         statement: Appeal statement
-      avatar_block:
-        blocked_avatar_id: Blocked avatar
-        blocker_avatar_id: Blocker avatar
-      avatar_follow:
-        followed_avatar_id: Followed avatar
-        follower_avatar_id: Follower avatar
-      avatar_mute:
-        muted_avatar_id: Muted avatar
-        muter_avatar_id: Muter avatar
-      avatar_persona_binding:
-        persona_id: Bound persona
       bureau:
         title: Title
       client:
@@ -198,28 +187,30 @@ en:
           attributes:
             public_id:
               invalid_format: must be 16 uppercase characters from SecureRandom::BASE32_ALPHABET
-  architecture_guard:
-    avatar_binding_create: Avatar binding create!
   attributes:
+    authorization_transaction_id: Authorization transaction
+    authorization_transaction_ref: Authorization transaction
+    secret_sign_in_flow_id: Secret sign-in flow
+    emergency_sign_in_operation: Emergency sign-in operation
+    step_up_commits: Step-up commits
+    step_up_contexts: Step-up contexts
+    device_session_id: Device session
+    social_ceremony_transaction_id: Social ceremony transaction
+    step_up_ceremony_transaction_id: Step-up ceremony transaction
+    auth_admission_binding_id: Authentication admission binding
+    secret_sign_in_receipts: Sign-in receipts
+    sensitive_admission_outboxes: Sensitive admission audit records
     ack_deactivate_today: Deactivation confirmation
     ack_schedule_purge: Purge schedule confirmation
-    active_avatars: Active avatars
     actor_ref: Actor reference
     address: Email address
     agent_id: Agent ID
     agent_public_id: Agent reference
     app_enforcement_case_id: APP enforcement case ID
-    app_preference_languages: Language preferences
-    app_preference_regions: Region preferences
-    app_preference_themes: Theme preferences
-    app_preference_timezones: Timezone preferences
-    app_preferences: App preferences
     area_occurrence_id: Area occurrence
     attempt_count: Attempt count
     attempt_number: Attempt number
     authentication_method_effects: Authentication method effects
-    avatar_id: Avatar
-    avatars: Avatars
     base: Base
     birthdate: Birthdate
     body: Body
@@ -227,35 +218,25 @@ en:
     can_create_content: Can create content
     canceled_at: Canceled at
     capability_id: Capability
+    confirmation_ref: Confirmation reference
     client_emails: Email addresses
     client_id: Client ID
     client_persona_id: Persona ID
-    client_preference_adult_content_gates: Adult content preferences
-    client_preference_currencies: Currency preferences
-    client_preference_date_formats: Date format preferences
-    client_preference_densities: Density preferences
-    client_preference_languages: Language preferences
-    client_preference_motions: Motion preferences
-    client_preference_page_sizes: Page size preferences
-    client_preference_regions: Region preferences
-    client_preference_themes: Theme preferences
-    client_preference_time_formats: Time format preferences
-    client_preference_timezones: Timezone preferences
     client_telephones: Telephone numbers
+    client_token: Issuing client root session
     client_tokens: Tokens
     code: Code
     code_challenge: Code challenge
     code_challenge_method: Code challenge method
-    com_preference_languages: Language preferences
-    com_preference_regions: Region preferences
-    com_preference_themes: Theme preferences
-    com_preference_timezones: Timezone preferences
     company_id: Company ID
     confirm_policy: Terms of service
     confirm_reset: Reset confirmation
     confirm_using_mfa: MFA confirmation
     confirmed_at: Confirmed at
+    consumed_at: Consumed at
     content_digest: Content digest
+    context: Context
+    context_ref: Context reference
     cooldown_until: Cooldown until
     current_refresh_token: Current refresh token
     description: Description
@@ -273,15 +254,23 @@ en:
     entry_method: Entry method
     error_message: Error message
     event_id: Event
+    event_uuid: Event UUID
+    evp_nonce_digest: EVP nonce digest
+    evp_failure_reason: EVP failure reason
+    evp_token_digest: EVP token digest
     event_type: Event type
+    evidence_state: Evidence state
+    evidence_state_id: Evidence state
     expires_at: Expires at
     followable: Followable
     functional: Functional
+    grant_id: Grant
     grant_jti: Grant JTI
     group_attachable: Group attachable
     handle: Handle
     handle_id: Handle
     id: ID
+    idempotency_digest: Idempotency digest
     identifier: Identifier
     identifier_effects: Identifier effects
     individual_id: Individual ID
@@ -289,6 +278,7 @@ en:
     invited_by: Invited by
     ip_occurrence_id: IP occurrence
     issuance: Issuance
+    issuer: Issuer
     jti: JTI
     jti_digest: Event digest
     key: Key
@@ -306,37 +296,24 @@ en:
     number: Telephone number
     occurred_at: Occurred at
     op_session_binding_id: OP session binding ID
+    oidc_authorization_transaction_id: OIDC authorization transaction
     operator: Operator
+    operator_token: Issuing operator root session
     option: Option
     org_enforcement_case_id: ORG enforcement case ID
-    org_preference_languages: Language preferences
-    org_preference_regions: Region preferences
-    org_preference_themes: Theme preferences
-    org_preference_timezones: Timezone preferences
-    operator_preference_adult_content_gates: Adult content preferences
-    operator_preference_currencies: Currency preferences
-    operator_preference_date_formats: Date format preferences
-    operator_preference_densities: Density preferences
-    operator_preference_languages: Language preferences
-    operator_preference_motions: Motion preferences
-    operator_preference_page_sizes: Page size preferences
-    operator_preference_regions: Region preferences
-    operator_preference_themes: Theme preferences
-    operator_preference_time_formats: Time format preferences
-    operator_preference_timezones: Timezone preferences
-    org_preferences: Organization preferences
     organization: Organization
     organization_id: Organization
+    outbox_id: Audit outbox
     pass_code: Verification code
+    passkey_challenge_ref: Passkey challenge reference
     password_digest: Password digest
     performant: Performance
     persona_id: Persona ID
     persona_public_id: Persona reference
     position: Position
-    preference: Preference
-    preference_id: Preference
     presented_at: Presented at
     principal_effect: Principal effect
+    principal_public_id: Principal reference
     private_key: Private key
     public_id: Public ID
     publish_at: Publish at
@@ -349,6 +326,7 @@ en:
     restorable_by_owner: Restorable by owner
     result_jti: Result JTI
     role: Role
+    root_id: Root session
     secret_credential_value: Secret
     sequence: Sequence number
     sid: Session reference
@@ -361,9 +339,6 @@ en:
     staff_emails: Email addresses
     staff_id: Staff
     staff_occurrence_id: Staff occurrence
-    staff_preference_languages: Language preferences
-    staff_preference_themes: Theme preferences
-    staff_preference_timezones: Timezone preferences
     staff_secret_credential_kind: Secret credential kind
     staff_telephones: Telephone numbers
     staff_token_id: Staff token ID
@@ -371,6 +346,7 @@ en:
     status: Status
     status_id: Status
     step_up_ceremony_transaction_ref: Step-up transaction reference
+    stop_id: Authority stop
     storage_key: Storage reference
     subject: Subject reference
     subject_id: Subject
@@ -380,7 +356,9 @@ en:
     telephone_occurrence_id: Telephone occurrence
     term_public_id_snapshot: Term public ID snapshot
     terminal: Terminal state
+    to_state_id: Destination state
     token: Token
+    token_digest: Token digest
     token_expires_at: Token expiration
     token_id: Root session reference
     transaction_id: Transaction ID
@@ -608,21 +586,7 @@ en:
   description: Withdrawal
   email:
     app:
-      preference_mailer:
-        update_request:
-          cta: Update my preferences
-          expiration_notice: The link expires in two hours and can only be used once.
-          greeting: Hello,
-          intro: Click the link below to manage your email preferences.
-          subject: Update your email preferences
     org:
-      preference_mailer:
-        update_request:
-          cta: Update staff preferences
-          expiration_notice: This link is single-use and expires in two hours.
-          greeting: Hello,
-          intro: Use the link below to manage staff email preferences.
-          subject: Update your staff email preferences
   errors:
     forbidden: "Access is forbidden."
     format: "%{attribute} %{message}"
@@ -664,7 +628,6 @@ en:
       other_than: must be other than %{count}
       password_too_long: is too long
       phase_violation_refused: This page is out of date. Please start again.
-      preference_operation_failed: The preference operation failed.
       present: must be blank
       required: must exist
       session_limit_exceeded: Session limit exceeded
@@ -702,9 +665,6 @@ en:
       invalid_telephone_format: "The phone number must be in E.164 format."
       missing_hmac_secret_credential: "The HMAC secret credential is not configured."
     otp_locked: You have exceeded the maximum number of attempts. Please start over.
-    preference:
-      cookie:
-        invalid_access_token: Preference access token is invalid or missing.
     rate_limit:
       backend_unavailable: Authorization is temporarily unavailable. Please try again later.
       exceeded: Too many requests. Please try again later.
@@ -921,12 +881,8 @@ en:
     check_positions: |2-
 
       Checking existing positions:
-    duplicate_position: |2-
-
-      Attempting to create AppPreferenceStatus with duplicate position...
     expected_db_error: "Expected DB Error: %{message}"
     expected_error: "Expected Error: %{message}"
-    missing_position: Attempting to create AppPreferenceStatus without position...
     success_created: "Success: Created with id %{id}, position: %{position}"
   scripts:
     token_refresh:
@@ -951,10 +907,6 @@ en:
           deletions.
       viewer:
         description: Read-only access to content. Cannot create or modify anything.
-  seeds:
-    preference_statuses:
-      complete: Seeding complete.
-      start: Seeding Preference Statuses...
   sequential_flow:
     invalid_step: Invalid access. Please start from the beginning.
   session_limit:
@@ -1115,12 +1067,6 @@ en:
       outs:
         destroy:
           success: You have been signed out.
-      preferences:
-        footer:
-          dashboard: DASHBOARD
-          home: home
-          preference: Preferences
-          settings: Settings
       registration:
         cancelled_retry_later: Registration cancelled. Please wait a while before registering again.
         checkpoint:
@@ -1753,13 +1699,6 @@ en:
           restricted_notice: The session limit has been reached. Manage your existing sessions.
           session_revoked: Session revoked.
           sessions_revoked: Sessions revoked.
-      preferences:
-        footer:
-          dashboard: DASHBOARD
-          home: Home
-          preference: Preference
-          settings: Settings
-        title: Preferences
       registration:
         email:
           create:
@@ -2208,11 +2147,6 @@ en:
       two_words_connector: " and "
       words_connector: ", "
   tasks:
-    preference_migration:
-      done_staff: "  Done: %{migrated} migrated, %{skipped} skipped"
-      done_user: "  Done: %{migrated} migrated, %{skipped} skipped"
-      warn_staff: "  WARN: Failed to migrate staff_id=%{staff_id}: %{message}"
-      warn_user: "  WARN: Failed to migrate user_id=%{user_id}: %{message}"
   test:
     email:
       org:
@@ -2245,13 +2179,11 @@ en:
   ui_presentation:
     body_json: Enter the document as JSON.
     confirmation_required: Check the confirmation above to enable this action.
-    display_preferences_description: Choose your display preferences.
     information: Information
     navigation:
       authentication: Authentication
       footer: Footer navigation
       pagination: Pagination
-      preferences: Display preferences
       primary: Primary navigation
     processing: Processing. Please wait.
   views:

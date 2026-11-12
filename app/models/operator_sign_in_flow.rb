@@ -44,7 +44,6 @@
 class OperatorSignInFlow < OpBaseOrgRecord
   include SignInFlow
   include FlowSignIn
-  include SignInFlowAuthenticationEvidence
 
   cycle_status_column :state_id
 
@@ -94,12 +93,28 @@ class OperatorSignInFlow < OpBaseOrgRecord
   # A sign-in flow exists before its root token is issued and is deleted with that token afterward.
   belongs_to :token, class_name: "OperatorToken", optional: true
   belongs_to :state, class_name: "OperatorSignInFlowState"
-  belongs_to :principal, class_name: "Operator", optional: true
 
   validates :state_id, inclusion: { in: ->(record) { record.class::STATE_IDS } }
   validates :token_id, uniqueness: true, allow_nil: true, if: :will_save_change_to_token_id?
   validate :completed_state_has_completed_at
   validates :result_digest, length: { maximum: 64 }
+  validates :result_digest, uniqueness: true, allow_nil: true
 
   before_validation :assign_default_state_id
+  public
+
+  def record_authentication_evidence!(method:, authenticated_at: nil,
+                                      authentication_context: AuthenticationContextValue::NORMAL_KEY)
+    raise GovernanceLookupUnavailableError, "Governance authentication evidence verification is unavailable"
+  end
+
+  private
+
+  def transition_sign_in_to!(next_status_name, changes: {}, timestamp_fields: [])
+    unless %w(EXPIRED CANCELLED HALTED).include?(next_status_name)
+      raise GovernanceLookupUnavailableError, "Governance sign-in authority is unavailable"
+    end
+
+    super
+  end
 end

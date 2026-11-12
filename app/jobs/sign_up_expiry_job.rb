@@ -1,9 +1,8 @@
 # typed: false
 # frozen_string_literal: true
 
-# Terminalizes expired app sign-up tickets through the existing domain
-# operation. The request-time state checks remain authoritative; this job only
-# closes and cleans rows that were not reached while their flow was open.
+# Closes expired OP sign-up tickets locally. Artifact cleanup remains held until
+# Governance can verify its authority; this job exposes that unavailable boundary.
 class SignUpExpiryJob < ApplicationJob
   queue_as :retention
 
@@ -14,12 +13,22 @@ class SignUpExpiryJob < ApplicationJob
   def perform(batch_size: 100)
     raise ArgumentError, "batch_size must be positive" unless batch_size.to_i.positive?
 
+    first_failure = nil
     TICKET_CLASSES.each do |ticket_class|
       now = ticket_class.database_now
       expired_scope(ticket_class, now: now).in_batches(of: batch_size) do |batch|
-        batch.each { |ticket| expire_ticket(ticket) }
+        batch.each do |ticket|
+          begin
+            expire_ticket(ticket)
+          rescue ActiveRecord::Deadlocked
+            raise
+          rescue StandardError => e
+            first_failure ||= e
+          end
+        end
       end
     end
+    raise first_failure if first_failure
   end
 
   private
@@ -31,17 +40,8 @@ class SignUpExpiryJob < ApplicationJob
   end
 
   def expire_ticket(ticket)
-    result = SignUpTermination.call(cycle: ticket, event: :expire, actor_context: nil)
-    return if ticket.reload.sign_up_completed?
-    return if result.status == :expired || result.ticket&.status_id == ticket.class.status_id_for("EXPIRED")
-
-    Rails.logger.warn(
-      JitLogEvent.format(
-        "sign_up.expiry.skipped",
-        ticket_public_id: ticket.public_id,
-        result_status: result.status,
-      ),
-    )
+    ticket.expire_sign_up!
+    raise GovernanceLookupUnavailableError, "Governance sign-up artifact cleanup verification is unavailable"
   rescue ActiveRecord::Deadlocked
     raise
   rescue StandardError => e
@@ -52,5 +52,6 @@ class SignUpExpiryJob < ApplicationJob
         error_class: e.class.name,
       ),
     )
+    raise
   end
 end

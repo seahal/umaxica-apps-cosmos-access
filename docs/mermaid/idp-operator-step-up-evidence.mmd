@@ -1,0 +1,31 @@
+stateDiagram-v2
+    %% Owner-approved ORG contract, 2026-11-12; runtime verification is separate.
+    %% Reference: operator_step_up_evidence_states; ABSENT=10, RECORDED=20.
+    state "ORG token evidence" as TokenEvidence {
+        state "ABSENT (10), false flags" as TokenAbsent
+        state "RECORDED (20), actual flags" as TokenRecorded
+        [*] --> TokenAbsent: initial token construction
+        TokenAbsent --> TokenRecorded: bound freshness committer
+        TokenRecorded --> TokenRecorded: later accepted bound proof replaces evidence
+        TokenRecorded --> TokenAbsent: consume_step_up_evidence! / revoke_step_up_authority!
+        TokenAbsent --> TokenAbsent: revoke_step_up_authority!
+    }
+    state "ORG ceremony evidence" as CeremonyEvidence {
+        state "ABSENT (10), user_verified false" as CeremonyAbsent
+        state "RECORDED (20), actual user_verified" as CeremonyRecorded
+        [*] --> CeremonyAbsent: initial ceremony construction
+        CeremonyAbsent --> CeremonyRecorded: record_verification! / record_registration_verification!
+        CeremonyAbsent --> CeremonyRecorded: accepted pending email registration consumption
+        CeremonyAbsent --> CeremonyAbsent: cancel / expire / revoke without recorded proof
+        CeremonyRecorded --> CeremonyRecorded: result delivery / consume / cancel / expire / revoke
+    }
+    note right of TokenRecorded
+        RECORDED with false differs from ABSENT with false.
+        All freshness and binding checks still apply.
+        Token clearing retains root status and deadline.
+    end note
+    note right of CeremonyRecorded
+        Evidence presence is independent of workflow status.
+        Terminal workflow states cannot accept new proof.
+        Registration proof grants no step-up freshness.
+    end note

@@ -8,8 +8,7 @@ module Email::App
 
     layout "email/application"
 
-    around_deliver :deliver_current_auth_email_otp
-    around_deliver :deliver_current_reentry_email_otp
+    around_deliver :require_governance_delivery_authority!
 
     OTP_SUBJECT_KEYS = {
       "sign_up" => "mail.email.app.otp_mailer.create.subjects.sign_up",
@@ -30,116 +29,25 @@ module Email::App
 
     private
 
-    def deliver_current_reentry_email_otp
-      binding = EmailReentryOtpDeliveryBindingValue.for(
-        purpose: params[:purpose], email_ceremony_transaction_ref: params[:email_ceremony_transaction_ref],
-        email_otp_generation: params[:email_otp_generation],
-      )
-      return yield unless binding
-
-      transaction = ClientEmailCeremonyTransaction.find_by(transaction_id: binding.email_ceremony_transaction_ref)
-      delivered = deliver_reentry_email_proof(transaction, binding.email_otp_generation) { yield }
-      return if delivered
-
-      Rails.logger.info(
-        JitLogEvent.format(
-          "email.ceremony_otp.delivery_refused", surface: "app",
-                                                 reason: "stale_evidence",
-        ),
-      )
-    end
-
-    def deliver_reentry_email_proof(transaction, generation)
-      return false unless transaction && transaction.operation == params[:purpose].to_s &&
-        transaction.purpose == params[:purpose].to_s
-
-      email = ClientEmail.includes(:user).find_by(public_id: params[:public_id])
-      return false unless email
-
-      email.with_lock do
-        now = ClientEmail.database_now
-        next false unless email.binding_effective? && email.accessible?(now) &&
-          ClientEmail::EDITABLE_SUBSCRIPTION_PREFERENCE_STATUS_IDS.include?(email.user_email_status_id)
-
-        digest = IdentifierBlindIndex.bidx_for_email(params[:email_address], realm: "app")
-        next false unless transaction.email_candidate_ref == email.public_id &&
-          transaction.actor_ref == email.user.public_id &&
-          transaction.normalized_email_digest == email.address_digest && digest == email.address_digest
-
-        transaction.deliver_email_otp!(generation: generation, code: @pass_code) { yield }
-      end
-    end
-
-    def deliver_current_auth_email_otp
-      binding = AuthEmailOtpDeliveryBindingValue.for(
+    def require_governance_delivery_authority!
+      AuthEmailOtpDeliveryBindingValue.for(
         purpose: params[:purpose], auth_ceremony_session_ref: params[:auth_ceremony_session_ref],
         auth_email_otp_generation: params[:auth_email_otp_generation],
       )
-      registration_binding = EmailCredentialRegistrationOtpDeliveryBindingValue.for(
-        purpose: params[:purpose],
-        contact_ceremony_transaction_ref: params[:contact_ceremony_transaction_ref],
+      EmailCredentialRegistrationOtpDeliveryBindingValue.for(
+        purpose: params[:purpose], contact_ceremony_transaction_ref: params[:contact_ceremony_transaction_ref],
         contact_otp_generation: params[:contact_otp_generation],
       )
-      if registration_binding
-        return deliver_current_registration_email_otp(registration_binding) { yield }
-      end
-
-      if binding.nil?
-        signup_binding = EmailSignUpOtpDeliveryBindingValue.for(
-          purpose: params[:purpose], sign_up_flow_ref: params[:sign_up_flow_ref],
-          sign_up_email_transaction_ref: params[:sign_up_email_transaction_ref],
-          sign_up_email_otp_generation: params[:sign_up_email_otp_generation],
-        )
-        return yield unless signup_binding
-
-        return deliver_current_signup_email_otp(signup_binding) { yield }
-      end
-
-      ceremony = ClientAuthCeremonySession.where(admission_purpose: "authentication_handoff").find_by(
-        id: binding.auth_ceremony_session_ref,
+      EmailSignUpOtpDeliveryBindingValue.for(
+        purpose: params[:purpose], sign_up_flow_ref: params[:sign_up_flow_ref],
+        sign_up_email_transaction_ref: params[:sign_up_email_transaction_ref],
+        sign_up_email_otp_generation: params[:sign_up_email_otp_generation],
       )
-      delivered =
-        ceremony&.with_email_otp_delivery!(
-          generation: binding.auth_email_otp_generation, code: @pass_code, destination: params[:email_address],
-        ) { yield }
-      return if delivered
-
-      # Operational rejection only; this log is not the authoritative security audit.
-      Rails.logger.info(
-        JitLogEvent.format(
-          "auth.email_otp.delivery_refused", surface: "app", reason: "stale_evidence",
-                                             event_uuid: SecureRandom.uuid,
-        ),
+      EmailReentryOtpDeliveryBindingValue.for(
+        purpose: params[:purpose], email_ceremony_transaction_ref: params[:email_ceremony_transaction_ref],
+        email_otp_generation: params[:email_otp_generation],
       )
-    end
-
-    def deliver_current_registration_email_otp(binding)
-      transaction = ClientEmailCeremonyTransaction.find_by(transaction_id: binding.contact_ceremony_transaction_ref)
-      email = ClientEmail.includes(:user).find_by(public_id: params[:public_id])
-      return unless transaction && email
-
-      EmailCredentialRegistrationOtpDeliveryGuard.call(
-        transaction: transaction, email: email, generation: binding.contact_otp_generation,
-        destination: params[:email_address], code: @pass_code,
-      ) { yield }
-    end
-
-    def deliver_current_signup_email_otp(binding)
-      flow = ClientSignUpFlow.find_by(public_id: binding.sign_up_flow_ref)
-      email = ClientEmail.includes(:user).find_by(public_id: params[:public_id])
-      transaction = ClientEmailCeremonyTransaction.find_by(transaction_id: binding.sign_up_email_transaction_ref)
-      delivered =
-        if flow && email && transaction
-          EmailSignUpOtpDeliveryGuard.call(
-            flow: flow, email: email, transaction: transaction, generation: binding.sign_up_email_otp_generation,
-            destination: params[:email_address], code: @pass_code,
-          ) { yield }
-        end
-      return if delivered
-
-      Rails.logger.info(
-        JitLogEvent.format("email.signup_otp.delivery_refused", surface: "app", reason: "stale_evidence"),
-      )
+      raise GovernanceLookupUnavailableError, "Governance Email OTP delivery authority is unavailable"
     end
 
     def reject_plaintext_verification_token!

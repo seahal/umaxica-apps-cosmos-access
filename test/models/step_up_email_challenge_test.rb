@@ -3,13 +3,13 @@
 require "test_helper"
 
 class StepUpEmailChallengeTest < ActiveSupport::TestCase
-  fixtures :clients, :client_statuses
+  fixtures :client_tokens, :client_device_sessions
 
   setup do
-    @actor = clients(:one)
-    @token = ClientToken.create!(authentication_epoch: 0, user: @actor)
+    @token = client_tokens(:one)
     @transaction = ClientStepUpCeremonyTransaction.create_transaction!(
-      actor_ref: @actor.public_id, session_ref: @token.public_id, required_scope: "settings_email",
+      actor_ref: @token.device_session.principal_public_id, session_ref: @token.public_id,
+      required_scope: "settings_email",
       required_aal: "none", allowed_methods: ["email_otp"], return_to: "/identity/emails",
     )
     @record = ClientStepUpSession.create!(

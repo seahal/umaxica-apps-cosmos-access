@@ -17,6 +17,8 @@ class ClientVisaSocialLinkAdmission < OpBaseAppRecord
   validates :public_ref, :realm, :client_id, :actor_subject, :grant_sid, :rp_session_ref,
             :browser_binding_digest, :purpose, :provider, :event_jti, :event_auth_time,
             :event_acr, :event_amr, :status, :expires_at, :rp_session_expires_at, presence: true
+  validates :oidc_authorization_transaction_id, :social_ceremony_transaction_id,
+            :step_up_ceremony_transaction_id, :auth_admission_binding_id, uniqueness: true
   validates :public_ref, format: { with: PUBLIC_REF_PATTERN }, uniqueness: true
   validates :public_ref, length: { maximum: 21 }
   validates :realm, inclusion: { in: ["app"] }

@@ -23,6 +23,10 @@ class SecurityConsumedJti < OpBaseAppRecord
         )
       end
       true
+    rescue ActiveRecord::RecordInvalid => e
+      raise unless e.record.errors.size == 1 && e.record.errors.of_kind?(:jti_digest, :taken)
+
+      false
     rescue ActiveRecord::RecordNotUnique
       false
     end
@@ -32,5 +36,6 @@ class SecurityConsumedJti < OpBaseAppRecord
     end
   end
 
+  validates :jti_digest, uniqueness: { scope: %i(purpose issuer) }
   validates :expires_at, :issuer, :jti_digest, :purpose, exclusion: { in: [nil] }
 end

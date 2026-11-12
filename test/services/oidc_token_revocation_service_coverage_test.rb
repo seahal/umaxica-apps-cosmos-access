@@ -5,7 +5,10 @@ require "test_helper"
 # require "helpers/global_test_support"
 
 class OidcTokenRevokerCoverageTest < ActiveSupport::TestCase
-  fixtures :clients
+  self.fixture_table_names = %w(
+    client_tokens client_device_sessions client_token_kinds client_token_statuses
+    client_token_binding_methods client_token_dbsc_statuses
+  )
 
   Token =
     Struct.new(:oidc_client_id, :oidc_jti) do
@@ -72,10 +75,10 @@ class OidcTokenRevokerCoverageTest < ActiveSupport::TestCase
   end
 
   test "revokes refresh token when the digest matches" do
-    root = ClientToken.create!(authentication_epoch: 0, user: clients(:one))
+    root = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
     token = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: root,
-      client_device_session: root.device_session, oidc_client_id: "core-app-jp",
+      authentication_epoch: 0, client_token_id: root.id,
+      device_session_id: root.device_session_id, oidc_client_id: "core-app-jp",
       oidc_scope: "openid", last_used_at: Time.current,
       refresh_token_expires_at: 1.day.from_now,
     )
@@ -98,10 +101,10 @@ class OidcTokenRevokerCoverageTest < ActiveSupport::TestCase
   end
 
   test "revokes access token when refresh token parsing fails" do
-    root = ClientToken.create!(authentication_epoch: 0, user: clients(:one))
+    root = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
     token = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: root,
-      client_device_session: root.device_session, oidc_client_id: "core-app-jp",
+      authentication_epoch: 0, client_token_id: root.id,
+      device_session_id: root.device_session_id, oidc_client_id: "core-app-jp",
       oidc_scope: "openid", oidc_jti: "jti-1", last_used_at: Time.current,
       refresh_token_expires_at: 1.day.from_now,
     )

@@ -10,8 +10,8 @@
 #   (provider callbacks, OIDC handoffs); request parameters never decide the classification.
 # - `excluded` - reachable actions the Sign Entry Sentry does not govern, always with a stated
 #   reason: neither a sign entry at all (settings, re-verification, Sign Out, ticket ceremonies,
-#   health/API endpoints). A bare "excluded" is a guard failure. The confirmed standby-only
-#   Emergency entry is classified as sign_in and declares its fixed exception separately.
+#   health/API endpoints). An exclusion without a reason is a guard failure. Unavailable
+#   ceremonies declare that reason explicitly; no standby-only entry is currently registered.
 #
 # An undeclared reachable action is never silently treated as `excluded`: the static guard test
 # (`test/unit/security/sign_entry_classification_guard_test.rb`) holds the reachable-action set
@@ -20,11 +20,7 @@ module SignEntryClassification
   extend ActiveSupport::Concern
 
   CLASSIFICATIONS = %i(sign_in sign_up parent_intent excluded).freeze
-  STANDBY_ONLY_CONTROLLERS = %w(
-    Auth::Org::Sign::In::Emergency::PasskeysController
-    Auth::Org::Sign::In::Emergency::Passkey::OptionsController
-    Auth::Org::Sign::In::Emergency::Passkey::VerificationsController
-  ).freeze
+  STANDBY_ONLY_CONTROLLERS = [].freeze
 
   class UnsupportedClassificationError < StandardError; end
 

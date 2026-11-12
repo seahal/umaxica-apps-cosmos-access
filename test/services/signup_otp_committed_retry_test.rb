@@ -3,98 +3,76 @@
 require "test_helper"
 
 class SignupOtpCommittedRetryTest < ActiveSupport::TestCase
-  setup do
-    ClientSignUpFlowStatus::DEFAULTS.each { |id| ClientSignUpFlowStatus.find_or_create_by!(id: id) }
-    ClientSignUpFlowCleanupStatus::DEFAULTS.each { |id| ClientSignUpFlowCleanupStatus.find_or_create_by!(id: id) }
-  end
-
   [
-    [Client, ClientEmail, :user_id, ClientSignUpFlow, :app, :email],
-    [Client, ClientTelephone, :user_id, ClientSignUpFlow, :app, :telephone],
-  ].each do |owner_model, contact_model, owner_key, flow_model, surface, channel|
-    %w(exact result_before result_at result_after wrong_code other_flow released cancelled).each do |scenario|
-      test "#{surface} #{channel} signup committed retry validates #{scenario} without consuming another generation" do
-        owner = owner_model.create!(
-          security_mode_id: SecurityModeConfigurable::NORMAL,
-          status_id: ClientStatus::UNVERIFIED_WITH_SIGN_UP,
-        )
-        destination =
-          (channel == :email) ? "retry-#{SecureRandom.hex(8)}@example.test" :
-                   "+8190#{SecureRandom.random_number(100_000_000).to_s.rjust(8, "0")}"
-        contact = contact_model.create!(
-          owner_key => owner.id, :confirm_policy => "1",
-          ((channel == :email) ? :address : :number) => destination,
-          **case channel
-            when :email then { user_email_status_id: ClientEmailStatus::UNVERIFIED_WITH_SIGN_UP }
-            when :telephone then { user_telephone_status_id: ClientTelephoneStatus::UNVERIFIED_WITH_SIGN_UP }
-            end,
-        )
-        now = flow_model.database_now
-        nonce = SecureRandom.hex(32)
-        flow = flow_model.create!(
-          auth_admission_binding: SignUpAdmissionTestFactory.binding_for!(flow_model),
-          principal_id: owner.id, status_id: flow_model::STATUS_MODEL::CONTACT_PENDING, step: "contact",
-          nonce_digest: flow_model.digest_nonce(nonce), issued_at: now,
-          expires_at: now + 15.minutes, entry_method: channel.to_s,
-          pending_contact_type: channel.to_s, pending_contact_id: contact.id,
-        )
-        issuer = (channel == :email) ? EmailSignUpOtpIssuer : TelephoneSignUpOtpIssuer
-        verifier = (channel == :email) ? EmailSignUpOtpVerificationCommitter : TelephoneSignUpOtpVerificationCommitter
-        arguments = { :flow => flow, channel => contact, :session_nonce => nonce }
-        issued = issuer.call(**arguments)
-
-        assert_predicate issued, :success?, "newly issued signup challenge must retain its original authority"
-        code = issued.code
-        arguments[:code] = code
-        first = verifier.call(**arguments)
-
-        assert_predicate first, :success?, "the initial valid comparison must commit verification"
-        assert_equal :verified, first.status
-        proof = issued.transaction.reload.attributes.slice(
-          "purpose", "otp_generation", "otp_verifier", "otp_consumed_at", "otp_cancelled_at",
-          "otp_receipt_verifier", "otp_result_expires_at",
-        )
-        clock = issued.transaction.class.database_now
-        case scenario
-        when "result_before" then clock = proof.fetch("otp_result_expires_at") - Rational(1, 1_000_000)
-        when "result_at" then clock = proof.fetch("otp_result_expires_at")
-        when "result_after" then clock = proof.fetch("otp_result_expires_at") + Rational(1, 1_000_000)
-        when "wrong_code" then arguments[:code] = (code == "000000") ? "000001" : "000000"
-        when "other_flow"
-          sibling_nonce = SecureRandom.hex(32)
-          sibling = flow_model.create!(
-            auth_admission_binding: SignUpAdmissionTestFactory.binding_for!(flow_model),
-            principal_id: owner.id, status_id: flow_model::STATUS_MODEL::CONTACT_PENDING, step: "contact",
-            nonce_digest: flow_model.digest_nonce(sibling_nonce), issued_at: now, expires_at: now + 15.minutes,
-            entry_method: channel.to_s, pending_contact_type: channel.to_s, pending_contact_id: contact.id,
-          )
-          arguments.merge!(flow: sibling, session_nonce: sibling_nonce)
-        when "released"
-          contact.finalize_binding!
-          contact.release_binding!
-        when "cancelled" then SignUpTermination.call(cycle: flow, event: :cancel)
+    [ClientEmailCeremonyTransaction, :email],
+    [ClientTelephoneCeremonyTransaction, :telephone],
+  ].each do |model, channel|
+    test "app #{channel} signup committed proof remains bound and never grants fresh authority" do
+      candidate_key = (channel == :email) ? :email_candidate_ref : :telephone_candidate_ref
+      transaction = model.create_transaction!(
+        :actor_ref => "original-actor", :session_ref => "original-browser", :operation => "sign_up",
+        candidate_key => "original-candidate",
+      )
+      code =
+        if channel == :email
+          transaction.issue_email_otp!(purpose: "sign_up")
+        else
+          transaction.issue_telephone_otp!(purpose: "sign_up")
         end
-        second = nil
-        issued.transaction.class.stub(:database_now, clock) { second = verifier.call(**arguments) }
-        eligible = %w(exact result_before).include?(scenario)
+      binding = {
+        purpose: "sign_up",
+        actor_ref: "original-actor",
+        session_ref: "original-browser",
+        operation: "sign_up",
+        candidate_ref: "original-candidate",
+      }
+      first =
+        if channel == :email
+          transaction.verify_email_otp!(code: code, **binding)
+        else
+          transaction.verify_telephone_otp!(code: code, **binding)
+        end
 
-        assert_equal eligible, second.verified_evidence?,
-                     "retry authority must follow binding and the fixed result deadline"
-        assert_not second.success?, "Retained proof never creates fresh verification authority"
-        assert_equal :already_verified, second.status if eligible
+      assert first
+      proof = transaction.reload.attributes
 
-        assert_nil issued.transaction.reload.otp_verifier
-        contact.reload
-        assert_nil contact.binding_finalized_at unless scenario == "released"
+      assert_nil transaction.otp_verifier
+      assert_not proof.values.include?(code), "committed proof must not persist the raw OTP"
+      deadline = transaction.otp_result_expires_at
+      [-Rational(1, 1_000_000), 0, Rational(1, 1_000_000)].each do |offset|
+        evidence =
+          model.stub(:database_now, deadline + offset) do
+            if channel == :email
+              transaction.email_otp_verified_evidence?(code: code, **binding)
+            else
+              transaction.telephone_otp_verified_evidence?(code: code, **binding)
+            end
+          end
 
-        proof_unchanged = proof == issued.transaction.attributes.slice(*proof.keys)
-
-        assert proof_unchanged, "Refusal and retry must preserve the committed proof"
-        snapshot_keys = proof.keys
-
-        assert_not snapshot_keys.include?("otp_private_key")
-        assert_not proof.values.include?(code), "committed proof must not persist the raw OTP"
+        assert_equal offset.negative?, evidence
+        assert_withheld("Retry preserves committed proof") { proof == transaction.reload.attributes }
       end
+      wrong_code = (code == "000000") ? "000001" : "000000"
+      [[wrong_code, binding], [code, binding.merge(session_ref: "foreign-browser")]].each do |submitted, scope|
+        evidence =
+          if channel == :email
+            transaction.email_otp_verified_evidence?(code: submitted, **scope)
+          else
+            transaction.telephone_otp_verified_evidence?(code: submitted, **scope)
+          end
+
+        assert_not evidence
+        assert_withheld("Refusal preserves committed proof") { proof == transaction.reload.attributes }
+      end
+      replay =
+        if channel == :email
+          transaction.verify_email_otp!(code: code, **binding)
+        else
+          transaction.verify_telephone_otp!(code: code, **binding)
+        end
+
+      assert_not replay
+      assert_withheld("Replay cannot rewrite proof") { proof == transaction.reload.attributes }
     end
   end
 end

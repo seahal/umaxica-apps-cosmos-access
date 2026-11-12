@@ -4,17 +4,16 @@
 require "test_helper"
 
 class OidcConnectionRecordTest < ActiveSupport::TestCase
+  self.fixture_table_names = %w(client_tokens client_device_sessions operator_tokens operator_device_sessions)
+
   setup do
-    ClientStatus.ensure_defaults!
-    @user = Client.create!(
-      security_mode_id: SecurityModeConfigurable::NORMAL, public_id: PublicId.generate,
-      status_id: ClientStatus::ACTIVE,
-    )
+    @client_root = client_tokens(:one)
+    @operator_root = operator_tokens(:one)
   end
 
   test "status helpers classify active and revoked connections" do
-    active = ClientOidcConnection.create!(user: @user, client_id: "core-app-jp")
-    revoked = ClientOidcConnection.create!(user: @user, client_id: "warp-app-jp", revoked_at: Time.current)
+    active = ClientOidcConnection.create!(user_id: @client_root.user_id, client_id: "core-app-jp")
+    revoked = ClientOidcConnection.create!(user_id: @client_root.user_id, client_id: "warp-app-jp", revoked_at: Time.current)
 
     assert_predicate active, :active?
     assert_not_predicate active, :revoked?
@@ -53,8 +52,8 @@ class OidcConnectionRecordTest < ActiveSupport::TestCase
   end
 
   test "active scope excludes revoked connections" do
-    active = ClientOidcConnection.create!(user: @user, client_id: "core-app-jp")
-    revoked = ClientOidcConnection.create!(user: @user, client_id: "warp-app-jp", revoked_at: Time.current)
+    active = ClientOidcConnection.create!(user_id: @client_root.user_id, client_id: "core-app-jp")
+    revoked = ClientOidcConnection.create!(user_id: @client_root.user_id, client_id: "warp-app-jp", revoked_at: Time.current)
 
     active_connections = ClientOidcConnection.active.to_a
 
@@ -63,12 +62,13 @@ class OidcConnectionRecordTest < ActiveSupport::TestCase
   end
 
   test "active_tokens delegates to the surface token inventory" do
-    client_connection = ClientOidcConnection.create!(user: @user, client_id: "core-app-jp")
-    operator = Operator.create!(security_mode_id: SecurityModeConfigurable::ADVANCED)
-    operator_connection = OperatorOidcConnection.create!(staff: operator, client_id: "core-org-jp")
+    client_connection = ClientOidcConnection.create!(user_id: @client_root.user_id, client_id: "core-app-jp")
+    operator_connection = OperatorOidcConnection.create!(staff_id: @operator_root.staff_id, client_id: "core-org-jp")
+    @client_root.update!(oidc_connection: client_connection)
+    @operator_root.update!(oidc_connection: operator_connection)
 
-    assert_equal client_connection.user_tokens.session_inventory, client_connection.active_tokens
-    assert_equal operator_connection.staff_tokens.session_inventory, operator_connection.active_tokens
+    assert_equal [@client_root], client_connection.active_tokens
+    assert_equal [@operator_root], operator_connection.active_tokens
   end
 
   test "including class must define actor foreign key" do

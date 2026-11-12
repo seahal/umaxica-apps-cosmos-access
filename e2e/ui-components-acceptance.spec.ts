@@ -54,7 +54,7 @@ test("a wide table exposes a local scroll affordance and scrolls from the keyboa
 for (const edition of ["app", "com", "org"]) {
   for (const lang of ["en", "ja"]) {
     for (const width of [320, 768, 1024, 1440]) {
-      test(`conditions, density and native birthdate reflow in ${edition}/${lang} at ${width}px`, async ({
+      test(`conditions and density reflow in ${edition}/${lang} at ${width}px`, async ({
         page,
       }) => {
         await page.setViewportSize({ width, height: 900 });
@@ -65,10 +65,6 @@ for (const edition of ["app", "com", "org"]) {
         await expect(choice).toHaveAccessibleDescription("Choose an available option.");
         await choice.selectOption("1");
         await expect(choice).toHaveValue("1");
-        const year = page.getByRole("spinbutton", { name: "Year" });
-        await expect(year).toHaveAccessibleDescription("1990");
-        await year.fill("2000");
-        await expect(year).toHaveValue("2000");
         const ordinary = page
           .getByRole("table", { name: "Ordinary records" })
           .locator("td")
@@ -82,17 +78,6 @@ for (const edition of ["app", "com", "org"]) {
         await page.locator("html").evaluate((node) => (node.style.fontSize = "200%"));
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
           width,
-        );
-        const formBounds = await page
-          .getByRole("form", { name: "Synthetic birthdate" })
-          .boundingBox();
-        const yearBounds = await year.boundingBox();
-        // oxlint-disable-next-line vitest/no-conditional-in-test
-        if (!formBounds || !yearBounds) {
-          throw new Error("Birthdate controls must be visible");
-        }
-        expect(yearBounds.x + yearBounds.width).toBeLessThanOrEqual(
-          formBounds.x + formBounds.width,
         );
         expect(
           (

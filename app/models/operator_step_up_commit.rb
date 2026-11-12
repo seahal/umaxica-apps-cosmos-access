@@ -8,6 +8,7 @@ class OperatorStepUpCommit < OpBaseOrgRecord
 
   validates :context_ref, :committed_at, presence: true
   validates :context_ref, length: { maximum: 21 }
+  validates :context_ref, uniqueness: true
   validates :verified_method, inclusion: { in: %w(passkey totp email_otp) }
   validates :verified_method, length: { maximum: 16 }
 end

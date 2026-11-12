@@ -93,13 +93,7 @@ class MessageSerializationTest < ActiveSupport::TestCase
     assert_nil OrgNormalSignInBindingCodec.decode(token)
   end
 
-  test "session reference lookups refuse authenticated Marshal before accessing records" do
-    key = Rails.application.key_generator.generate_key("session_limit_resolution_token_ref")
-    token = ActiveSupport::MessageVerifier.new(key, serializer: Marshal).generate({ pid: "legacy" })
-
-    assert_nil SessionLimitResolutionTokenRef.find_client_token(token)
-    assert_nil SessionLimitResolutionTokenRef.find_operator_token(token)
-
+  test "root session reference lookups refuse authenticated Marshal before accessing records" do
     key = Rails.application.key_generator.generate_key("session_ref")
     token = ActiveSupport::MessageVerifier.new(key, serializer: Marshal).generate({ id: 1, pid: "legacy" })
 

@@ -5,12 +5,10 @@ require "test_helper"
 # require "helpers/global_test_support"
 
 class DbscControllerTest < ActionDispatch::IntegrationTest
-  fixtures :clients, :client_statuses, :client_security_modes, :client_mfa_statuses,
-           :client_tokens, :client_token_kinds, :client_token_statuses, :client_token_binding_methods,
-           :client_token_dbsc_statuses, :operators, :operator_statuses,
-           :operator_security_modes, :operator_mfa_statuses, :operator_tokens,
-           :operator_token_kinds, :operator_token_statuses, :operator_token_binding_methods,
-           :operator_token_dbsc_statuses
+  fixtures :client_device_sessions, :client_tokens, :client_token_kinds, :client_token_statuses,
+           :client_token_binding_methods, :client_token_dbsc_statuses, :operator_device_sessions,
+           :operator_tokens, :operator_token_kinds, :operator_token_statuses,
+           :operator_token_binding_methods, :operator_token_dbsc_statuses
 
   setup do
     @ec_key = OpenSSL::PKey::EC.generate("prime256v1")
@@ -29,12 +27,10 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   test "Visa::App: handles registration with valid proof" do
     host! ENV.fetch("PRIVATE_VISA_SERVICE_URL")
 
-    user = clients(:one)
-    token = ClientToken.create!(
+    token = create_client_token(
       authentication_epoch: 0,
-      user: user,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
-      user_token_status_id: ClientTokenStatus::NOTHING,
+      user_token_status_id: ClientTokenStatus::ACTIVE,
       user_token_binding_method_id: ClientTokenBindingMethod::NOTHING,
       user_token_dbsc_status_id: ClientTokenDbscStatus::NOTHING,
       discard_at: 1.day.from_now,
@@ -43,7 +39,7 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
       dbsc_challenge_issued_at: Time.current,
     )
 
-    cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
 
     proof = generate_dbsc_proof(
       challenge: token.dbsc_challenge,
@@ -71,12 +67,10 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   test "Visa::App: handles registration failure with invalid proof" do
     host! ENV.fetch("PRIVATE_VISA_SERVICE_URL")
 
-    user = clients(:one)
-    token = ClientToken.create!(
+    token = create_client_token(
       authentication_epoch: 0,
-      user: user,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
-      user_token_status_id: ClientTokenStatus::NOTHING,
+      user_token_status_id: ClientTokenStatus::ACTIVE,
       user_token_binding_method_id: ClientTokenBindingMethod::NOTHING,
       user_token_dbsc_status_id: ClientTokenDbscStatus::NOTHING,
       discard_at: 1.day.from_now,
@@ -85,7 +79,7 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
       dbsc_challenge_issued_at: Time.current,
     )
 
-    cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
 
     post visa_app_edge_v0_token_dbsc_path,
          headers: { AuthIoKeys::Headers::DBSC_RESPONSE => "invalid-proof" }
@@ -99,19 +93,17 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   test "Visa::App: handles registration failure without challenge" do
     host! ENV.fetch("PRIVATE_VISA_SERVICE_URL")
 
-    user = clients(:one)
-    token = ClientToken.create!(
+    token = create_client_token(
       authentication_epoch: 0,
-      user: user,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
-      user_token_status_id: ClientTokenStatus::NOTHING,
+      user_token_status_id: ClientTokenStatus::ACTIVE,
       user_token_binding_method_id: ClientTokenBindingMethod::NOTHING,
       user_token_dbsc_status_id: ClientTokenDbscStatus::NOTHING,
       discard_at: 1.day.from_now,
       purge_eligible_at: 1.day.from_now,
     )
 
-    cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
 
     proof = generate_dbsc_proof(
       challenge: "any-challenge",
@@ -129,12 +121,10 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   test "Visa::App: handles refresh challenge when proof is missing" do
     host! ENV.fetch("PRIVATE_VISA_SERVICE_URL")
 
-    user = clients(:one)
-    token = ClientToken.create!(
+    token = create_client_token(
       authentication_epoch: 0,
-      user: user,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
-      user_token_status_id: ClientTokenStatus::NOTHING,
+      user_token_status_id: ClientTokenStatus::ACTIVE,
       user_token_binding_method_id: ClientTokenBindingMethod::DBSC,
       user_token_dbsc_status_id: ClientTokenDbscStatus::ACTIVE,
       discard_at: 1.day.from_now,
@@ -143,7 +133,7 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
       dbsc_public_key: @jwk.export,
     )
 
-    cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
 
     post visa_app_edge_v0_token_dbsc_path,
          headers: { AuthIoKeys::Headers::SECURE_DBSC_SESSION_ID => %("session-abc") }
@@ -160,12 +150,10 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   test "Visa::App: handles refresh verification failure" do
     host! ENV.fetch("PRIVATE_VISA_SERVICE_URL")
 
-    user = clients(:one)
-    token = ClientToken.create!(
+    token = create_client_token(
       authentication_epoch: 0,
-      user: user,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
-      user_token_status_id: ClientTokenStatus::NOTHING,
+      user_token_status_id: ClientTokenStatus::ACTIVE,
       user_token_binding_method_id: ClientTokenBindingMethod::DBSC,
       user_token_dbsc_status_id: ClientTokenDbscStatus::ACTIVE,
       discard_at: 1.day.from_now,
@@ -174,7 +162,7 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
       dbsc_public_key: @jwk.export,
     )
 
-    cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
 
     post visa_app_edge_v0_token_dbsc_path,
          headers: {
@@ -189,12 +177,10 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   test "Visa::App: handles successful refresh verification" do
     host! ENV.fetch("PRIVATE_VISA_SERVICE_URL")
 
-    user = clients(:one)
-    token = ClientToken.create!(
+    token = create_client_token(
       authentication_epoch: 0,
-      user: user,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
-      user_token_status_id: ClientTokenStatus::NOTHING,
+      user_token_status_id: ClientTokenStatus::ACTIVE,
       user_token_binding_method_id: ClientTokenBindingMethod::DBSC,
       user_token_dbsc_status_id: ClientTokenDbscStatus::ACTIVE,
       discard_at: 1.day.from_now,
@@ -205,7 +191,7 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
       dbsc_challenge_issued_at: Time.current,
     )
 
-    cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
 
     # For verification, do NOT include JWK in header (security requirement)
     proof = JWT.encode(
@@ -224,7 +210,7 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
          }
 
     assert_response :no_content
-    assert_predicate response.cookies[AuthenticationBase::DBSC_COOKIE_KEY], :present?
+    assert_predicate response.cookies[AuthenticationCookieName.dbsc], :present?
 
     token.reload
 
@@ -234,19 +220,17 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   test "Visa::App: returns unauthorized when bound record does not exist" do
     host! ENV.fetch("PRIVATE_VISA_SERVICE_URL")
 
-    user = clients(:one)
-    token = ClientToken.create!(
+    token = create_client_token(
       authentication_epoch: 0,
-      user: user,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
-      user_token_status_id: ClientTokenStatus::NOTHING,
+      user_token_status_id: ClientTokenStatus::ACTIVE,
       user_token_binding_method_id: ClientTokenBindingMethod::NOTHING,
       user_token_dbsc_status_id: ClientTokenDbscStatus::NOTHING,
       discard_at: 1.day.from_now,
       purge_eligible_at: 1.day.from_now,
     )
 
-    cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
 
     # Execute with session ID but record not bound to DBSC (no dbsc_session_id)
     # An unregistered session is refused without issuing a challenge.
@@ -268,12 +252,10 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   test "Visa::Org: handles registration with valid proof" do
     host! ENV.fetch("PRIVATE_VISA_STAFF_URL")
 
-    staff = operators(:one)
-    token = OperatorToken.create!(
+    token = create_operator_token(
       authentication_epoch: 0,
-      staff: staff,
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
-      staff_token_status_id: OperatorTokenStatus::NOTHING,
+      staff_token_status_id: OperatorTokenStatus::ACTIVE,
       staff_token_binding_method_id: OperatorTokenBindingMethod::NOTHING,
       staff_token_dbsc_status_id: OperatorTokenDbscStatus::NOTHING,
       discard_at: 1.day.from_now,
@@ -282,7 +264,7 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
       dbsc_challenge_issued_at: Time.current,
     )
 
-    cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
 
     proof = generate_dbsc_proof(
       challenge: token.dbsc_challenge,
@@ -310,12 +292,10 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   test "Visa::Org: handles registration failure with invalid proof" do
     host! ENV.fetch("PRIVATE_VISA_STAFF_URL")
 
-    staff = operators(:one)
-    token = OperatorToken.create!(
+    token = create_operator_token(
       authentication_epoch: 0,
-      staff: staff,
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
-      staff_token_status_id: OperatorTokenStatus::NOTHING,
+      staff_token_status_id: OperatorTokenStatus::ACTIVE,
       staff_token_binding_method_id: OperatorTokenBindingMethod::NOTHING,
       staff_token_dbsc_status_id: OperatorTokenDbscStatus::NOTHING,
       discard_at: 1.day.from_now,
@@ -324,7 +304,7 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
       dbsc_challenge_issued_at: Time.current,
     )
 
-    cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
 
     post visa_org_edge_v0_token_dbsc_path,
          headers: { AuthIoKeys::Headers::DBSC_RESPONSE => "invalid-proof" }
@@ -338,19 +318,17 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   test "Visa::Org: handles registration failure without challenge" do
     host! ENV.fetch("PRIVATE_VISA_STAFF_URL")
 
-    staff = operators(:one)
-    token = OperatorToken.create!(
+    token = create_operator_token(
       authentication_epoch: 0,
-      staff: staff,
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
-      staff_token_status_id: OperatorTokenStatus::NOTHING,
+      staff_token_status_id: OperatorTokenStatus::ACTIVE,
       staff_token_binding_method_id: OperatorTokenBindingMethod::NOTHING,
       staff_token_dbsc_status_id: OperatorTokenDbscStatus::NOTHING,
       discard_at: 1.day.from_now,
       purge_eligible_at: 1.day.from_now,
     )
 
-    cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
 
     proof = generate_dbsc_proof(
       challenge: "any-challenge",
@@ -368,12 +346,10 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   test "Visa::Org: handles refresh challenge when proof is missing" do
     host! ENV.fetch("PRIVATE_VISA_STAFF_URL")
 
-    staff = operators(:one)
-    token = OperatorToken.create!(
+    token = create_operator_token(
       authentication_epoch: 0,
-      staff: staff,
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
-      staff_token_status_id: OperatorTokenStatus::NOTHING,
+      staff_token_status_id: OperatorTokenStatus::ACTIVE,
       staff_token_binding_method_id: OperatorTokenBindingMethod::DBSC,
       staff_token_dbsc_status_id: OperatorTokenDbscStatus::ACTIVE,
       discard_at: 1.day.from_now,
@@ -382,7 +358,7 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
       dbsc_public_key: @jwk.export,
     )
 
-    cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
 
     post visa_org_edge_v0_token_dbsc_path,
          headers: { AuthIoKeys::Headers::DBSC_SESSION_ID => %("session-abc") }
@@ -398,12 +374,10 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   test "Visa::Org: handles refresh verification failure" do
     host! ENV.fetch("PRIVATE_VISA_STAFF_URL")
 
-    staff = operators(:one)
-    token = OperatorToken.create!(
+    token = create_operator_token(
       authentication_epoch: 0,
-      staff: staff,
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
-      staff_token_status_id: OperatorTokenStatus::NOTHING,
+      staff_token_status_id: OperatorTokenStatus::ACTIVE,
       staff_token_binding_method_id: OperatorTokenBindingMethod::DBSC,
       staff_token_dbsc_status_id: OperatorTokenDbscStatus::ACTIVE,
       discard_at: 1.day.from_now,
@@ -412,7 +386,7 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
       dbsc_public_key: @jwk.export,
     )
 
-    cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
 
     post visa_org_edge_v0_token_dbsc_path,
          headers: {
@@ -427,12 +401,10 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   test "Visa::Org: handles successful refresh verification" do
     host! ENV.fetch("PRIVATE_VISA_STAFF_URL")
 
-    staff = operators(:one)
-    token = OperatorToken.create!(
+    token = create_operator_token(
       authentication_epoch: 0,
-      staff: staff,
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
-      staff_token_status_id: OperatorTokenStatus::NOTHING,
+      staff_token_status_id: OperatorTokenStatus::ACTIVE,
       staff_token_binding_method_id: OperatorTokenBindingMethod::DBSC,
       staff_token_dbsc_status_id: OperatorTokenDbscStatus::ACTIVE,
       discard_at: 1.day.from_now,
@@ -443,7 +415,7 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
       dbsc_challenge_issued_at: Time.current,
     )
 
-    cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
 
     # For verification, do NOT include JWK in header (security requirement)
     proof = JWT.encode(
@@ -462,7 +434,7 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
          }
 
     assert_response :no_content
-    assert_predicate response.cookies[AuthenticationBase::DBSC_COOKIE_KEY], :present?
+    assert_predicate response.cookies[AuthenticationCookieName.dbsc], :present?
 
     token.reload
 
@@ -472,19 +444,17 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   test "Visa::Org: returns unauthorized when bound record does not exist" do
     host! ENV.fetch("PRIVATE_VISA_STAFF_URL")
 
-    staff = operators(:one)
-    token = OperatorToken.create!(
+    token = create_operator_token(
       authentication_epoch: 0,
-      staff: staff,
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
-      staff_token_status_id: OperatorTokenStatus::NOTHING,
+      staff_token_status_id: OperatorTokenStatus::ACTIVE,
       staff_token_binding_method_id: OperatorTokenBindingMethod::NOTHING,
       staff_token_dbsc_status_id: OperatorTokenDbscStatus::NOTHING,
       discard_at: 1.day.from_now,
       purge_eligible_at: 1.day.from_now,
     )
 
-    cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
 
     # Execute with session ID but record not bound to DBSC (no dbsc_session_id)
     # An unregistered session is refused without issuing a challenge.
@@ -497,19 +467,17 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   test "Visa::App: token_from_refresh_cookie returns nil when parsing fails" do
     host! ENV.fetch("PRIVATE_VISA_SERVICE_URL")
 
-    user = clients(:one)
-    ClientToken.create!(
+    create_client_token(
       authentication_epoch: 0,
-      user: user,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
-      user_token_status_id: ClientTokenStatus::NOTHING,
+      user_token_status_id: ClientTokenStatus::ACTIVE,
       user_token_binding_method_id: ClientTokenBindingMethod::NOTHING,
       user_token_dbsc_status_id: ClientTokenDbscStatus::NOTHING,
       discard_at: 1.day.from_now,
       purge_eligible_at: 1.day.from_now,
     )
 
-    cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = "invalid-token-format"
+    cookies[AuthenticationCookieName.refresh] = "invalid-token-format"
 
     post visa_app_edge_v0_token_dbsc_path,
          headers: { AuthIoKeys::Headers::DBSC_RESPONSE => "some-proof" }
@@ -518,6 +486,28 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
   end
 
   private
+
+  def create_client_token(**attributes)
+    device_session = client_device_sessions(:one)
+    device_session.update!(current_refresh_token_id: nil)
+    ClientToken.create!(
+      {
+        device_session: device_session,
+        user_id: device_session.user_id,
+      }.merge(attributes),
+    )
+  end
+
+  def create_operator_token(**attributes)
+    device_session = operator_device_sessions(:one)
+    device_session.update!(current_refresh_token_id: nil)
+    OperatorToken.create!(
+      {
+        device_session: device_session,
+        staff_id: device_session.staff_id,
+      }.merge(attributes),
+    )
+  end
 
   def generate_dbsc_proof(challenge:, audience:, jwk:, algorithm: "ES256")
     iat = Time.current.to_i
@@ -538,9 +528,5 @@ end
 
 # DAMP local route helper aliases for former shared test support.
 class DbscControllerTest
-
   private
-
-
-
 end

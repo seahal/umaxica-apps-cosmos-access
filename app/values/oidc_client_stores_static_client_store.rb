@@ -60,7 +60,7 @@ module OidcClientStoresStaticClientStore
       env_key: "PUBLIC_TECH_STAFF_URL",
       resource_type: "operator",
       name: "Tech Org RP",
-      required_operator_capability: OperatorCapabilityGrant::TECH_ACCESS,
+      required_operator_capability: "tech.access",
     },
     "base-app" => {
       env_key: "PUBLIC_BASE_SERVICE_URL",

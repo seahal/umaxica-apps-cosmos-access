@@ -22,8 +22,8 @@ module SignOutNotice
   private
 
   def prepare_sign_out_completion_notice!(state: nil)
-    @sign_out_actor_ref = current_resource.try(:public_id) if respond_to?(:current_resource, true)
-    @sign_out_session_public_id = current_session_public_id if respond_to?(:current_session_public_id, true)
+    @sign_out_actor_ref = current_session&.principal_public_id
+    @sign_out_session_public_id = current_session_public_id
     @sign_out_state = state
   end
 
@@ -52,13 +52,7 @@ module SignOutNotice
   end
 
   def sign_out_active_context_present?
-    return true if current_resource.present?
-
-    session_token = safe_current_session_for_logout if respond_to?(:safe_current_session_for_logout, true)
-    return true if session_token&.currently_usable?
-    return true if respond_to?(:oidc_logout_pending_request_present?, true) && oidc_logout_pending_request_present?
-
-    false
+    current_session.present? || oidc_logout_pending_request_present?
   end
 
   def sign_out_route_helper_prefix

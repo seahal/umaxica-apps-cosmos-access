@@ -3,111 +3,77 @@
 require "test_helper"
 
 class SessionLimitResolutionUniquenessTest < ActiveSupport::TestCase
-  SURFACES = [
-    [Client, ClientStatus::ACTIVE, ClientVisibility::USER, ClientSignInFlow, ClientSessionLimitResolutionTransaction],
-    [Operator, OperatorStatus::ACTIVE, OperatorVisibility::STAFF, OperatorSignInFlow,
-     OperatorSessionLimitResolutionTransaction,],
-  ].freeze
+  test "resolution model selection refuses without Governance" do
+    assert_raises(GovernanceLookupUnavailableError) { SessionLimitResolutionTransactionable.model_for(nil) }
+  end
 
-  SURFACES.each do |principal_class, status, visibility, flow_class, resolution_class|
-    test "#{resolution_class.name} retains issue replay refusal raw uniqueness and terminal history" do
-      actor = principal_class.create!(
-        security_mode_id: SecurityModeConfigurable::NORMAL, status_id: status,
-        visibility_id: visibility,
-      )
+  [
+    [ClientSignInFlow, ClientSessionLimitResolutionTransaction],
+    [OperatorSignInFlow, OperatorSessionLimitResolutionTransaction],
+  ].each do |flow_class, resolution_class|
+    test "#{resolution_class.name} retains partial uniqueness and terminal history in PostgreSQL" do
       now = flow_class.database_now
-      flow = flow_class.create!(
-        principal_id: actor.id, state_id: flow_class.state_id_for("SESSION_ISSUANCE_PENDING"),
-        nonce_digest: flow_class.digest_nonce(SecureRandom.urlsafe_base64(32)), issued_at: now, expires_at: now + 300,
-      )
-      first = resolution_class.issue!(sign_in_flow: flow, actor: actor, browser_binding_digest: "a" * 64)
-      replay = resolution_class.issue!(sign_in_flow: flow, actor: actor, browser_binding_digest: "a" * 64)
-
-      assert_equal first.transaction.id, replay.transaction.id
-      assert_equal 1, resolution_class.where(sign_in_flow_id: flow.id).count
-      attributes = replay.transaction.attributes.except("id", "created_at", "updated_at")
-      assert_raises(ActiveRecord::RecordNotUnique) do
-        resolution_class.transaction(requires_new: true) do
-          raw_duplicate = resolution_class.new(
-            attributes.merge(challenge_digest: resolution_class.digest_challenge("different")),
+      flows =
+        2.times.map do
+          flow_class.create!(
+            nonce_digest: flow_class.digest_nonce(SecureRandom.urlsafe_base64(32)),
+            issued_at: now, expires_at: now + 300,
           )
-          raw_duplicate.save!(validate: false)
         end
-      end
-      other_flow = flow_class.create!(
-        principal_id: actor.id, state_id: flow_class.state_id_for("SESSION_ISSUANCE_PENDING"),
-        nonce_digest: flow_class.digest_nonce(SecureRandom.urlsafe_base64(32)), issued_at: now, expires_at: now + 300,
-      )
-      assert_raises(SessionLimitResolutionTransactionable::WaitingSlotOccupied) do
-        resolution_class.issue!(sign_in_flow: other_flow, actor: actor, browser_binding_digest: "b" * 64)
-      end
-      replay.transaction.cancel!(actor: actor, challenge: replay.challenge, browser_binding_digest: "a" * 64)
-      replacement = resolution_class.issue!(sign_in_flow: flow, actor: actor, browser_binding_digest: "a" * 64)
-
-      assert_not_equal replay.transaction.id, replacement.transaction.id
-      assert_predicate replay.transaction.reload, :cancelled?
-      assert_predicate replacement.transaction, :pending?
-    end
-
-    test "#{resolution_class.name} preflights both exact partial keys on creation" do
-      actor = principal_class.create!(
-        security_mode_id: SecurityModeConfigurable::NORMAL, status_id: status,
-        visibility_id: visibility,
-      )
-      now = flow_class.database_now
-      flow = flow_class.create!(
-        principal_id: actor.id, state_id: flow_class.state_id_for("SESSION_ISSUANCE_PENDING"),
-        nonce_digest: flow_class.digest_nonce(SecureRandom.urlsafe_base64(32)), issued_at: now, expires_at: now + 300,
-      )
-      first = resolution_class.issue!(sign_in_flow: flow, actor: actor, browser_binding_digest: "a" * 64).transaction
-      attributes = first.attributes.except("id", "created_at", "updated_at")
+      # Historical OP rows contain only opaque references; no Governance actor is fabricated.
+      attributes = {
+        challenge_digest: resolution_class.digest_challenge("first"),
+        state_id: SessionLimitResolutionTransactionable::PENDING,
+        waiting_slot: SessionLimitResolutionTransactionable::WAITING_SLOT,
+        sign_in_flow_id: flows.first.id,
+        actor_ref: "historical-subject",
+        browser_binding_digest: "a" * 64,
+        started_at: now,
+        expires_at: now + 300,
+      }
+      first = resolution_class.create!(attributes)
       duplicate = resolution_class.new(
-        attributes.merge(challenge_digest: resolution_class.digest_challenge("different")),
+        attributes.merge(challenge_digest: resolution_class.digest_challenge("duplicate")),
       )
 
       assert_not duplicate.valid?
       assert duplicate.errors.of_kind?(:sign_in_flow_id, :taken)
       assert duplicate.errors.of_kind?(:actor_ref, :taken)
       assert_raises(ActiveRecord::RecordInvalid) { duplicate.save! }
-      other_actor = principal_class.create!(
-        security_mode_id: SecurityModeConfigurable::NORMAL, status_id: status,
-        visibility_id: visibility,
-      )
+
       same_parent = resolution_class.new(
         attributes.merge(
-          actor_ref: other_actor.public_id,
-          challenge_digest: resolution_class.digest_challenge("other-actor"),
+          actor_ref: "another-historical-subject",
+          challenge_digest: resolution_class.digest_challenge("parent"),
         ),
       )
 
       assert_not same_parent.valid?
       assert same_parent.errors.of_kind?(:sign_in_flow_id, :taken)
       assert_not same_parent.errors.of_kind?(:actor_ref, :taken)
-      other_flow = flow_class.create!(
-        principal_id: actor.id, state_id: flow_class.state_id_for("SESSION_ISSUANCE_PENDING"),
-        nonce_digest: flow_class.digest_nonce(SecureRandom.urlsafe_base64(32)), issued_at: now, expires_at: now + 300,
-      )
+      assert_raises(ActiveRecord::RecordNotUnique) do
+        resolution_class.transaction(requires_new: true) { same_parent.save!(validate: false) }
+      end
+
       same_actor = resolution_class.new(
-        attributes.merge(
-          sign_in_flow_id: other_flow.id,
-          challenge_digest: resolution_class.digest_challenge("other-flow"),
-        ),
+        attributes.merge(sign_in_flow_id: flows.last.id, challenge_digest: resolution_class.digest_challenge("actor")),
       )
 
       assert_not same_actor.valid?
       assert_not same_actor.errors.of_kind?(:sign_in_flow_id, :taken)
       assert same_actor.errors.of_kind?(:actor_ref, :taken)
+      assert_raises(ActiveRecord::RecordNotUnique) do
+        resolution_class.transaction(requires_new: true) { same_actor.save!(validate: false) }
+      end
+
       elapsed = resolution_class.new(
-        attributes.merge(
-          expires_at: now - 1,
-          challenge_digest: resolution_class.digest_challenge("elapsed"),
-        ),
+        attributes.merge(expires_at: now - 1, challenge_digest: resolution_class.digest_challenge("elapsed")),
       )
 
       assert_not elapsed.valid?
       assert elapsed.errors.of_kind?(:sign_in_flow_id, :taken)
       assert elapsed.errors.of_kind?(:actor_ref, :taken)
-      closed = resolution_class.new(
+      closed = resolution_class.create!(
         attributes.merge(
           challenge_digest: resolution_class.digest_challenge("closed"),
           state_id: SessionLimitResolutionTransactionable::CANCELLED,
@@ -115,7 +81,76 @@ class SessionLimitResolutionUniquenessTest < ActiveSupport::TestCase
         ),
       )
 
-      assert_predicate closed, :valid?
+      assert_predicate closed, :cancelled?
+      assert_predicate first.reload, :pending?
+      assert_equal 2, resolution_class.where(sign_in_flow_id: flows.first.id).count
+    end
+
+    {
+      "select_session!" => ->(row, _flow) {
+        row.select_session!(
+          actor: nil, challenge: "challenge", session_ref: "session",
+          browser_binding_digest: "a" * 64,
+        )
+      },
+      "resolve!" => ->(row, _flow) {
+        row.resolve!(actor: nil, challenge: "challenge", browser_binding_digest: "a" * 64)
+      },
+      "cancel!" => ->(row, _flow) { row.cancel!(actor: nil, challenge: "challenge", browser_binding_digest: "a" * 64) },
+      "expire!" => ->(row, _flow) { row.expire! },
+      "finalize_for_session_issuance!" => ->(row, flow) {
+        row.finalize_for_session_issuance!(
+          actor: nil, parent: flow, challenge: "challenge", browser_binding_digest: "a" * 64,
+        ) { :within_limit }
+      },
+    }.each do |operation, perform|
+      test "#{resolution_class.name} #{operation} refuses without changing retained history" do
+        now = flow_class.database_now
+        flow = flow_class.create!(
+          nonce_digest: flow_class.digest_nonce(SecureRandom.urlsafe_base64(32)),
+          issued_at: now, expires_at: now + 300,
+        )
+        row = resolution_class.create!(
+          challenge_digest: resolution_class.digest_challenge("challenge"),
+          state_id: SessionLimitResolutionTransactionable::PENDING,
+          waiting_slot: SessionLimitResolutionTransactionable::WAITING_SLOT,
+          sign_in_flow_id: flow.id,
+          actor_ref: "historical-subject",
+          browser_binding_digest: "a" * 64,
+          started_at: now,
+          expires_at: now + 300,
+        )
+        original = row.reload.attributes
+
+        assert_raises(GovernanceLookupUnavailableError) { perform.call(row, flow) }
+        assert_equal original, row.reload.attributes
+      end
+    end
+
+    test "#{resolution_class.name} refuses issuance without Governance" do
+      now = flow_class.database_now
+      flow = flow_class.create!(
+        nonce_digest: flow_class.digest_nonce(SecureRandom.urlsafe_base64(32)),
+        issued_at: now, expires_at: now + 300,
+      )
+
+      assert_no_difference -> { resolution_class.count } do
+        assert_raises(GovernanceLookupUnavailableError) do
+          resolution_class.issue!(sign_in_flow: flow, actor: nil, browser_binding_digest: "a" * 64)
+        end
+      end
+    end
+
+    test "#{flow_class.name} rejects authentication evidence without Governance" do
+      now = flow_class.database_now
+      flow = flow_class.create!(
+        nonce_digest: flow_class.digest_nonce(SecureRandom.urlsafe_base64(32)),
+        issued_at: now, expires_at: now + 300,
+      )
+
+      assert_raises(GovernanceLookupUnavailableError) { flow.record_authentication_evidence!(method: "passkey") }
+      assert_nil flow.reload.authentication_event_at
+      assert_nil flow.authentication_method
     end
   end
 end

@@ -5,6 +5,8 @@ require "test_helper"
 # require "helpers/global_test_support"
 
 class ChronicleRecordPolicyTest < ActiveSupport::TestCase
+  self.fixture_table_names = %w(client_tokens client_device_sessions)
+
   test "sanitize removes forbidden keys from hash" do
     input = { "token" => "secret", "browser" => "Chrome", "password" => "hunter2" }
     result = ChronicleRecordPolicy.sanitize(input)
@@ -108,30 +110,30 @@ class ChronicleRecordPolicyTest < ActiveSupport::TestCase
   end
 
   test "actor_payload extracts actor info" do
-    client = clients(:one)
-    payload = ChronicleRecordPolicy.actor_payload(client)
+    root = client_tokens(:one)
+    payload = ChronicleRecordPolicy.actor_payload(root)
 
-    assert_equal "Client", payload[:actor_type]
-    assert_predicate payload[:actor_id], :present?
+    assert_equal "ClientToken", payload[:actor_type]
+    assert_equal root.public_id, payload[:actor_id]
   end
 
   test "subject_payload extracts subject info" do
-    client = clients(:one)
-    payload = ChronicleRecordPolicy.subject_payload(client)
+    root = client_tokens(:one)
+    payload = ChronicleRecordPolicy.subject_payload(root)
 
-    assert_equal "Client", payload[:subject_type]
-    assert_predicate payload[:subject_id], :present?
+    assert_equal "ClientToken", payload[:subject_type]
+    assert_equal root.public_id, payload[:subject_id]
   end
 
   test "log_payload builds complete payload" do
-    client = clients(:one)
+    root = client_tokens(:one)
     payload = ChronicleRecordPolicy.log_payload(
       event: "test.event",
       event_uuid: "abc-123",
       request_id: "req-456",
       action: "test.action",
-      actor: client,
-      subject: client,
+      actor: root,
+      subject: root,
       error: nil,
     )
 
@@ -139,19 +141,19 @@ class ChronicleRecordPolicyTest < ActiveSupport::TestCase
     assert_equal "abc-123", payload[:event_uuid]
     assert_equal "req-456", payload[:request_id]
     assert_equal "test.action", payload[:action]
-    assert_equal "Client", payload[:actor_type]
-    assert_equal "Client", payload[:subject_type]
+    assert_equal "ClientToken", payload[:actor_type]
+    assert_equal "ClientToken", payload[:subject_type]
   end
 
   test "log_payload includes error info" do
     error = RuntimeError.new("Something broke")
-    client = clients(:one)
+    root = client_tokens(:one)
     payload = ChronicleRecordPolicy.log_payload(
       event: "test.error",
       event_uuid: "abc-123",
       request_id: "req-456",
       action: "test.error",
-      actor: client,
+      actor: root,
       subject: nil,
       error: error,
     )

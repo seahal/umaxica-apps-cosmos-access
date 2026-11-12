@@ -14,6 +14,7 @@ class OpAppAuthorityStopParticipant < OpBaseAppRecord
   validates :delivery_attempts, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :client_id, :last_outcome, length: { maximum: 64 }
   validates :issuer, :sid, :endpoint_identity, length: { maximum: 255 }
+  validates :grant_id, uniqueness: { scope: :stop_id }
 
   public
 

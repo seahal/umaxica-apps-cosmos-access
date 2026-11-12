@@ -4,20 +4,24 @@
 require "test_helper"
 
 class DeviceSessionableTest < ActiveSupport::TestCase
+  self.fixture_table_names = []
+
   setup do
-    ClientStatus.ensure_defaults!
-    ClientTokenKind.find_or_create_by!(id: ClientTokenKind::BROWSER_WEB)
-    @user = Client.create!(
-      security_mode_id: SecurityModeConfigurable::NORMAL, public_id: PublicId.generate,
-      status_id: ClientStatus::ACTIVE,
+    @device = ClientDeviceSession.create!(user_id: 9_700_001, principal_public_id: "historical-subject")
+    @token = ClientToken.create!(
+      user_id: 9_700_001, device_session: @device, authentication_epoch: 0,
+      user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
-    @token = ClientToken.create!(authentication_epoch: 0, user: @user, user_token_kind_id: ClientTokenKind::BROWSER_WEB)
   end
 
   test "active scope returns only active unreleased sessions" do
-    active = create_device_session(status_id: DeviceSessionable::STATUS_ACTIVE)
+    active = ClientDeviceSession.create!(
+      user_id: 9_700_001, principal_public_id: "historical-subject", current_refresh_token: @token,
+      status_id: DeviceSessionable::STATUS_ACTIVE,
+    )
     revoked = ClientDeviceSession.create!(
-      user: @user,
+      user_id: 9_700_001,
+      principal_public_id: "historical-subject",
       current_refresh_token: @token,
       status_id: DeviceSessionable::STATUS_REVOKED,
       revoked_at: Time.current,
@@ -53,7 +57,8 @@ class DeviceSessionableTest < ActiveSupport::TestCase
   test "revoke! persists revoked state and reason without replacing existing revoked_at" do
     revoked_at = 1.hour.ago
     session = ClientDeviceSession.create!(
-      user: @user,
+      user_id: 9_700_001,
+      principal_public_id: "historical-subject",
       current_refresh_token: @token,
       status_id: DeviceSessionable::STATUS_ACTIVE,
       revoked_at: revoked_at,
@@ -67,7 +72,10 @@ class DeviceSessionableTest < ActiveSupport::TestCase
   end
 
   test "bind_dbsc! persists session digest and public key thumbprint" do
-    session = create_device_session(status_id: DeviceSessionable::STATUS_ACTIVE)
+    session = ClientDeviceSession.create!(
+      user_id: 9_700_001, principal_public_id: "historical-subject", current_refresh_token: @token,
+      status_id: DeviceSessionable::STATUS_ACTIVE,
+    )
 
     session.bind_dbsc!(session_id: "dbsc-session-id", public_key_thumbprint: "thumbprint")
 
@@ -76,16 +84,5 @@ class DeviceSessionableTest < ActiveSupport::TestCase
     assert_predicate session, :dbsc_bound?
     assert_equal "thumbprint", session.dbsc_public_key_thumbprint
     assert_equal ClientDeviceSession.digest_session_identifier("dbsc-session-id"), session.dbsc_session_id_digest
-  end
-
-  private
-
-  def create_device_session(attributes)
-    ClientDeviceSession.create!(
-      {
-        user: @user,
-        current_refresh_token: @token,
-      }.merge(attributes),
-    )
   end
 end

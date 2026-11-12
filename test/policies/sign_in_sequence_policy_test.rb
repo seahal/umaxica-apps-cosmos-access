@@ -5,14 +5,14 @@ require "test_helper"
 # require "helpers/global_test_support"
 
 class SignInSequencePolicyTest < ActiveSupport::TestCase
-  fixtures :clients
+  self.fixture_table_names = %w(client_tokens client_device_sessions)
 
   setup do
-    @user = clients(:one)
+    @user = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
     @sequence = SignInSequence.new(
       "id" => SecureRandom.uuid,
       "surface" => "app",
-      "actor_type" => "Client",
+      "actor_type" => "ClientToken",
       "actor_id" => @user.id,
       "method" => "email_otp",
       "state" => "CHECKPOINT_PENDING",
@@ -30,7 +30,7 @@ class SignInSequencePolicyTest < ActiveSupport::TestCase
   end
 
   test "rejects checkpoint participant for wrong actor" do
-    other_user = clients(:two)
+    other_user = ClientToken.find(ActiveRecord::FixtureSet.identify(:two))
     policy = SignIn::SequencePolicy.new(@sequence, user: other_user)
 
     assert_not_predicate policy, :show_checkpoint?

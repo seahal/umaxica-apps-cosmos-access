@@ -33,9 +33,9 @@
 #  dbsc_session_id                    :string
 #  device_session_id                  :bigint
 #  last_step_up_session_public_id     :string
-#  last_step_up_user_verified         :boolean
+#  last_step_up_user_verified         :boolean          default(FALSE), not null
 #  last_step_up_credential_ref        :string
-#  last_step_up_full_reauthentication :boolean
+#  last_step_up_full_reauthentication :boolean          default(FALSE), not null
 #  last_step_up_resource_ref          :string
 #  last_step_up_tenant_ref            :string
 #  oidc_client_id                     :string(64)
@@ -91,7 +91,6 @@ class OperatorToken < OpBaseOrgRecord
   include ::Retainable
   include ::TokenStatusManagement
   include ::DbscBindable
-  include ::SessionOidcConnection
   include ::SelectedActorContext
 
   SELECTED_ACTOR_CONTEXT_COLUMNS = %i(
@@ -106,14 +105,17 @@ class OperatorToken < OpBaseOrgRecord
   DELETION_GRACE_PERIOD = 1.day
   MAX_SESSIONS_PER_STAFF = 1
   MAX_TOTAL_SESSIONS_PER_STAFF = 2
-  session_oidc_connection_config actor_name: :staff, connection_class: OperatorOidcConnection
 
   attribute :staff_token_status_id, default: OperatorTokenStatus::ACTIVE
   attribute :staff_token_kind_id, default: OperatorTokenKind::BROWSER_WEB
   attribute :staff_token_binding_method_id, default: OperatorTokenBindingMethod::NOTHING
   attribute :staff_token_dbsc_status_id, default: OperatorTokenDbscStatus::NOTHING
 
-  belongs_to :staff, class_name: "Operator"
+  belongs_to :evidence_state, class_name: "OperatorStepUpEvidenceState", inverse_of: :tokens
+  validates :evidence_state_id, inclusion: { in: IdentityStepUpCeremonyContract::EVIDENCE_STATES }
+  validates :last_step_up_user_verified, :last_step_up_full_reauthentication, inclusion: { in: [true, false] }
+  validate :step_up_evidence_state_matches_flags
+
   belongs_to :staff_token_status, class_name: "OperatorTokenStatus"
   belongs_to :staff_token_kind, class_name: "OperatorTokenKind"
   belongs_to :staff_token_binding_method, class_name: "OperatorTokenBindingMethod"
@@ -121,7 +123,6 @@ class OperatorToken < OpBaseOrgRecord
   # A root token can outlive its optional OIDC connection, which is nullified on connection deletion.
   belongs_to :oidc_connection, class_name: "OperatorOidcConnection", optional: true
   belongs_to :device_session, class_name: "OperatorDeviceSession", inverse_of: :staff_tokens
-  has_many :op_org_grants, inverse_of: :operator_token, dependent: :restrict_with_exception
   has_many :staff_verifications, class_name: "OperatorVerification",
                                  foreign_key: :staff_token_id,
                                  dependent: :delete_all,
@@ -134,6 +135,7 @@ class OperatorToken < OpBaseOrgRecord
           dependent: :destroy
 
   validates :public_id, uniqueness: true, length: { maximum: 21 }
+  validates :oidc_client_id, length: { maximum: 64 }, allow_blank: true
   # WU-17: written at issuance from the actor (roots) or the root (grants); never defaulted.
   validates :authentication_epoch, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
 

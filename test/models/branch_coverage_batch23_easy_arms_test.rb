@@ -9,13 +9,6 @@ require "jwt"
 class BranchCoverageBatch23EasyArmsTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
-  test "OperatorPreferenceDateFormatOption#name covers the US arm" do
-    option = OperatorPreferenceDateFormatOption.new
-    option.id = OperatorPreferenceDateFormatOption::US
-
-    assert_equal "us", option.name
-  end
-
   test "SurfaceInertiaPage refuses a controller path without a family and surface" do
     assert_raises(ArgumentError) do
       Class.new(ApplicationController) do

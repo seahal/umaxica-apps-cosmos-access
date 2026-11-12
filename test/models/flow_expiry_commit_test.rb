@@ -5,7 +5,7 @@ require "test_helper"
 class FlowExpiryCommitTest < ActiveSupport::TestCase
   self.use_transactional_tests = false
 
-  test "standalone sign-in expiry commits before raising in the app and org realms" do
+  test "unavailable sign-in transitions fail closed without mutating expired flows" do
     [ClientSignInFlow, OperatorSignInFlow].each do |model|
       flow = nil
       begin
@@ -15,15 +15,18 @@ class FlowExpiryCommitTest < ActiveSupport::TestCase
           issued_at: now - 2.minutes, expires_at: now - 1.minute,
         )
 
+        original = flow.attributes
+
         assert_not model.lease_connection.transaction_open?
-        assert_raises(FlowInvalidTransition) { flow.complete_sign_in! }
+        assert_raises(GovernanceLookupUnavailableError) { flow.complete_sign_in! }
+        assert_equal original, model.find(flow.id).attributes
         assert_predicate model.find(flow.id), :sign_in_expired?
       ensure
         flow&.destroy!
       end
     end
   end
-  test "expiry ownership follows the writer transaction when the caller temporarily selects reading" do
+  test "unavailable sign-in transition remains fail closed under reading role and caller transaction" do
     [ClientSignInFlow, OperatorSignInFlow].each do |model|
       flow = nil
       begin
@@ -32,14 +35,15 @@ class FlowExpiryCommitTest < ActiveSupport::TestCase
           nonce_digest: model.digest_nonce(SecureRandom.hex(16)),
           issued_at: now - 2.minutes, expires_at: now - 1.minute,
         )
-        outcome =
+        original = flow.attributes
+        assert_raises(GovernanceLookupUnavailableError) do
           model.transaction do
             model.connection_class_for_self.connected_to(role: :reading) { flow.advance_sign_in_to_mfa! }
           end
+          end
 
-        assert_predicate outcome, :expired?
+        assert_equal original, model.find(flow.id).attributes
         assert_predicate model.find(flow.id), :sign_in_expired?
-        assert_raises(FlowInvalidTransition) { outcome.value! }
       ensure
         flow&.destroy!
       end

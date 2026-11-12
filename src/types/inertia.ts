@@ -9,11 +9,6 @@ export type ChromeLink = {
   href: string;
 };
 
-export type ChromeBanner = {
-  title: string | null;
-  body: string;
-};
-
 /**
  * Present only while the session is authenticated through Emergency Access.
  * The server derives it from the signed session token, so a page cannot opt in
@@ -29,7 +24,6 @@ export type SurfaceChrome = {
   family_label: string | null;
   surface: string;
   brand: { name: string; href: string | null };
-  banner: ChromeBanner | null;
   /** Non-null for a Restricted Mode (Emergency Access) session only. */
   restricted_mode: ChromeRestrictedMode | null;
   copyright: string;

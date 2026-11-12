@@ -331,6 +331,37 @@ module Jit
         end
       end
 
+      test "real replay store rejects the second verified response" do
+        TurnstileVerifierStub.enabled = false
+        token = SecureRandom.urlsafe_base64(32)
+        response = {
+          "success" => true,
+          "hostname" => "id.app.localhost",
+          "action" => "social_signup_confirmation",
+          "cdata" => "ceremony-123",
+          "challenge_ts" => Time.current.iso8601,
+        }.to_json
+        arguments = {
+          token: token,
+          remote_ip: "1.2.3.4",
+          secret_key: "test-secret",
+          ceremony_id: "ceremony-123",
+          expected_action: "social_signup_confirmation",
+          expected_hostname: "id.app.localhost",
+          expected_cdata: "ceremony-123",
+        }
+        first = nil
+        second = nil
+        stub_turnstile_response(response) { first = JitSecurityTurnstileVerifier.verify_for_ceremony(**arguments) }
+        stub_turnstile_response(response) { second = JitSecurityTurnstileVerifier.verify_for_ceremony(**arguments) }
+
+        assert first["success"]
+        assert_not second["success"]
+        assert_equal "turnstile replay detected", second["error"]
+        assert_not second["unavailable"]
+        assert_equal 1, TurnstileReplay.where(token_digest: TurnstileReplay.digest_token(token)).count
+      end
+
       test "does not log response details outside development" do
         TurnstileVerifierStub.enabled = false
 

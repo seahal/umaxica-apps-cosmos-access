@@ -1,5 +1,11 @@
 # FakeCloud Staging on Podman, Provisioned with Terraform
 
+**Status:** Superseded (2026-11-12)
+
+> Superseded by `adr/aws-emulator-podman-staging-environment.md`. AWS Emulator replaces FakeCloud for
+> development and staging. Access has also removed its object-storage integration, so decisions 5
+> and 6 have no consumer. This document is historical only.
+
 Accepted: 2026-09-14
 
 ## Context

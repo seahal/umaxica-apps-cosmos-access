@@ -15,6 +15,7 @@ one:
   id: <%= ActiveRecord::FixtureSet.identify(:one) %>
   public_id: "client-device-onexxxx"
   user_id: <%= ActiveRecord::FixtureSet.identify(:one) %>
+  principal_public_id: "one_idxxxxxxxxxxxxxxx"
   status_id: 1
   current_refresh_token_id: <%= ActiveRecord::FixtureSet.identify(:one) %>
   created_at: <%= Time.current %>
@@ -24,6 +25,7 @@ two:
   id: <%= ActiveRecord::FixtureSet.identify(:two) %>
   public_id: "client-device-twoxxxx"
   user_id: <%= ActiveRecord::FixtureSet.identify(:two) %>
+  principal_public_id: "two_idxxxxxxxxxxxxxxx"
   status_id: 1
   current_refresh_token_id: <%= ActiveRecord::FixtureSet.identify(:two) %>
   created_at: <%= Time.current %>

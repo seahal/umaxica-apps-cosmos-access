@@ -8,6 +8,7 @@
 # JumpRT token families.
 module SecurityTokenLifetimes
   AUTH_ACCESS_JWT_TTL = 5.minutes
+  DBSC_COOKIE_TTL = 10.minutes
   # Maximum browser access JWT lifetime used when sizing OP back-channel logout delivery grace.
   BROWSER_ACCESS_JWT_TTL = 10.minutes
   # RFC 9068 Access JWT lifetime for registered external RP access tokens.

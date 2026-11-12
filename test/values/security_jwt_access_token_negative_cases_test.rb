@@ -26,12 +26,10 @@ class SecurityJwtAccessTokenNegativeCasesTest < ActiveSupport::TestCase
                      jwt_issuer_id: "surface:AUTH_APP",
     )
     payload, header = auth_parts
-    preference_signed = JWT.encode(
-      payload, JitSecurityJwtRegistry.private_key_for("preference_app"), "ES384", header,
-    )
+    unrelated_signed = JWT.encode(payload, OpenSSL::PKey::EC.generate("secp384r1"), "ES384", header)
 
     assert_nil decode_auth(surface_token)
-    assert_nil decode_auth(preference_signed)
+    assert_nil decode_auth(unrelated_signed)
   end
 
   test "auth access facade preserves an explicitly supplied authentication time" do

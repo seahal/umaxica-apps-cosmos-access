@@ -176,6 +176,41 @@ refresh is not gated by a Governance query; revocation reaches Access as a comma
 is visible and retryable. New sign-in, sign-up and step-up still require Governance's permission and
 fail closed without it.
 
+## Data ownership and exchanges (summary, owner 2026-11-12)
+
+17. **Access owns OpenID Provider data only; Governance owns everything else.**
+
+| Data | Owner | The other side reads it by |
+| --- | --- | --- |
+| OP sessions, authorization codes, PAR requests, refresh token families, access token state, DBSC bindings, consents and grants to relying parties (including MCP clients), client registrations (code), OP audit records | **Access** | Governance asks Access through a read-only API (decision 18) |
+| Accounts and `sub`, email addresses and telephone numbers, credential records (passkeys, TOTP, recovery codes, social links; signed by Access), account state, profiles, avatars, preferences, organizations, memberships, roles | **Governance** | Access asks Governance through the lookup API (decision 8) |
+
+18. **Exchanges.** Every exchange uses the one signed-request shape of decision 16.
+    **Front channel only, no server-to-server calls (owner, 2026-11-13; supersedes the same-day
+    HTTPS entry).** Access and Governance exchange signed handoff JWS carried by the user's browser
+    through the Jump gateway (GET query parameters, Jump `rt` for navigation), never by direct HTTP
+    between the two applications. Design and threat model:
+    `plans/2026-11-13-jump-front-channel-handoff-work-order.md`. Open consequences the owner must
+    confirm: (a) revocation starts in Governance with no browser present, so it cannot reach Access
+    immediately; candidates are taking effect at the user's next pass through Access plus short OP
+    token lifetimes; (b) peer public keys are distributed by configuration if fetching the peer's
+    JWKS also counts as server-to-server; (c) query-string size limits for credential records. The
+    ownership in decision 17 and the exchanges below are unchanged; only their carrier changes.
+
+| Exchange | Direction | When | Content |
+| --- | --- | --- | --- |
+| Lookup | Access -> Governance | each ceremony (mainly in Auth) | credential records and the current permission for the operation |
+| Registration | Access -> Governance | after a ceremony that adds or changes a credential | the credential record signed by Access; success only after Governance's acknowledgement |
+| OP data query | Governance -> Access | when Governance shows or manages OP data (for example a person's signed-in sessions or connected clients) | read-only answers about the OP data listed above; Access shows no lists itself |
+| Revocation command | Governance -> Access | forced sign-out, account disable or delete, ending a session or a client grant | Access revokes OP sessions, refresh tokens or grants and returns a signed acknowledgement (decisions 11 to 13) |
+
+19. **Credential changes run through the browser and Access, then land in Governance.** To add a
+    passkey or link a social account, Governance redirects the browser to an Access ceremony; Access
+    verifies, signs the record and registers it in Governance; the browser returns to Governance.
+    Governance never writes a credential on its own. To remove a credential, Governance marks its own
+    record revoked (later lookups refuse it) and, when existing sessions must end at once, also sends
+    a revocation command.
+
 ## Consequences
 
 - Access loses its settings, profile and avatar code and databases. Features still needed move to

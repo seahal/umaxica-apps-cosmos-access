@@ -50,10 +50,12 @@ class RetainableTest < ActiveSupport::TestCase
   end
 
   test "persistent retainable records use semantic retention column names" do
-    assert_includes Client.column_names, "discard_at"
-    assert_includes Client.column_names, "purge_eligible_at"
-    assert_not_includes Client.column_names, "discarded_at"
-    assert_not_includes Client.column_names, "purged_at"
+    [ClientStepUpSession, OperatorStepUpSession].each do |model|
+      assert_includes model.column_names, "discard_at"
+      assert_includes model.column_names, "purge_eligible_at"
+      assert_not_includes model.column_names, "discarded_at"
+      assert_not_includes model.column_names, "purged_at"
+    end
   end
 
   test "accessible? returns true if discard_at is in the future" do

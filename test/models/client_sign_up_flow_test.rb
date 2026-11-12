@@ -64,4 +64,38 @@ class ClientSignUpFlowTest < ActiveSupport::TestCase
     assert_equal binding.curfew_at.to_i, flow.reload.expires_at.to_i,
                  "the Flow's expiry must not outlive its Admission Binding curfew"
   end
+  test "historical principal data remains mutable for local terminal lifecycle without Zenith" do
+    binding = SignUpAdmissionTestFactory.binding_for!(ClientSignUpFlow)
+    flow = ClientSignUpFlow.create!(
+      auth_admission_binding: binding, principal_id: 9_876_543, entry_method: "email", step: "start",
+      nonce_digest: "c" * 64, status_id: ClientSignUpFlowStatus::STARTED,
+      cleanup_status_id: ClientSignUpFlowCleanupStatus::IDLE,
+    )
+    flow.update!(return_to: "/history")
+    flow.cancel_sign_up!
+
+    assert_predicate flow.reload, :sign_up_cancelled?
+    assert_equal 9_876_543, flow.principal_id
+    assert_equal "/history", flow.return_to
+    assert_not_nil flow.cancelled_at
+    # Historical scalar identity does not authorize a cross-store ORM lookup.
+    assert_nil ClientSignUpFlow.reflect_on_association(:principal)
+  end
+
+  test "registration reconciliation and new forward progress require Governance authority" do
+    binding = SignUpAdmissionTestFactory.binding_for!(ClientSignUpFlow)
+    flow = ClientSignUpFlow.create!(
+      auth_admission_binding: binding, principal_id: 9_876_543, entry_method: "email", step: "start",
+      nonce_digest: "d" * 64, status_id: ClientSignUpFlowStatus::STARTED,
+      cleanup_status_id: ClientSignUpFlowCleanupStatus::IDLE,
+    )
+    before = flow.reload.attributes
+
+    assert_raises(GovernanceLookupUnavailableError) { flow.registration_completion }
+    assert_raises(GovernanceLookupUnavailableError) { flow.lock_registration_parent! }
+    assert_raises(GovernanceLookupUnavailableError) { flow.require_registration_authority! }
+    assert_raises(GovernanceLookupUnavailableError) { flow.advance_sign_up_to_contact! }
+    assert_raises(GovernanceLookupUnavailableError) { flow.complete_sign_up! }
+    assert_equal before, flow.reload.attributes
+  end
 end

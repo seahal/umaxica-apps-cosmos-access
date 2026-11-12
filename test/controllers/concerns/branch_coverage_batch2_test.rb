@@ -18,9 +18,4 @@ class BranchCoverageBatch2Test < ActiveSupport::TestCase
     assert_predicate token2, :expired?
   end
 
-  test "Avatar current binding nil for unpersisted records" do
-    avatar = Avatar.new
-
-    assert_nil avatar.current_avatar_persona_binding
-  end
 end

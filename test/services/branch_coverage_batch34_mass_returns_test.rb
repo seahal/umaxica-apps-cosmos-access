@@ -6,18 +6,6 @@ require "test_helper"
 class BranchCoverageBatch34MassReturnsTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
-  test "AuthenticationSelectedSessionRevoker missing token" do
-    result = AuthenticationSelectedSessionRevoker.call(
-      owner: Client.new(security_mode_id: SecurityModeConfigurable::NORMAL), token: nil,
-    )
-
-    assert_equal :failure, result.status
-  end
-
-  test "StepUpAvailableMethods blank subject" do
-    assert_equal [], StepUpAvailableMethods.call(nil)
-  end
-
   test "JumpRtReturnPolicy normalize_origin rejection arms" do
     assert_nil JumpRtReturnPolicy.normalize_origin("ftp://x")
     assert_nil JumpRtReturnPolicy.normalize_origin("not a uri")

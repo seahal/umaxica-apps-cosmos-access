@@ -34,13 +34,8 @@ class PrimaryDatabaseOwnershipTest < ActiveSupport::TestCase
     assert_kind_of Flipper::Adapters::Memory, adapter
   end
 
-  test "specialized record classes keep their existing databases" do
-    assert_equal "publishing", PublishingRecord.connection_db_config.name
-    assert_equal "app_setting", AppSettingRecord.connection_db_config.name
-    assert_equal "com_setting", ComSettingRecord.connection_db_config.name
-    assert_equal "org_setting", OrgSettingRecord.connection_db_config.name
+  test "retained specialized record classes keep their existing databases" do
     assert_equal "chronicle", ChronicleRecord.connection_db_config.name
     assert_equal "occurrence", OccurrenceRecord.connection_db_config.name
-    assert_equal "avatar", AvatarRecord.connection_db_config.name
   end
 end

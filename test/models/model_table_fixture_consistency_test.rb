@@ -11,8 +11,6 @@ class ModelTableFixtureConsistencyTest < ActiveSupport::TestCase
   RETAINED_TABLE_NAMES = {
     "ClientPersona" => "personas",
     "OperatorOrganization" => "organizations",
-    "AppIdentityAuthenticationEvent" => "identity_authentication_events",
-    "OrgIdentityAuthenticationEvent" => "identity_authentication_events",
     "OpAppConsumedJti" => "op_consumed_jtis",
     "OpOrgConsumedJti" => "op_consumed_jtis",
     "OpAppInboundEventReceipt" => "op_inbound_event_receipts",

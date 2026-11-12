@@ -7,15 +7,11 @@ require "test_helper"
 class ApplicationHelperTest < ActionView::TestCase
   include ActiveSupport::Testing::TimeHelpers
 
-  fixtures :client_banners, :operator_banners, :clients, :client_statuses, :operators,
-           :operator_statuses
-
   setup do
     @helper_context = view
     @helper_context.extend(ApplicationHelper)
     define_singleton_method(:theme_cookie_value) { |value = nil| @helper_context.theme_cookie_value(value) }
     define_singleton_method(:theme_html_class) { |value = nil| @helper_context.theme_html_class(value) }
-    define_singleton_method(:current_banner_for) { |**kwargs| @helper_context.current_banner_for(**kwargs) }
   end
 
   test "theme_cookie_value maps the Preference theme codes and names" do
@@ -66,53 +62,4 @@ class ApplicationHelperTest < ActionView::TestCase
 
     assert_predicate view.page_title, :blank?
   end
-
-  test "current_banner_for returns current banner for each surface" do
-    travel_to Time.zone.parse("2026-03-18 00:00:00 UTC") do
-      assert_equal client_banners(:newer_current_user_banner), current_banner_for(tld: :app, region: :jp, domain: :news)
-      assert_equal operator_banners(:current_staff_banner), current_banner_for(tld: :org, region: :jp, domain: :news)
-    end
-  end
-
-  test "current_banner_for uses the writing connection" do
-    travel_to Time.zone.parse("2026-03-18 00:00:00 UTC") do
-      roles = []
-
-      AppZenithRecord.stub(
-        :connected_to, ->(role:, &block) do
-                         roles << role
-                         block.call
-                       end,
-      ) do
-        assert_equal client_banners(:newer_current_user_banner),
-                     current_banner_for(tld: :app, region: :jp, domain: :news)
-      end
-
-      assert_equal [:writing], roles
-    end
-  end
-
-  test "current_banner_for returns nil when the connection is unavailable" do
-    travel_to Time.zone.parse("2026-03-18 00:00:00 UTC") do
-      AppZenithRecord.stub(
-        :connected_to,
-        ->(*) {
-          raise ActiveRecord::ConnectionNotEstablished
-        },
-      ) do
-        assert_nil current_banner_for(tld: :app, region: :jp, domain: :news)
-      end
-    end
-  end
-
-  test "current_banner_for normalizes a :global region to :ww for sign and acme domains" do
-    travel_to Time.zone.parse("2026-03-18 00:00:00 UTC") do
-      assert_equal client_banners(:newer_current_user_banner),
-                   current_banner_for(tld: :app, region: :global, domain: :sign)
-      assert_equal client_banners(:newer_current_user_banner),
-                   current_banner_for(tld: :app, region: :global, domain: :acme)
-    end
-  end
-
-  private
 end

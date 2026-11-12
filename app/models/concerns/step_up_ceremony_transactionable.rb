@@ -154,6 +154,8 @@ module StepUpCeremonyTransactionable
         # @deprecated `required_aal` is retained as a non-authoritative label until the removal
         # ledger permits dropping the column. Explicit AAL demands never reach this writer.
         required_aal: StepUpRequirement::NO_AAL,
+        evidence_state_id: IdentityStepUpCeremonyContract::EVIDENCE_ABSENT,
+        user_verified: false,
         step_up_required: step_up_required,
         user_verification_required: user_verification_required,
         full_reauthentication_required: full_reauthentication_required,
@@ -203,8 +205,6 @@ module StepUpCeremonyTransactionable
 
   def verified? = status == STATUS_VERIFIED
 
-  # FIXME: Remediation D6 retains nil user_verified before evidence exists; reconcile the checker
-  # without changing pending transactions into recorded negative verification.
   def record_verification!(method:, aal:, phishing_resistant:, user_verified:, verified_at:, verified_credential_ref:)
     self.class.connection_owner.connected_to(role: :writing) do
       with_lock do
@@ -230,6 +230,7 @@ module StepUpCeremonyTransactionable
           method: method.to_s,
           aal: aal.to_s,
           phishing_resistant: phishing_resistant,
+          evidence_state_id: IdentityStepUpCeremonyContract::EVIDENCE_RECORDED,
           user_verified: user_verified,
           verified_at: verified_at,
           result_jti: SecureRandom.uuid,
@@ -257,6 +258,7 @@ module StepUpCeremonyTransactionable
 
         write_status!(
           STATUS_VERIFIED, method: method, aal: "none", phishing_resistant: false, user_verified: false,
+                           evidence_state_id: IdentityStepUpCeremonyContract::EVIDENCE_RECORDED,
                            verified_at: verified_at, result_jti: SecureRandom.uuid, verified_credential_ref: nil,
         )
         self
@@ -449,6 +451,7 @@ module StepUpCeremonyTransactionable
     if status == STATUS_PENDING
       attributes.merge!(
         method: method, aal: "none", phishing_resistant: false, user_verified: false,
+        evidence_state_id: IdentityStepUpCeremonyContract::EVIDENCE_RECORDED,
         verified_at: now, result_jti: SecureRandom.uuid,
       )
     end
@@ -561,6 +564,19 @@ module StepUpCeremonyTransactionable
     return unless %w(step_up reauthentication).include?(purpose) && verified_credential_ref.blank?
 
     errors.add(:verified_credential_ref, "is required for step-up consumption")
+  end
+
+  def evidence_state_matches_verification
+    if evidence_state_id == IdentityStepUpCeremonyContract::EVIDENCE_ABSENT && user_verified != false
+      errors.add(:evidence_state_id, :invalid)
+    end
+    if status == STATUS_PENDING && evidence_state_id != IdentityStepUpCeremonyContract::EVIDENCE_ABSENT
+      errors.add(:evidence_state_id, :invalid)
+    end
+    if [STATUS_VERIFIED, STATUS_CONSUMED].include?(status) &&
+        evidence_state_id != IdentityStepUpCeremonyContract::EVIDENCE_RECORDED
+      errors.add(:evidence_state_id, :invalid)
+    end
   end
 
   def cancellation_handoff_fields_are_consistent

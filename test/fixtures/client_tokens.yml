@@ -77,7 +77,7 @@
 one:
   authentication_epoch: 0
   public_id: "651xxxxxxxxxxxxxxxxxx" # was one_user_token_000001
-  user: one
+  user_id: <%= ActiveRecord::FixtureSet.identify(:one) %>
   device_session_id: <%= ActiveRecord::FixtureSet.identify(:one) %>
   user_token_binding_method_id: <%= ClientTokenBindingMethod::NOTHING %>
   user_token_dbsc_status_id: <%= ClientTokenDbscStatus::NOTHING %>
@@ -90,7 +90,7 @@ one:
 two:
   authentication_epoch: 0
   public_id: "615xxxxxxxxxxxxxxxxxx" # was two_user_token_000001
-  user: two
+  user_id: <%= ActiveRecord::FixtureSet.identify(:two) %>
   device_session_id: <%= ActiveRecord::FixtureSet.identify(:two) %>
   user_token_binding_method_id: <%= ClientTokenBindingMethod::NOTHING %>
   user_token_dbsc_status_id: <%= ClientTokenDbscStatus::NOTHING %>

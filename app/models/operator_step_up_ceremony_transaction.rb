@@ -32,7 +32,7 @@
 #  status          :string           default("pending"), not null
 #  surface         :string           not null
 #  verified_at     :datetime
-#  user_verified   :boolean
+#  user_verified   :boolean          default(FALSE), not null
 #  created_at      :datetime         not null
 #  updated_at      :datetime         not null
 #  transaction_id  :string           not null
@@ -51,7 +51,13 @@ class OperatorStepUpCeremonyTransaction < OpBaseOrgRecord
 
   ceremony_surface "org"
 
+  belongs_to :evidence_state, class_name: "OperatorStepUpEvidenceState", inverse_of: :ceremony_transactions
+  validates :evidence_state_id, inclusion: { in: IdentityStepUpCeremonyContract::EVIDENCE_STATES }
+  validates :user_verified, inclusion: { in: [true, false] }
+  validate :evidence_state_matches_verification
+
   validates :cancellation_handoff_digest, :result_digest, length: { maximum: 64 }
+  validates :cancellation_handoff_ref, :cancellation_handoff_digest, :result_digest, uniqueness: true, allow_nil: true
 
   private
 

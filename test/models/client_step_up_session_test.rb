@@ -30,14 +30,11 @@
 require "test_helper"
 
 class ClientStepUpSessionTest < ActiveSupport::TestCase
-  fixtures :client_statuses, :client_visibilities, :client_security_modes, :client_mfa_statuses
+  self.fixture_table_names = []
 
   setup do
-    @user = Client.create!(
-      security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
-      visibility_id: ClientVisibility::BOTH,
-    )
-    @user_token = ClientToken.create!(authentication_epoch: 0, user: @user)
+    @user_id = 9_000_000_001
+    @user_token = create_client_token
     @valid_params = {
       user_token: @user_token,
       scope: "account_update",
@@ -88,17 +85,16 @@ class ClientStepUpSessionTest < ActiveSupport::TestCase
   end
 
   test "database rejects retention order when validations are bypassed" do
-    session = ClientStepUpSession.new(
-      @valid_params.merge(
-        discard_at: 2.days.from_now,
-        purge_eligible_at: 1.day.from_now,
-      ),
-    )
+    session = ClientStepUpSession.create!(@valid_params)
     exception_classes = [ActiveRecord::StatementInvalid]
     exception_classes << ActiveRecord::CheckConstraintViolation if defined?(ActiveRecord::CheckConstraintViolation)
 
     assert_raises(*exception_classes) do
-      ActiveRecord::Base.logger.silence { session.save!(validate: false) }
+      ClientStepUpSession.transaction(requires_new: true) do
+        ClientStepUpSession.where(id: session.id).update_all(
+          discard_at: 2.days.from_now, purge_eligible_at: 1.day.from_now,
+        )
+      end
     end
   end
 
@@ -122,11 +118,21 @@ class ClientStepUpSessionTest < ActiveSupport::TestCase
   end
 
   test "same actor can have independent token-bound tickets" do
-    other_token = ClientToken.create!(authentication_epoch: 0, user: @user)
+    other_token = create_client_token
     first = ClientStepUpSession.create!(@valid_params)
     second = ClientStepUpSession.create!(@valid_params.merge(user_token: other_token, return_to: "/other"))
 
     assert_equal [first, second].sort,
                  ClientStepUpSession.where(user_token_id: [@user_token.id, other_token.id]).to_a.sort
+  end
+
+  private
+
+  def create_client_token
+    device = ClientDeviceSession.create!(user_id: @user_id, principal_public_id: "client-#{@user_id}")
+    ClientToken.create!(
+      authentication_epoch: 0, user_id: @user_id, device_session: device,
+      user_token_status_id: ClientTokenStatus::ACTIVE,
+    )
   end
 end

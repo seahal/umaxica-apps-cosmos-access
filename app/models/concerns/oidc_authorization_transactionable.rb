@@ -39,7 +39,7 @@ module OidcAuthorizationTransactionable
     validates :surface, inclusion: { in: %w(app org) }
     validates :intent, inclusion: { in: %w(authentication sign_in sign_up invitation reauthentication step_up) }
     validates :response_type, inclusion: { in: ["code"] }
-    validates :oidc_prompt, inclusion: { in: OidcAuthorizeRequestResolver::SUPPORTED_PROMPTS }, allow_nil: true
+    validates :oidc_prompt, inclusion: { in: OidcAuthorizationRequestMetadataValue::SUPPORTED_PROMPTS }, allow_nil: true
     validates :oidc_max_age, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
     validates :code_challenge_method, inclusion: { in: ["S256"] }
     validates :status_id, inclusion: { in: STATUS_IDS }
@@ -369,7 +369,7 @@ module OidcAuthorizationTransactionable
       prompt: oidc_prompt,
       max_age: oidc_max_age,
     }.compact
-    params[:claims] = OidcAuthorizeRequestResolver::STEP_UP_CLAIMS if intent == "step_up"
+    params[:claims] = OidcAuthorizationRequestMetadataValue::STEP_UP_CLAIMS if intent == "step_up"
     params
   end
 

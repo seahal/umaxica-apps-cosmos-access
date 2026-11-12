@@ -4,6 +4,10 @@
 require "jwt"
 
 module IdentityStepUpCeremonyContract
+  EVIDENCE_ABSENT = 10
+  EVIDENCE_RECORDED = 20
+  EVIDENCE_STATES = [EVIDENCE_ABSENT, EVIDENCE_RECORDED].freeze
+
   # Internal refusal taxonomy for ceremony logs. A code names why a request was refused; it is never
   # an HTTP status and never part of a response body.
   REFUSAL_CODES = %w(

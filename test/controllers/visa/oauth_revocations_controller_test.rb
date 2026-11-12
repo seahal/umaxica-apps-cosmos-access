@@ -3,10 +3,7 @@
 require "test_helper"
 
 class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
-  fixtures :clients, :client_statuses, :client_token_kinds, :client_token_statuses,
-           :client_token_binding_methods, :client_token_dbsc_statuses,
-           :operators, :operator_statuses, :operator_token_kinds, :operator_token_statuses,
-           :operator_token_binding_methods, :operator_token_dbsc_statuses
+  self.fixture_table_names = []
 
   APP_CLIENT_ID = "core-app-jp"
   ORG_CLIENT_ID = "core-org-jp"
@@ -16,23 +13,27 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     host! host
     https!
     root = ClientToken.create!(
-      authentication_epoch: 0, user: clients(:one), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, user_id: 9_700_001, device_session: ClientDeviceSession.create!(
+        user_id: 9_700_001, principal_public_id: "existing-client-one",
+      ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     target = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: root, oidc_client_id: APP_CLIENT_ID, oidc_scope: "openid",
+      authentication_epoch: 0, client_token_id: root.id, oidc_client_id: APP_CLIENT_ID, oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     sibling = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: root, oidc_client_id: "warp-app-jp", oidc_scope: "openid",
+      authentication_epoch: 0, client_token_id: root.id, oidc_client_id: "warp-app-jp", oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     other_realm_root = OperatorToken.create!(
-      authentication_epoch: 0, staff: operators(:one), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
+        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     other_realm_grant = OpOrgGrant.create!(
-      authentication_epoch: 0, operator_token: other_realm_root, oidc_client_id: ORG_CLIENT_ID,
+      authentication_epoch: 0, operator_token_id: other_realm_root.id, oidc_client_id: ORG_CLIENT_ID,
       oidc_scope: "openid", oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     refresh_token = target.issue_refresh_token!
@@ -76,23 +77,27 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     host! host
     https!
     root = OperatorToken.create!(
-      authentication_epoch: 0, staff: operators(:one), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
+        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     target = OpOrgGrant.create!(
-      authentication_epoch: 0, operator_token: root, oidc_client_id: ORG_CLIENT_ID, oidc_scope: "openid",
+      authentication_epoch: 0, operator_token_id: root.id, oidc_client_id: ORG_CLIENT_ID, oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     sibling = OpOrgGrant.create!(
-      authentication_epoch: 0, operator_token: root, oidc_client_id: "warp-org-jp", oidc_scope: "openid",
+      authentication_epoch: 0, operator_token_id: root.id, oidc_client_id: "warp-org-jp", oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     other_realm_root = ClientToken.create!(
-      authentication_epoch: 0, user: clients(:two), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, user_id: 9_700_002, device_session: ClientDeviceSession.create!(
+        user_id: 9_700_002, principal_public_id: "existing-client-two",
+      ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     other_realm_grant = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: other_realm_root, oidc_client_id: APP_CLIENT_ID,
+      authentication_epoch: 0, client_token_id: other_realm_root.id, oidc_client_id: APP_CLIENT_ID,
       oidc_scope: "openid", oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     refresh_token = target.issue_refresh_token!
@@ -138,11 +143,13 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     endpoint = OidcIssuer.revocation_endpoint("client")
     token_endpoint = OidcIssuer.token_endpoint("client")
     root = ClientToken.create!(
-      authentication_epoch: 0, user: clients(:one), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, user_id: 9_700_001, device_session: ClientDeviceSession.create!(
+        user_id: 9_700_001, principal_public_id: "existing-client-one",
+      ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     target = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: root, oidc_client_id: APP_CLIENT_ID, oidc_scope: "openid",
+      authentication_epoch: 0, client_token_id: root.id, oidc_client_id: APP_CLIENT_ID, oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     target_refresh = target.issue_refresh_token!
@@ -238,11 +245,13 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     https!
     endpoint = OidcIssuer.revocation_endpoint("operator")
     root = OperatorToken.create!(
-      authentication_epoch: 0, staff: operators(:one), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
+        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     target = OpOrgGrant.create!(
-      authentication_epoch: 0, operator_token: root, oidc_client_id: ORG_CLIENT_ID, oidc_scope: "openid",
+      authentication_epoch: 0, operator_token_id: root.id, oidc_client_id: ORG_CLIENT_ID, oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     target_refresh = target.issue_refresh_token!
@@ -388,11 +397,13 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     https!
     endpoint = OidcIssuer.revocation_endpoint("operator")
     root = OperatorToken.create!(
-      authentication_epoch: 0, staff: operators(:one), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
+        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     target = OpOrgGrant.create!(
-      authentication_epoch: 0, operator_token: root, oidc_client_id: ORG_CLIENT_ID, oidc_scope: "openid",
+      authentication_epoch: 0, operator_token_id: root.id, oidc_client_id: ORG_CLIENT_ID, oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     stop_count = OpOrgAuthorityStop.where(authority_evidence_ref: "oauth_revocation:#{ORG_CLIENT_ID}").count
@@ -583,23 +594,27 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     host! host
     https!
     root = ClientToken.create!(
-      authentication_epoch: 0, user: clients(:one), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, user_id: 9_700_001, device_session: ClientDeviceSession.create!(
+        user_id: 9_700_001, principal_public_id: "existing-client-one",
+      ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     target = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: root, oidc_client_id: APP_CLIENT_ID, oidc_scope: "openid",
+      authentication_epoch: 0, client_token_id: root.id, oidc_client_id: APP_CLIENT_ID, oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     sibling = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: root, oidc_client_id: "warp-app-jp", oidc_scope: "openid",
+      authentication_epoch: 0, client_token_id: root.id, oidc_client_id: "warp-app-jp", oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     other_realm_root = OperatorToken.create!(
-      authentication_epoch: 0, staff: operators(:one), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
+        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     other_realm_grant = OpOrgGrant.create!(
-      authentication_epoch: 0, operator_token: other_realm_root, oidc_client_id: ORG_CLIENT_ID,
+      authentication_epoch: 0, operator_token_id: other_realm_root.id, oidc_client_id: ORG_CLIENT_ID,
       oidc_scope: "openid", oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     target.issue_refresh_token!
@@ -607,11 +622,11 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     other_realm_refresh = other_realm_grant.issue_refresh_token!
     client = OidcClientRegistry.find!(APP_CLIENT_ID)
     invalid_access_token = AuthenticationTokenService.encode(
-      clients(:one), host:, resource_type: "client", session_public_id: root.public_id,
-                     base_session_public_id: root.public_id, oidc_sid: target.public_id, oidc_jti: SecureRandom.uuid,
-                     expires_at: 1.minute.from_now, scopes: ["openid"], issuer: OidcIssuer.for_client(client),
-                     audiences: [client.aud], jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(client),
-                     subject: OidcSubject.for(clients(:one), resource_type: "client"), client_id: APP_CLIENT_ID,
+      nil, host:, resource_type: "client", session_public_id: root.public_id,
+           base_session_public_id: root.public_id, oidc_sid: target.public_id, oidc_jti: SecureRandom.uuid,
+           expires_at: 1.minute.from_now, scopes: ["openid"], issuer: OidcIssuer.for_client(client),
+           audiences: [client.aud], jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(client),
+           subject: "cli_#{root.device_session.principal_public_id}", client_id: APP_CLIENT_ID,
     )
     invalid_targets = [
       target.public_id, "#{target.public_id}:wrong-verifier", sibling_refresh, other_realm_refresh,
@@ -644,11 +659,13 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     host! host
     https!
     root = ClientToken.create!(
-      authentication_epoch: 0, user: clients(:one), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, user_id: 9_700_001, device_session: ClientDeviceSession.create!(
+        user_id: 9_700_001, principal_public_id: "existing-client-one",
+      ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     target = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: root, oidc_client_id: APP_CLIENT_ID, oidc_scope: "openid",
+      authentication_epoch: 0, client_token_id: root.id, oidc_client_id: APP_CLIENT_ID, oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     target_refresh = target.issue_refresh_token!
@@ -694,15 +711,17 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     host! host
     https!
     root = ClientToken.create!(
-      authentication_epoch: 0, user: clients(:one), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, user_id: 9_700_001, device_session: ClientDeviceSession.create!(
+        user_id: 9_700_001, principal_public_id: "existing-client-one",
+      ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     target = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: root, oidc_client_id: APP_CLIENT_ID, oidc_scope: "openid",
+      authentication_epoch: 0, client_token_id: root.id, oidc_client_id: APP_CLIENT_ID, oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     sibling = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: root, oidc_client_id: "warp-app-jp", oidc_scope: "openid",
+      authentication_epoch: 0, client_token_id: root.id, oidc_client_id: "warp-app-jp", oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     target_refresh = target.issue_refresh_token!
@@ -746,28 +765,32 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     host! host
     https!
     root = OperatorToken.create!(
-      authentication_epoch: 0, staff: operators(:one), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
+        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     target = OpOrgGrant.create!(
-      authentication_epoch: 0, operator_token: root, oidc_client_id: ORG_CLIENT_ID, oidc_scope: "openid",
+      authentication_epoch: 0, operator_token_id: root.id, oidc_client_id: ORG_CLIENT_ID, oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     foreign = OpOrgGrant.create!(
-      authentication_epoch: 0, operator_token: root, oidc_client_id: "warp-org-jp", oidc_scope: "openid",
+      authentication_epoch: 0, operator_token_id: root.id, oidc_client_id: "warp-org-jp", oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     app_root = ClientToken.create!(
-      authentication_epoch: 0, user: clients(:two), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, user_id: 9_700_002, device_session: ClientDeviceSession.create!(
+        user_id: 9_700_002, principal_public_id: "existing-client-two",
+      ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     app_grant = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: app_root, oidc_client_id: APP_CLIENT_ID, oidc_scope: "openid",
+      authentication_epoch: 0, client_token_id: app_root.id, oidc_client_id: APP_CLIENT_ID, oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     client = OidcClientRegistry.find!(ORG_CLIENT_ID)
     invalid_access_token = AuthenticationTokenService.encode(
-      operators(:one),
+      nil,
       host: URI.parse(client.redirect_uris.first).host,
       resource_type: "operator",
       session_public_id: root.public_id,
@@ -779,7 +802,7 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
       issuer: OidcIssuer.for_client(client),
       audiences: [client.aud],
       jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(client),
-      subject: OidcSubject.for(operators(:one), resource_type: "operator"),
+      subject: "opr_#{root.device_session.principal_public_id}",
       client_id: ORG_CLIENT_ID,
     )
     target_refresh = target.issue_refresh_token!
@@ -922,15 +945,17 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     host! host
     https!
     root = OperatorToken.create!(
-      authentication_epoch: 0, staff: operators(:one), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
+        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     target = OpOrgGrant.create!(
-      authentication_epoch: 0, operator_token: root, oidc_client_id: ORG_CLIENT_ID, oidc_scope: "openid",
+      authentication_epoch: 0, operator_token_id: root.id, oidc_client_id: ORG_CLIENT_ID, oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     sibling = OpOrgGrant.create!(
-      authentication_epoch: 0, operator_token: root, oidc_client_id: "warp-org-jp", oidc_scope: "openid",
+      authentication_epoch: 0, operator_token_id: root.id, oidc_client_id: "warp-org-jp", oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     refresh_token = target.issue_refresh_token!
@@ -993,11 +1018,13 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "injected assertion store failure"
 
     root = ClientToken.create!(
-      authentication_epoch: 0, user: clients(:one), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, user_id: 9_700_001, device_session: ClientDeviceSession.create!(
+        user_id: 9_700_001, principal_public_id: "existing-client-one",
+      ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     target = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: root, oidc_client_id: APP_CLIENT_ID, oidc_scope: "openid",
+      authentication_epoch: 0, client_token_id: root.id, oidc_client_id: APP_CLIENT_ID, oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     target_refresh = target.issue_refresh_token!
@@ -1057,11 +1084,13 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "injected assertion store failure"
 
     root = OperatorToken.create!(
-      authentication_epoch: 0, staff: operators(:one), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
+      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
+        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
     target = OpOrgGrant.create!(
-      authentication_epoch: 0, operator_token: root, oidc_client_id: ORG_CLIENT_ID, oidc_scope: "openid",
+      authentication_epoch: 0, operator_token_id: root.id, oidc_client_id: ORG_CLIENT_ID, oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     target_refresh = target.issue_refresh_token!

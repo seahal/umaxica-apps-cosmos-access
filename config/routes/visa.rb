@@ -19,7 +19,7 @@ scope(module: :visa, as: :visa) do
           :ceremony_binding_confirmation,
           only: :show,
           path: "ceremony_bindings/:binding_ref/confirmation",
-          controller: :ceremony_binding_confirmations,
+          controller: "/visa/#{surface_namespace}/unavailable_ceremonies",
         )
 
         namespace(:well_known, path: ".well-known") do
@@ -39,6 +39,7 @@ scope(module: :visa, as: :visa) do
         end
         namespace(:api) do
           namespace(:v0) do
+            resources(:revocation_commands, only: :create)
             resource(:health, only: :show, path: "health.json", format: false)
             resource(:revision, only: :show, path: "revision.json", format: false)
             resources(:sensitive_admissions, only: :create)
@@ -54,7 +55,10 @@ scope(module: :visa, as: :visa) do
         resource(:csp_violation_report, only: :create, path: "csp-violation-report")
 
         namespace(:oauth) do
-          resource(:authorization, only: %i(show create), path: "authorize", controller: :authorizations)
+          resource(
+            :authorization, only: %i(show create), path: "authorize",
+                            controller: "/visa/#{surface_namespace}/unavailable_ceremonies",
+          )
           resource(:token, only: :create, controller: :tokens)
           resource(:userinfo, only: %i(show create), controller: :userinfos)
           resource(:revocation, only: :create, path: "revoke", controller: :revocations)
@@ -66,17 +70,19 @@ scope(module: :visa, as: :visa) do
             resource :confirmation, only: :create
             resource :completion, only: :show
           end
-          resource(:result, only: :show, controller: :results)
-          resource(:cancellation, only: :show, controller: :cancellations)
+          resource(:result, only: :show, controller: "/visa/#{surface_namespace}/unavailable_ceremonies")
+          resource(:cancellation, only: :show, controller: "/visa/#{surface_namespace}/unavailable_ceremonies")
           if surface_namespace != :org
-            resource(:switch, only: :show, controller: :switches)
+            resource(:switch, only: :show, controller: "/visa/#{surface_namespace}/unavailable_ceremonies")
           end
         end
 
         namespace :sign do
           namespace :in do
-            resource :limitation, only: %i(show update destroy), controller: :limitations
-            post "limitation", to: "limitations#update", as: :limitation_continue
+            resource :limitation, only: %i(show update destroy),
+                                  controller: "/visa/#{surface_namespace}/unavailable_ceremonies"
+            post "limitation", to: "/visa/#{surface_namespace}/unavailable_ceremonies#update",
+                               as: :limitation_continue
           end
         end
 

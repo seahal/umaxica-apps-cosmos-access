@@ -35,7 +35,8 @@
 class ClientDeviceSession < OpBaseAppRecord
   include DeviceSessionable
 
-  belongs_to :user, class_name: "Client", inverse_of: :client_device_sessions
+  attr_readonly :principal_public_id
+
   # Nullable in the schema and legitimately blank for fallback (non-DBSC)
   # sessions and before the first refresh rotation. Marking it required made
   # `revoke!` (an `update!`) fail validation on such sessions, so sign-out could
@@ -47,6 +48,9 @@ class ClientDeviceSession < OpBaseAppRecord
   has_many :op_app_grants, foreign_key: :device_session_id,
                            dependent: :restrict_with_exception,
                            inverse_of: :client_device_session
+
+  validates :user_id, presence: true
+  validates :principal_public_id, presence: true, length: { maximum: 255 }
 
   # Unique indexes that include the primary key back composite references; checked only for an explicit id.
   validates :id, uniqueness: { scope: %i(user_id) }, allow_nil: true, if: :will_save_change_to_id?

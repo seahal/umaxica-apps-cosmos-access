@@ -7,74 +7,24 @@ require "test_helper"
 class ActionPolicyUsageTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
-  SURFACE_AUTHORIZATION_CONTEXTS = {
-    Auth::App::ApplicationController => { actor: :current_actor, user: :current_policy_user },
-    Auth::Org::ApplicationController => { actor: :current_actor, user: :current_policy_user },
-    Visa::App::AuthorityController => { actor: :current_actor, user: :current_policy_user },
-    Visa::Org::AuthorityController => { actor: :current_actor, user: :current_policy_user },
-  }.freeze
+  OP_AUTHORITY_CONTROLLERS = [Visa::App::AuthorityController, Visa::Org::AuthorityController].freeze
 
   MUTATION_ACTIONS = %w(create update destroy).freeze
 
-  PRIVATE_MUTATION_AUTHORIZATION_EXCEPTIONS = [
-    # Sign/settings ceremony endpoints are protected by ceremony state, provider ownership,
-    # WebAuthn/passkey challenge state, or recovery/removal sequence gates rather than a durable
-    # domain record policy at the controller action boundary.
-    "app/controllers/auth/app/settings/apples_controller.rb#create",
-    "app/controllers/auth/app/settings/apples_controller.rb#destroy",
-    "app/controllers/auth/app/settings/googles_controller.rb#create",
-    "app/controllers/auth/app/settings/googles_controller.rb#destroy",
+  PRIVATE_MUTATION_AUTHORIZATION_EXCEPTIONS = [].freeze
 
-    # Sign-in verification and cancellation ceremony endpoints are guarded by active flow,
-    # checkpoint, and verification state rather than standalone mutable resource records.
-    "app/controllers/auth/app/sign/in/checks_controller.rb#destroy",
-    "app/controllers/auth/app/sign/in/checks_controller.rb#update",
-    "app/controllers/auth/app/verification/emails_controller.rb#create",
-    "app/controllers/auth/app/verification/emails_controller.rb#update",
-    # Scoped verification endpoints authorize the admitted actor through their ceremony context;
-    # the mutation applies to ceremony state rather than a standalone resource record.
-    "app/controllers/auth/app/verification/passkeys_controller.rb#create",
-    "app/controllers/auth/app/verification/redeliveries_controller.rb#create",
-    "app/controllers/auth/app/verification/totps_controller.rb#create",
-    "app/controllers/auth/org/sign/in/checks_controller.rb#destroy",
-    "app/controllers/auth/org/sign/in/checks_controller.rb#update",
-
-    # Identity registration and credential ceremony endpoints are sequence-bound controllers.
-    # They create or complete pending identity artifacts scoped to the authenticated actor.
-
-    # Session and revocation endpoints scope queries through the current actor's sessions or
-    # support emergency revocation concern before mutating; keep these explicit until converted.
-
-  ].freeze
-
-  test "authenticated surface controllers use Action Policy with explicit actor context" do
-    SURFACE_AUTHORIZATION_CONTEXTS.each do |controller_class, expected_context|
-      assert_includes controller_class.ancestors,
-                      ActionPolicy::Controller,
-                      "#{controller_class.name} must include ActionPolicy::Controller"
-      assert_equal(
-        expected_context,
-        controller_class.instance_variable_get(:@authorization_targets),
-        "#{controller_class.name} must configure Action Policy actor and compatibility user contexts",
-      )
-    end
-  end
-
-  test "authenticated surface controllers run access policy before actions" do
-    SURFACE_AUTHORIZATION_CONTEXTS.each_key do |controller_class|
-      before_filters =
-        controller_class._process_action_callbacks.filter_map do |callback|
+  test "OP authorities enforce the explicit crypto boundary instead of a retired actor policy" do
+    OP_AUTHORITY_CONTROLLERS.each do |controller|
+      assert_includes controller.ancestors, OpBrowserSessionRequest
+      assert_not controller.method_defined?(:current_policy_user)
+      assert_not controller.private_method_defined?(:current_policy_user)
+      assert_equal :deny_all, controller.const_get(:AUTHENTICATION_MODE)
+      filters =
+        controller._process_action_callbacks.filter_map do |callback|
           callback.filter if callback.kind == :before
         end
 
-      assert_includes before_filters,
-                      :enforce_access_policy!,
-                      "#{controller_class.name} must run access policy enforcement"
-      assert(
-        controller_class.const_defined?(:AUTHENTICATION_MODE, false) ||
-        controller_class.local_authentication_mode_rules.present?,
-        "#{controller_class.name} must declare an authentication mode",
-      )
+      assert_includes filters, :enforce_op_boundary_mode!
     end
   end
 

@@ -30,16 +30,11 @@
 require "test_helper"
 
 class OperatorStepUpSessionTest < ActiveSupport::TestCase
-  fixtures :operator_statuses, :operator_visibilities, :operator_security_modes,
-           :operator_mfa_statuses
+  self.fixture_table_names = []
 
   setup do
-    OperatorTokenStatus.find_or_create_by!(id: OperatorTokenStatus::ACTIVE)
-    @staff = Operator.create!(
-      security_mode_id: SecurityModeConfigurable::ADVANCED, status_id: OperatorStatus::ACTIVE,
-      visibility_id: OperatorVisibility::BOTH,
-    )
-    @staff_token = OperatorToken.create!(authentication_epoch: 0, staff: @staff)
+    @staff_id = 9_000_000_001
+    @staff_token = create_operator_token
     @valid_params = {
       staff_token: @staff_token,
       scope: "account_update",
@@ -90,17 +85,16 @@ class OperatorStepUpSessionTest < ActiveSupport::TestCase
   end
 
   test "database rejects retention order when validations are bypassed" do
-    session = OperatorStepUpSession.new(
-      @valid_params.merge(
-        discard_at: 2.days.from_now,
-        purge_eligible_at: 1.day.from_now,
-      ),
-    )
+    session = OperatorStepUpSession.create!(@valid_params)
     exception_classes = [ActiveRecord::StatementInvalid]
     exception_classes << ActiveRecord::CheckConstraintViolation if defined?(ActiveRecord::CheckConstraintViolation)
 
     assert_raises(*exception_classes) do
-      ActiveRecord::Base.logger.silence { session.save!(validate: false) }
+      OperatorStepUpSession.transaction(requires_new: true) do
+        OperatorStepUpSession.where(id: session.id).update_all(
+          discard_at: 2.days.from_now, purge_eligible_at: 1.day.from_now,
+        )
+      end
     end
   end
 
@@ -124,16 +118,8 @@ class OperatorStepUpSessionTest < ActiveSupport::TestCase
   end
 
   test "scopes filter and order sessions" do
-    older_staff = Operator.create!(
-      security_mode_id: SecurityModeConfigurable::ADVANCED,
-      status_id: OperatorStatus::ACTIVE, visibility_id: OperatorVisibility::BOTH,
-    )
-    newer_staff = Operator.create!(
-      security_mode_id: SecurityModeConfigurable::ADVANCED,
-      status_id: OperatorStatus::ACTIVE, visibility_id: OperatorVisibility::BOTH,
-    )
-    older_token = OperatorToken.create!(authentication_epoch: 0, staff: older_staff)
-    newer_token = OperatorToken.create!(authentication_epoch: 0, staff: newer_staff)
+    older_token = create_operator_token(staff_id: @staff_id + 1)
+    newer_token = create_operator_token(staff_id: @staff_id + 2)
     older = OperatorStepUpSession.create!(
       @valid_params.merge(
         staff_token: older_token, return_to: "/older", created_at: 2.minutes.ago,
@@ -154,11 +140,21 @@ class OperatorStepUpSessionTest < ActiveSupport::TestCase
   end
 
   test "same actor can have independent token-bound tickets" do
-    other_token = OperatorToken.create!(authentication_epoch: 0, staff: @staff)
+    other_token = create_operator_token
     first = OperatorStepUpSession.create!(@valid_params)
     second = OperatorStepUpSession.create!(@valid_params.merge(staff_token: other_token, return_to: "/other"))
 
     assert_equal [first, second].sort,
                  OperatorStepUpSession.where(staff_token_id: [@staff_token.id, other_token.id]).to_a.sort
+  end
+
+  private
+
+  def create_operator_token(staff_id: @staff_id)
+    device = OperatorDeviceSession.create!(staff_id: staff_id, principal_public_id: "operator-#{staff_id}")
+    OperatorToken.create!(
+      authentication_epoch: 0, staff_id: staff_id, device_session: device,
+      staff_token_status_id: OperatorTokenStatus::ACTIVE,
+    )
   end
 end

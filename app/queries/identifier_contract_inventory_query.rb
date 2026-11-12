@@ -14,18 +14,8 @@ class IdentifierContractInventoryQuery
 
   CONNECTION_SPECS = [
     { name: "primary", record_class: ApplicationRecord, ownership: "application" },
-    { name: "publishing", record_class: PublishingRecord, ownership: "application" },
-    { name: "app_zenith", record_class: AppZenithRecord, ownership: "application" },
-    { name: "org_zenith", record_class: OrgZenithRecord, ownership: "application" },
-    { name: "app_setting", record_class: AppSettingRecord, ownership: "application" },
-    { name: "com_setting", record_class: ComSettingRecord, ownership: "application" },
-    { name: "org_setting", record_class: OrgSettingRecord, ownership: "application" },
-    { name: "search", record_class: SearchRecord, ownership: "application" },
     { name: "op_base_app", record_class: OpBaseAppRecord, ownership: "application" },
     { name: "op_base_org", record_class: OpBaseOrgRecord, ownership: "application" },
-    { name: "app_signal", record_class: AppSignalRecord, ownership: "application" },
-    { name: "org_signal", record_class: OrgSignalRecord, ownership: "application" },
-    { name: "avatar", record_class: AvatarRecord, ownership: "application" },
     { name: "chronicle", record_class: ChronicleRecord, ownership: "application" },
     { name: "occurrence", record_class: OccurrenceRecord, ownership: "application" },
     { name: "queue", ownership: "framework" },

@@ -8,12 +8,12 @@ module Security
     class PrimaryAuthenticationAccountRateLimitInvariantTest < ActiveSupport::TestCase
       self.fixture_table_names = []
 
-      test "app publishes its admitted secret credential ceremony" do
+      test "app retains its secret paths as unavailable ceremony endpoints" do
         host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
         { get: ["/sign/in/secret/new", "new"], post: ["/sign/in/secret", "create"] }.each do |method, (path, action)|
           route = Rails.application.routes.recognize_path("https://#{host}#{path}", method: method)
 
-          assert_equal "auth/app/sign/in/secrets", route.fetch(:controller)
+          assert_equal "auth/app/unavailable_ceremonies", route.fetch(:controller)
           assert_equal action, route.fetch(:action)
         end
       end

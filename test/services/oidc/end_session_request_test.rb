@@ -14,7 +14,7 @@ class OidcEndSessionRequestTest < ActiveSupport::TestCase
 
   setup do
     @client = OidcClientRegistry.find!("core-app-jp")
-    @user = clients(:one)
+    @subject = "cli_#{SecureRandom.alphanumeric(21)}"
     @sid = SecureRandom.uuid
     @request = Request.new(host: URI.parse("//#{OidcIssuer.host_for_resource_type("client")}").host, method: "POST")
     Actor.clear
@@ -69,20 +69,16 @@ class OidcEndSessionRequestTest < ActiveSupport::TestCase
   end
 
   test "returns the grant sid from a verified RP hint for the Visa boundary to authorize" do
-    install_actor_context!
-
     result = call(id_token_hint: id_token(sid: "rp-grant-public-id"))
 
     assert_predicate result, :success?
-    assert_not_predicate result, :requires_confirmation?
     assert_equal :id_token_hint, result.source
     assert_equal @client.client_id, result.client_id
-    assert_equal OidcSubject.for(@user, resource_type: "client"), result.subject
+    assert_equal @subject, result.subject
     assert_equal "rp-grant-public-id", result.sid
   end
 
   test "id_token_hint takes precedence over legacy logout_request" do
-    install_actor_context!
     legacy = OidcLogoutRequest.issue(client_id: "core-app-jp", ri: "jp")
 
     result = call(id_token_hint: id_token, logout_request: legacy)
@@ -93,8 +89,6 @@ class OidcEndSessionRequestTest < ActiveSupport::TestCase
   end
 
   test "rejects tampered id_token_hint" do
-    install_actor_context!
-
     result = call(id_token_hint: "#{id_token}x")
 
     assert_predicate result, :error?
@@ -102,8 +96,6 @@ class OidcEndSessionRequestTest < ActiveSupport::TestCase
   end
 
   test "accepts expired id_token_hint for end-session while validating its issuer and signature" do
-    install_actor_context!
-
     result = call(id_token_hint: id_token(issued_at: 10.minutes.ago, expires_at: 1.minute.ago))
 
     assert_predicate result, :success?
@@ -112,8 +104,6 @@ class OidcEndSessionRequestTest < ActiveSupport::TestCase
   end
 
   test "rejects a not-yet-valid id_token_hint even for end-session" do
-    install_actor_context!
-
     result = call(id_token_hint: id_token(issued_at: 5.minutes.from_now, expires_at: 10.minutes.from_now))
 
     assert_predicate result, :error?
@@ -121,27 +111,20 @@ class OidcEndSessionRequestTest < ActiveSupport::TestCase
   end
 
   test "rejects client_id mismatch" do
-    install_actor_context!
-
     result = call(id_token_hint: id_token, client_id: "core-com-jp")
 
     assert_predicate result, :error?
     assert_equal "client_id mismatch", result.error_description
   end
 
-  test "returns a verified hint for Visa to authorize against the current session" do
-    other = clients(:two)
-    install_actor_context!(actor: other)
-
+  test "returns the verified hint subject and sid without loading an account record" do
     result = call(id_token_hint: id_token)
 
     assert_predicate result, :success?
-    assert_equal OidcSubject.for(@user, resource_type: "client"), result.subject
+    assert_equal @subject, result.subject
   end
 
   test "returns the hint sid rather than substituting the authenticated session" do
-    install_actor_context!(sid: "op-root-session-public-id")
-
     result = call(id_token_hint: id_token(sid: "unrelated-rp-grant-public-id"))
 
     assert_predicate result, :success?
@@ -155,19 +138,7 @@ class OidcEndSessionRequestTest < ActiveSupport::TestCase
     assert_predicate result, :requires_confirmation?
   end
 
-  test "requires confirmation when the current actor has no captured IdP session" do
-    install_actor_context!(sid: nil)
-
-    result = call(id_token_hint: id_token)
-
-    assert_predicate result, :success?
-    assert_predicate result, :requires_confirmation?
-    assert_equal OidcSubject.for(@user, resource_type: "client"), result.subject
-    assert_equal @sid, result.sid
-  end
-
   test "accepts exact registered post logout redirect uri and state" do
-    install_actor_context!
     uri = @client.post_logout_redirect_uris.first
 
     result = call(id_token_hint: id_token, post_logout_redirect_uri: uri, state: "xyz")
@@ -178,8 +149,6 @@ class OidcEndSessionRequestTest < ActiveSupport::TestCase
   end
 
   test "rejects unregistered post logout redirect uri without echoing state" do
-    install_actor_context!
-
     result = call(
       id_token_hint: id_token,
       post_logout_redirect_uri: "https://attacker.example/signed-out",
@@ -192,11 +161,7 @@ class OidcEndSessionRequestTest < ActiveSupport::TestCase
   end
 
   test "rejects post logout redirect uri registered for another realm" do
-    install_actor_context!
-    cross_realm_uri =
-      OidcClientRegistry.find!("core-org-jp").post_logout_redirect_uris.find do |uri|
-        URI.parse(uri).host == URI.parse(@client.post_logout_redirect_uris.first).host
-      end
+    cross_realm_uri = OidcClientRegistry.find!("core-org-jp").post_logout_redirect_uris.first
 
     assert_not_nil cross_realm_uri, "core-org-jp should register an org-realm post_logout uri"
 
@@ -251,28 +216,15 @@ class OidcEndSessionRequestTest < ActiveSupport::TestCase
 
   def id_token(issued_at: Time.current, expires_at: 5.minutes.from_now, sid: @sid)
     OidcIdTokenIssuer.call(
-      resource: @user,
+      resource_type: "client",
       client: @client,
       nonce: "nonce",
       issued_at: issued_at,
       expires_at: expires_at,
       issuer: OidcIssuer.for_resource_type("client"),
       jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type("client"),
-      subject: OidcSubject.for(@user, resource_type: "client"),
+      subject: @subject,
       sid: sid,
-    )
-  end
-
-  def install_actor_context!(actor: @user, sid: @sid)
-    Actor.install_context!(
-      actor: actor,
-      actor_type: :client,
-      authn: Actor::Authentication.new(
-        login_public_id: sid,
-        access_claims: { "sid" => sid },
-        actor_type: :client,
-        actor_id: actor.id,
-      ),
     )
   end
 end

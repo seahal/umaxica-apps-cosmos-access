@@ -3,7 +3,11 @@
 require "test_helper"
 
 class IdentityStepUpCeremonyTransactionPurgerTest < ActiveSupport::TestCase
-  self.fixture_table_names = %w(clients client_statuses client_visibilities)
+  self.fixture_table_names = %w(
+    client_tokens client_device_sessions client_token_kinds client_token_statuses
+    client_token_binding_methods client_token_dbsc_statuses operator_tokens operator_device_sessions
+    operator_token_kinds operator_token_statuses operator_token_binding_methods operator_token_dbsc_statuses
+  )
 
   test "a failure after deleting continuity rolls back the entire parent cohort" do
     now = Time.current
@@ -78,9 +82,9 @@ class IdentityStepUpCeremonyTransactionPurgerTest < ActiveSupport::TestCase
 
   test "retires an expired binding before deleting it and its parent" do
     now = Time.current.change(usec: 0)
-    token = ClientToken.create!(authentication_epoch: 0, user: clients(:one), created_at: now - 9.days)
+    token = client_root_created_at(now - 9.days)
     parent = ClientStepUpCeremonyTransaction.create_transaction!(
-      actor_ref: clients(:one).public_id, session_ref: token.public_id, required_scope: "settings_passkey",
+      actor_ref: token.device_session.principal_public_id, session_ref: token.public_id, required_scope: "settings_passkey",
       required_aal: "none", allowed_methods: ["passkey"], now: now - 9.days,
       expires_at: now - 8.days,
     )
@@ -112,9 +116,9 @@ class IdentityStepUpCeremonyTransactionPurgerTest < ActiveSupport::TestCase
 
   test "a retained StepUpSession prevents parent deletion until its explicit purge deadline" do
     now = Time.current
-    token = ClientToken.create!(authentication_epoch: 0, user: clients(:one), created_at: now - 9.days)
+    token = client_root_created_at(now - 9.days)
     parent = ClientStepUpCeremonyTransaction.create_transaction!(
-      actor_ref: clients(:one).public_id, session_ref: token.public_id, required_scope: "settings_passkey",
+      actor_ref: token.device_session.principal_public_id, session_ref: token.public_id, required_scope: "settings_passkey",
       required_aal: "none", allowed_methods: ["passkey"], now: now - 9.days, expires_at: now - 8.days,
     )
     session = ClientStepUpSession.create!(
@@ -205,5 +209,13 @@ class IdentityStepUpCeremonyTransactionPurgerTest < ActiveSupport::TestCase
 
       assert_not parent_model.exists?(parent.id)
     end
+  end
+
+  private
+
+  def client_root_created_at(created_at)
+    token = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
+    token.update!(created_at: created_at)
+    token
   end
 end

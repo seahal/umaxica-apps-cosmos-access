@@ -29,7 +29,7 @@ class ActorContextTest < ActiveSupport::TestCase
   end
 
   test "setting client actor" do
-    user = Client.new(security_mode_id: SecurityModeConfigurable::NORMAL, id: 123)
+    user = Struct.new(:id).new(123)
     Actor.actor = user
     Actor.actor_type = :client
 
@@ -44,7 +44,7 @@ class ActorContextTest < ActiveSupport::TestCase
   end
 
   test "signed_up is false for authenticated actor without persisted identity" do
-    Actor.actor = Client.new(security_mode_id: SecurityModeConfigurable::NORMAL)
+    Actor.actor = Struct.new(:id).new(nil)
     Actor.actor_type = :client
 
     assert_predicate Actor, :signed_in?
@@ -95,7 +95,7 @@ class ActorContextTest < ActiveSupport::TestCase
   end
 
   test "setting staff actor" do
-    staff = Operator.new(security_mode_id: SecurityModeConfigurable::ADVANCED, id: 456)
+    staff = Struct.new(:id).new(456)
     Actor.actor = staff
     Actor.actor_type = :operator
 

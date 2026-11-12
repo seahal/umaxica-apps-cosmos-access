@@ -7,6 +7,50 @@
 > model/database report and follow-up ownership decision. External RP registrations remain available
 > through Visa, while their local session state and callbacks belong to their owning repositories.
 
+## Retained step-up evidence presence (2026-11-12)
+
+Owner-approved contract: the
+[explicit evidence-state amendment](../../adr/step-up-authentication-redesign.md#explicit-retained-evidence-state-2026-11-12).
+This is an independent presence axis for retained OP token and ceremony evidence, not a new root
+session status or RP step-up policy. Implementation and observed verification remain tracked by the
+[Access-only remediation](../../specs/access-database-consistency/spec.md). The rows below record
+the accepted writers and guards; they do not claim a deployed migration or a passing test run.
+
+| Axis | Realm / owner | Carrier / column | Reference table | Diagram |
+| --- | --- | --- | --- | --- |
+| Token evidence presence | APP / `ClientToken` | `client_tokens.evidence_state_id` | `client_step_up_evidence_states` | [APP evidence](./idp-client-step-up-evidence.mmd) |
+| Ceremony evidence presence | APP / `ClientStepUpCeremonyTransaction` | `client_step_up_ceremony_transactions.evidence_state_id` | `client_step_up_evidence_states` | [APP evidence](./idp-client-step-up-evidence.mmd) |
+| Token evidence presence | ORG / `OperatorToken` | `operator_tokens.evidence_state_id` | `operator_step_up_evidence_states` | [ORG evidence](./idp-operator-step-up-evidence.mmd) |
+| Ceremony evidence presence | ORG / `OperatorStepUpCeremonyTransaction` | `operator_step_up_ceremony_transactions.evidence_state_id` | `operator_step_up_evidence_states` | [ORG evidence](./idp-operator-step-up-evidence.mmd) |
+
+Both realm-local reference tables use `ABSENT = 10` and `RECORDED = 20`. The FK and six affected
+boolean columns are NOT NULL. `ABSENT,false` does not assert recorded negative verification;
+`RECORDED,false` does. Readers require `RECORDED` plus the existing complete evidence and binding
+checks. Unknown or unreadable state refuses authority. The reference IDs do not merge realm-local
+storage, sessions or permissions.
+
+The following legal transitions apply independently to APP and ORG; initial construction is distinct
+from a subsequent transition. All mutation rows retain their existing owner locks, transaction and
+owning-database-clock checks.
+
+| Transition ID | Carrier | From | Writer / trigger | To | Guard and effect |
+| --- | --- | --- | --- | --- | --- |
+| retained-step-up-evidence:T001 | token and ceremony | no row | ordinary initial construction | ABSENT | Initialize false flags; creation does not assert proof |
+| retained-step-up-evidence:T002 | ceremony | ABSENT | `record_verification!` | RECORDED | Pending, unexpired allowed ceremony; validate actual method, credential and verification facts before the single workflow transition |
+| retained-step-up-evidence:T003 | ceremony | ABSENT | `record_registration_verification!` or accepted pending `commit_registration_consumption!` | RECORDED | Original registration permission and proof; false UV is recorded negative evidence and grants no step-up freshness |
+| retained-step-up-evidence:T004 | ceremony | ABSENT or RECORDED | existing cancellation, expiry or revocation writer; result delivery or verified consumption | unchanged | Preserve whether proof existed; pending registration consumption is T003; terminal workflow states cannot later record or rewrite proof |
+| retained-step-up-evidence:T005 | token | ABSENT or RECORDED | `IdentityStepUpCeremonyFreshnessCommitter` | RECORDED | Revalidate current ceremony, requirement and exact token binding; install state and actual flags in the same update |
+| retained-step-up-evidence:T006 | token | RECORDED | `consume_step_up_evidence!` | ABSENT | Owner-bound satisfied requirement and one-shot locked consumption; clear flags atomically without changing root status or deadline |
+| retained-step-up-evidence:T007 | token | ABSENT or RECORDED | `revoke_step_up_authority!` | ABSENT | Existing ordered revocation boundary; clear token evidence while preserving each ceremony's recorded history |
+
+Sources: `app/models/concerns/step_up_ceremony_transactionable.rb`,
+`app/models/concerns/token_status_management.rb`, `app/resolvers/step_up_resolver.rb`, and
+`app/operations/identity_step_up_ceremony_freshness_committer.rb`.
+The existing ceremony `status` axes below remain separate: pending and verified can both reach
+canceled, expired or revoked, so terminal status cannot reconstruct evidence presence. Signed
+external evidence and token-claim formats remain unchanged. Incoherent pre-migration evidence must
+stop migration instead of being coerced into an invented state.
+
 ## O-9 persisted sensitive-admission axes (deferred local ownership)
 
 `idp-sensitive-admission.mmd` describes the additive APP passkey, APP social-link, and ORG passkey

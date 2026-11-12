@@ -4,10 +4,10 @@ require "test_helper"
 
 class PublicMethodContractValuesTest < ActiveSupport::TestCase
   test "a blank public identifier error names its record without substituting an internal id" do
-    error = BlankPublicIdentifierError.new(record_class: Client)
+    error = BlankPublicIdentifierError.new(record_class: ClientToken)
 
-    assert_equal "Client", error.record_class
-    assert_equal "Client has a blank public_id and cannot be exposed to a client", error.message
+    assert_equal "ClientToken", error.record_class
+    assert_equal "ClientToken has a blank public_id and cannot be exposed to a client", error.message
   end
 
   test "resource lifecycle predicates distinguish active and inactive state in every family" do

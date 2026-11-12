@@ -4,17 +4,20 @@ require "test_helper"
 require "timeout"
 
 class OidcLogoutRotationAcceptanceTest < ActiveSupport::TestCase
-  include AuthorityStopCleanup
-
   self.use_transactional_tests = false
-  fixtures :clients, :operators
+  self.fixture_table_names = []
 
   setup do
-    @actor = clients(:one)
-    @root = ClientToken.create!(authentication_epoch: 0, user: @actor, user_token_kind_id: ClientTokenKind::BROWSER_WEB)
+    @root = ClientToken.create!(
+      authentication_epoch: 0, user_id: 1001,
+      device_session: ClientDeviceSession.create!(
+        user_id: 1001, principal_public_id: PublicId.generate,
+      ),
+      user_token_kind_id: ClientTokenKind::BROWSER_WEB,
+    )
     @root.rotate_refresh_token!
     @grant = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: @root, oidc_client_id: "core-app-jp", oidc_scope: "openid",
+      authentication_epoch: 0, client_token_id: @root.id, oidc_client_id: "core-app-jp", oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.hour.from_now,
     )
     @refresh = @grant.issue_refresh_token!
@@ -23,7 +26,13 @@ class OidcLogoutRotationAcceptanceTest < ActiveSupport::TestCase
 
   teardown do
     root_ids = [@root&.id, @replacement_id].compact
-    delete_authority_stops_for!(realm: "app", root_ids: root_ids, grant_ids: [@grant&.id])
+    stop_config = OpAuthorityStopCommitter::REALMS.fetch("app")
+    stop_ids = stop_config.fetch(:root_target).where(root_id: root_ids).pluck(:stop_id) +
+      stop_config.fetch(:grant_target).where(grant_id: [@grant&.id].compact).pluck(:stop_id)
+    %i(participant epoch_cutoff grant_target root_target).each do |child|
+      stop_config.fetch(child).where(stop_id: stop_ids).delete_all
+    end
+    stop_config.fetch(:stop).where(id: stop_ids).delete_all
     OpAppGrant.where(id: @grant&.id).delete_all
     device_id = @root&.device_session_id
     ClientToken.where(id: root_ids).delete_all
@@ -53,7 +62,7 @@ class OidcLogoutRotationAcceptanceTest < ActiveSupport::TestCase
           ready << connection.select_value("SELECT pg_backend_pid()")
           stop_go.pop
           AuthenticationLogoutCurrentSession.call(
-            cause: "rp_initiated_logout", resource: Client.find(@actor.id), token: ClientToken.find(@root.id),
+            cause: "rp_initiated_logout", resource: nil, token: ClientToken.find(@root.id),
             reason: "user_logout", cascade_device_session_tokens: true,
           )
         end
@@ -87,12 +96,15 @@ class OidcLogoutRotationAcceptanceTest < ActiveSupport::TestCase
   test "ORG committed rotations are stopped across connections and subsequent refresh is refused" do
     [
       ["org", OperatorToken, OpOrgGrant, OperatorDeviceSession, OpOrgAuthorityStopRootTarget,
-       operators(:one), :staff, :operator_token, "operator", OpBaseOrgRecord,],
+       1002, :staff_id, :operator_token_id, "operator", OpBaseOrgRecord,],
     ].each do |realm, token_class, grant_class, device_class, target_class, actor, owner, parent, type, record_class|
-      root = token_class.create!(:authentication_epoch => 0, owner => actor)
+      root = token_class.create!(
+        :authentication_epoch => 0, owner => actor,
+        :device_session => device_class.create!(owner => actor, :principal_public_id => PublicId.generate),
+      )
       root.rotate_refresh_token!
       grant = grant_class.create!(
-        :authentication_epoch => 0, parent => root, :oidc_client_id => "core-#{realm}-jp", :oidc_scope => "openid",
+        :authentication_epoch => 0, parent => root.id, :oidc_client_id => "core-#{realm}-jp", :oidc_scope => "openid",
         :oidc_jti => SecureRandom.uuid, :refresh_token_expires_at => 1.hour.from_now,
       )
       refresh = grant.issue_refresh_token!
@@ -118,7 +130,7 @@ class OidcLogoutRotationAcceptanceTest < ActiveSupport::TestCase
             ready << connection.select_value("SELECT pg_backend_pid()")
             stop_go.pop
             AuthenticationLogoutCurrentSession.call(
-              cause: "rp_initiated_logout", resource: actor, token: token_class.find(root.id),
+              cause: "rp_initiated_logout", resource: nil, token: token_class.find(root.id),
               reason: "user_logout", cascade_device_session_tokens: true,
             )
           end
@@ -150,7 +162,13 @@ class OidcLogoutRotationAcceptanceTest < ActiveSupport::TestCase
         first.join(10)
         second.join(10)
         root_ids = [root.id, replacement_id].compact
-        delete_authority_stops_for!(realm: realm, root_ids: root_ids, grant_ids: [grant.id])
+        stop_config = OpAuthorityStopCommitter::REALMS.fetch(realm)
+        stop_ids = stop_config.fetch(:root_target).where(root_id: root_ids).pluck(:stop_id) +
+          stop_config.fetch(:grant_target).where(grant_id: [grant.id]).pluck(:stop_id)
+        %i(participant epoch_cutoff grant_target root_target).each do |child|
+          stop_config.fetch(child).where(stop_id: stop_ids).delete_all
+        end
+        stop_config.fetch(:stop).where(id: stop_ids).delete_all
         grant_class.where(id: grant.id).delete_all
         token_class.where(id: root_ids).delete_all
         device_class.where(id: root.device_session_id).delete_all

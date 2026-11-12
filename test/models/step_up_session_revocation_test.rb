@@ -5,26 +5,26 @@ require "minitest/mock"
 
 # Challenge references and raw secrets must not appear in failed assertion output.
 class StepUpSessionRevocationTest < ActiveSupport::TestCase
+  self.fixture_table_names = %w(client_tokens operator_tokens client_device_sessions operator_device_sessions)
+
   %i(app org).each do |surface|
     %i(pending consumed).each do |challenge_state|
       %i(early before_discard at_discard after_discard).each do |boundary_case|
         test "#{surface} root revocation retains #{challenge_state} challenge facts #{boundary_case}" do
-          actor, token, transaction_model, session_model, token_key, rp_id =
+          device, token, transaction_model, session_model, token_key, rp_id =
             case surface
             when :app
-              owner = Client.create!(security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE)
-              [owner, ClientToken.create!(authentication_epoch: 0, user: owner, discard_at: 1.day.from_now),
+              [client_device_sessions(:one), client_tokens(:one),
                ClientStepUpCeremonyTransaction, ClientStepUpSession, :user_token,
                ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),]
             when :org
-              owner = Operator.create!(security_mode_id: SecurityModeConfigurable::ADVANCED)
-              [owner, OperatorToken.create!(authentication_epoch: 0, staff: owner, discard_at: 1.day.from_now),
+              [operator_device_sessions(:one), operator_tokens(:one),
                OperatorStepUpCeremonyTransaction, OperatorStepUpSession, :staff_token,
                ENV.fetch("PUBLIC_AUTH_STAFF_URL"),]
             end
           token.rotate_refresh_token!
           transaction = transaction_model.create_transaction!(
-            actor_ref: actor.public_id, session_ref: token.public_id, required_scope: "settings_passkey",
+            actor_ref: device.principal_public_id, session_ref: token.public_id, required_scope: "settings_passkey",
             allowed_methods: ["passkey"], return_to: "/identity/passkeys",
           )
           record = session_model.create!(

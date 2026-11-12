@@ -6,7 +6,7 @@ require "test_helper"
 
 class OidcSubjectTest < ActiveSupport::TestCase
   test "uses prefixed public subject instead of database id" do
-    client = clients(:one)
+    client = OpenStruct.new(public_id: "client-reference")
 
     assert_equal "cli_#{client.public_id}", OidcSubject.for(client, resource_type: "client")
     assert_equal client.public_id, OidcSubject.public_id_from("cli_#{client.public_id}", resource_type: "client")
@@ -29,13 +29,13 @@ class OidcSubjectTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { OidcSubject.for(resource, resource_type: "client") }
   end
 
-  test "infers operator resource type" do
-    operator = Operator.new(security_mode_id: SecurityModeConfigurable::ADVANCED, id: 1, public_id: "opr_xyz")
+  test "uses an explicit operator realm" do
+    operator = OpenStruct.new(public_id: "opr_xyz")
 
-    assert_equal "opr_#{operator.public_id}", OidcSubject.for(operator)
+    assert_equal "opr_#{operator.public_id}", OidcSubject.for(operator, resource_type: "operator")
   end
 
-  test "rejects unknown resource types during inference" do
+  test "rejects a missing realm even when the resource has a public ID" do
     unknown = OpenStruct.new(public_id: "custom_001")
 
     assert_raises(ArgumentError) { OidcSubject.for(unknown) }

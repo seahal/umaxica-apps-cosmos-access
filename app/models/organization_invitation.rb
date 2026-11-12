@@ -27,17 +27,14 @@
 #
 
 class OrganizationInvitation < OpBaseOrgRecord
-  belongs_to :invited_by,
-             class_name: "Operator",
-             primary_key: :id
-
   validates :code, presence: true, uniqueness: true, length: { maximum: 32 }
   validates :email, presence: true
-  validates :organization_id, presence: true
+  validates :invited_by_id, :organization_id, presence: true
   validates :expires_at, presence: true
 
   before_validation :generate_code, on: :create
   before_validation :set_expiration, on: :create
+  before_create :require_governance_authority!
 
   scope :active, -> { where(consumed_at: nil).where(arel_table[:expires_at].gt(Time.current)) }
   scope :expired, -> { where(expires_at: ..Time.current) }
@@ -56,12 +53,7 @@ class OrganizationInvitation < OpBaseOrgRecord
   end
 
   def consume!
-    self.class.transaction do
-      lock!
-      return false unless active?
-
-      update!(consumed_at: Time.current)
-    end
+    require_governance_authority!
   end
 
   class << self
@@ -87,6 +79,10 @@ class OrganizationInvitation < OpBaseOrgRecord
   end
 
   private
+
+  def require_governance_authority!
+    raise GovernanceLookupUnavailableError, "Governance invitation authority is unavailable"
+  end
 
   def generate_code
     self.code ||= self.class.generate_unique_code

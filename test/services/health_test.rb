@@ -77,10 +77,10 @@ class HealthTest < ActiveSupport::TestCase
   end
 
   test "profile dependency allowlists are explicit" do
-    assert_equal [AppRpRecord, AppSettingRecord, AppSignalRecord, AvatarRecord, OccurrenceRecord],
-                 Health::Profiles::App.record_classes
-    assert_equal [OrgRpRecord, OrgSettingRecord, OrgSignalRecord], Health::Profiles::Org.record_classes
-    assert_equal [AppPrincipalRecord, OpBaseAppRecord, AppSettingRecord], Health::Profiles::SignApp.record_classes
+    assert_equal [OpBaseAppRecord, OccurrenceRecord], Health::Profiles::App.record_classes
+    assert_equal [OpBaseOrgRecord], Health::Profiles::Org.record_classes
+    assert_equal [OpBaseAppRecord], Health::Profiles::SignApp.record_classes
+    assert_equal [OpBaseOrgRecord], Health::Profiles::SignOrg.record_classes
   end
 
   test "liveness check never touches dependencies" do

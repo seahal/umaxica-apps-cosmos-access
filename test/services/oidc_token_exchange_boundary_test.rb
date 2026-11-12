@@ -5,6 +5,26 @@ require "test_helper"
 # require "helpers/global_test_support"
 
 class OidcTokenExchangeBoundaryTest < ActiveSupport::TestCase
+  self.fixture_table_names = []
+
+  test "authenticated authorization code exchange is explicitly unavailable without Governance lookup" do
+    client = Struct.new(:registered_token_endpoint_auth_method).new("none")
+
+    OidcClientRegistry.stub(:find, client) do
+      result = OidcTokenExchangeCoordinator.call(
+        grant_type: "authorization_code",
+        code: "unconsumed-code",
+        client_id: "public-client",
+        expected_resource_type: "client",
+      )
+
+      assert_not result.success?
+      assert_equal "temporarily_unavailable", result.error
+      assert_equal "Governance credential lookup is unavailable", result.error_description
+      assert_nil result.token_response
+    end
+  end
+
   test "token exchange service does not mint actor-root sessions" do
     source = Rails.root.join("app/services/oidc_token_exchange_coordinator.rb").read
 

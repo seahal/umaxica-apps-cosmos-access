@@ -19,8 +19,10 @@ module Security
       %r{\A/apple/notifications(?:\(\.:format\))?\z},
       # Server-to-server Base owner APIs and OP back-channel logout:
       # ActionController::API without cookies; private_key_jwt / signed logout tokens replace CSRF.
-      %r{\A/api/v0/(?:avatar|membership|iam|support|publishing|tech-capability-checks)/},
+      %r{\A/api/v0/(?:membership|iam|support|tech-capability-checks)/},
       %r{\A/api/v0/tech-capability-checks(?:\(\.:format\))?\z},
+      # Signed M2M revocation commands reject browser origins and do not use cookie authority.
+      %r{\A/api/v0/revocation_commands(?:\(\.:format\))?\z},
       # Visa admission issuance is a server-to-server API authenticated with a client assertion and OP token.
       %r{\A/api/v0/sensitive_admissions?(?:_session|_confirmation)?(?:\(\.:format\))?\z},
       %r{\A/oidc/closures(?:\(\.:format\))?\z},

@@ -94,6 +94,7 @@ class OperatorSignUpFlow < OpBaseOrgRecord
   validate :step_matches_status
   validate :completed_status_has_completed_at
   validates :result_digest, length: { maximum: 64 }
+  validates :result_digest, uniqueness: true, allow_nil: true
 
   before_validation :assign_default_status_id
   before_validation :sync_legacy_state_from_status

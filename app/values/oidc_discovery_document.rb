@@ -31,7 +31,7 @@ module OidcDiscoveryDocument
       ),
       code_challenge_methods_supported: ["S256"],
       # Prompt Create 1.0 4.2 (D-148): from the same per-realm table the authorize resolver enforces.
-      prompt_values_supported: OidcAuthorizeRequestResolver.prompt_values_supported(resource_type),
+      prompt_values_supported: OidcAuthorizationRequestMetadataValue.prompt_values_supported(resource_type),
       scopes_supported: %w(openid profile email),
       claims_supported: %w(sub iss aud exp iat auth_time nonce acr amr sid email email_verified name),
     }

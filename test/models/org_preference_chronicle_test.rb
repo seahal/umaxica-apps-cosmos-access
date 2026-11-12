@@ -43,38 +43,22 @@
 require "test_helper"
 
 class OrgPreferenceChronicleTest < ActiveSupport::TestCase
-  fixtures :org_preferences,
-           :org_preference_chronicles,
+  fixtures :org_preference_chronicles,
            :org_preference_chronicle_events,
-           :org_preference_chronicle_levels,
-           :org_preference_statuses
+           :org_preference_chronicle_levels
 
   setup do
     @audit = org_preference_chronicles(:one)
-    @preference = org_preferences(:one)
   end
 
   test "uses bigint primary key" do
     assert_kind_of Integer, @audit.id
   end
 
-  test "belongs to org_preference" do
-    assert_equal @preference, @audit.org_preference
-  end
-
-  test "org_preference helper method returns nil for other subject types" do
-    @audit.subject_type = "OtherType"
-
-    assert_nil @audit.org_preference
-  end
-
-  test "can set org_preference" do
-    new_pref = org_preferences(:two)
-    @audit.org_preference = new_pref
-
-    assert_equal new_pref.id, @audit.subject_id
+  test "retains the retired preference subject as historical scalar identity" do
+    assert_equal 1, @audit.subject_id
     assert_equal "OrgPreference", @audit.subject_type
-    assert_equal new_pref, @audit.org_preference
+    assert_raises(NoMethodError) { @audit.org_preference }
   end
 
   test "belongs to org_preference_chronicle_level" do
@@ -85,11 +69,14 @@ class OrgPreferenceChronicleTest < ActiveSupport::TestCase
     assert_equal org_preference_chronicle_events(:create_new_preference_token), @audit.org_preference_chronicle_event
   end
 
-  test "validates presence of subject_id" do
-    @audit.subject_type = "SomeOtherType"
-    @audit.subject_id = nil
-
-    assert_raises(ActiveRecord::NotNullViolation) { @audit.save!(validate: false) }
+  test "database rejects a missing historical subject ID" do
+    assert_raises(ActiveRecord::NotNullViolation) do
+      OrgPreferenceChronicle.transaction(requires_new: true) do
+        OrgPreferenceChronicle.where(id: @audit.id).update_all(subject_id: nil)
+      end
+    end
+    assert_equal 1, @audit.reload.subject_id
+    assert_equal "OrgPreference", @audit.subject_type
   end
 
   test "validates presence of subject_type" do

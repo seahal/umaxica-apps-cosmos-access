@@ -1,5 +1,5 @@
 /*
- * Shared typography baseline. Each Auth and Visa surface stylesheet under `surfaces/` imports this
+ * Shared typography baseline. Each Visa surface stylesheet under `surfaces/` imports this
  * file, so the four owned FQDNs use the same text defaults.
  *
  * Sources:

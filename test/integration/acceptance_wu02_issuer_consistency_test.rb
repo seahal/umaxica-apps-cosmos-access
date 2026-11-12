@@ -3,24 +3,27 @@
 require "test_helper"
 
 class AcceptanceWu02IssuerConsistencyTest < ActiveSupport::TestCase
-  fixtures :clients, :operators
+  self.fixture_table_names = %w(client_tokens operator_tokens client_device_sessions operator_device_sessions)
 
   test "A02-4: discovery, ID Token, authorization response and Logout Token agree per realm" do
     realms = [
-      ["client", "app", clients(:one), ClientToken, OpAppGrant, OpAppAuthorityStopParticipant, :user, :client_token],
-      ["operator", "org", operators(:one), OperatorToken, OpOrgGrant, OpOrgAuthorityStopParticipant,
-       :staff, :operator_token,],
+      ["client", "app", ClientToken, OpAppGrant, OpAppAuthorityStopParticipant, :client_token],
+      ["operator", "org", OperatorToken, OpOrgGrant, OpOrgAuthorityStopParticipant, :operator_token],
     ]
-    realms.each do |resource_type, realm, actor, root_class, grant_class, participant_class, owner_key, root_key|
+    realms.each do |resource_type, realm, root_class, grant_class, participant_class, root_key|
       client = OidcClientRegistry.find!("core-#{realm}-jp")
-      root = root_class.create!(:authentication_epoch => 0, owner_key => actor)
+      root = root_class.includes(:device_session).find(ActiveRecord::FixtureSet.identify(:one))
+      root.update!(authentication_context: "normal") if resource_type == "operator"
       grant = grant_class.create!(
-        :authentication_epoch => 0, root_key => root, :oidc_client_id => client.client_id,
+        :authentication_epoch => root.authentication_epoch, root_key => root, :oidc_client_id => client.client_id,
         :oidc_scope => "openid", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
         :refresh_token_expires_at => 1.hour.from_now,
       )
       issuer = OidcDiscoveryDocument.for_resource_type(resource_type).fetch(:issuer)
-      token = OidcIdTokenIssuer.call(resource: actor, client: client, nonce: grant.oidc_nonce, sid: grant.public_id)
+      token = OidcIdTokenIssuer.call(
+        resource_type: resource_type, client: client, nonce: grant.oidc_nonce, sid: grant.public_id,
+        issuer: issuer, subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.device_session.principal_public_id}",
+      )
       id_claims, id_header = decode_op_id_token_for_test(token, resource_type:)
 
       assert_equal "id-token+jwt", id_header.fetch("typ"), realm
@@ -39,7 +42,8 @@ class AcceptanceWu02IssuerConsistencyTest < ActiveSupport::TestCase
 
       assert_equal issuer, Rack::Utils.parse_nested_query(URI.parse(success_callback).query).fetch("iss"), realm
       OpAuthorityStopCommitter.stop_root(
-        root: root, cause: "browser_logout", principal_public_id: actor.public_id, authority_evidence_ref: "a02-4",
+        root: root, cause: "browser_logout", principal_public_id: root.device_session.principal_public_id,
+        authority_evidence_ref: "a02-4",
       )
       participant = participant_class.find_by!(grant_id: grant.id)
       logout_token = OpLogoutTokenIssuer.call(participant: participant, realm: realm)

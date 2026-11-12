@@ -48,6 +48,10 @@ class StepUpResolver
   end
 
   def call
+    if token.present? && requirement.step_up_required?
+      raise GovernanceLookupUnavailableError, "Governance step-up policy lookup is unavailable"
+    end
+
     Actor::StepUp.new(
       scope: requirement.scope,
       required_aal: nil,
@@ -115,23 +119,8 @@ class StepUpResolver
     satisfied_at + window if satisfied_at.present? && window
   end
 
-  # The requirement's TTL never exceeds the actor's Security Mode maximum. An actor without a valid
-  # Security Mode has no window, so no Step-Up evidence is current for it.
   def security_mode_window
-    return nil unless requirement.ttl
-
-    actor = security_mode_actor
-    return requirement.ttl if actor.nil?
-    return nil unless actor.security_mode_valid?
-
-    [requirement.ttl, actor.security_mode_advanced? ? ADVANCED_MAXIMUM_TTL : NORMAL_MAXIMUM_TTL].min
-  end
-
-  def security_mode_actor
-    return nil unless token.respond_to?(:actor_record)
-
-    actor = token.actor_record
-    actor if actor.respond_to?(:security_mode_valid?)
+    nil
   end
 
   def scope_matches?
@@ -139,10 +128,7 @@ class StepUpResolver
   end
 
   def method_matches?
-    return false unless requirement.method_allowed?(step_up_method)
-
-    actor = security_mode_actor
-    actor.nil? || !actor.security_mode_advanced? || ADVANCED_METHODS.include?(step_up_method.to_s)
+    false
   end
 
   def phishing_resistance_matches?
@@ -161,6 +147,8 @@ class StepUpResolver
   end
 
   def evidence_complete?
+    return false unless token_attribute(:evidence_state_id) == IdentityStepUpCeremonyContract::EVIDENCE_RECORDED
+
     credential = token_attribute(:last_step_up_credential_ref)
     credential.is_a?(String) && credential.present? &&
       [true, false].include?(token_attribute(:last_step_up_phishing_resistant)) &&

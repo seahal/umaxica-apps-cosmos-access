@@ -184,7 +184,7 @@ class OidcRefreshTokenIssuer
     # transaction; the root is kept. Its participant row notifies the RP (D-26).
     unless usage.revoked?
       OpAuthorityStopCommitter.stop_grant(
-        grant: usage, cause: "refresh_reuse", principal_public_id: parent&.actor_record&.public_id.to_s,
+        grant: usage, cause: "refresh_reuse", principal_public_id: parent&.principal_public_id.to_s,
         authority_evidence_ref: "refresh_reuse:#{usage.public_id}",
       )
     end

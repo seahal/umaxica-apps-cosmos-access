@@ -34,8 +34,6 @@ Rails.application.configure do
     ENV["PUBLIC_ASSET_URL"].presence || ENV["ASSET_URL"].presence ||
     raise(KeyError, "PUBLIC_ASSET_URL must be set in production (legacy alias: ASSET_URL)")
 
-  # Store uploaded files on the local file system (see config/storage.yml for options).
-
   # Assume all access to the app is happening through a SSL-terminating reverse proxy.
   config.assume_ssl = true
 

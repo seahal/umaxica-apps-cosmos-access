@@ -251,18 +251,12 @@ class SignFlowTest < ActiveSupport::TestCase
     assert_not cycle.nonce_matches?(nil)
   end
 
-  test "named sign-in transitions allow forward edges and reject reverse edges" do
+  test "sign-in transitions fail closed without changing the persisted state" do
     cycle = ClientSignInFlow.create!(cycle_attrs(ClientSignInFlow))
+    initial_state = cycle.state_id
 
-    cycle.advance_sign_in_to_mfa!
-
-    assert_equal ClientSignInFlowState::MFA_PENDING, cycle.state_id
-
-    error =
-      assert_raises(FlowInvalidTransition) do
-        cycle.advance_sign_in_to_mfa!
-      end
-    assert_match(/invalid transition/, error.message)
+    assert_raises(GovernanceLookupUnavailableError) { cycle.advance_sign_in_to_mfa! }
+    assert_equal initial_state, cycle.reload.state_id
   end
 
   test "sign-in flows use only the durable state foreign key" do
@@ -295,14 +289,6 @@ class SignFlowTest < ActiveSupport::TestCase
     end
   end
 
-  test "named sign-in transition owns the canonical step" do
-    cycle = ClientSignInFlow.create!(cycle_attrs(ClientSignInFlow))
-
-    cycle.advance_sign_in_to_mfa!
-
-    assert_equal ClientSignInFlowState::MFA_PENDING, cycle.state_id
-  end
-
   test "arbitrary transition entry points are not public" do
     cycle = ClientSignInFlow.create!(cycle_attrs(ClientSignInFlow))
 
@@ -321,91 +307,21 @@ class SignFlowTest < ActiveSupport::TestCase
     assert_includes cycle.errors[:expires_at], "must be after issued_at"
   end
 
-  test "sign-in cycle methods advance through named transitions" do
+  test "sign-in cycle transition methods fail closed in both realms" do
     SIGN_IN_CLASSES.each do |cycle_class|
       cycle = cycle_class.create!(cycle_attrs(cycle_class))
 
-      cycle.advance_sign_in_to_mfa!
-
-      assert_predicate cycle, :sign_in_mfa_pending?, cycle_class.name
-      assert_equal ClientSignInFlowState::MFA_PENDING, cycle.state_id
-
-      cycle.advance_sign_in_to_guardrail!
-
-      assert_predicate cycle, :sign_in_guardrail_pending?, cycle_class.name
-      assert_equal ClientSignInFlowState::GUARDRAIL_PENDING, cycle.state_id
-
-      cycle.advance_sign_in_to_checkpoint!
-
-      assert_predicate cycle, :sign_in_checkpoint_pending?, cycle_class.name
-      assert_equal ClientSignInFlowState::CHECKPOINT_PENDING, cycle.state_id
-
-      cycle.advance_sign_in_to_selector!
-
-      assert_predicate cycle, :sign_in_selector_pending?, cycle_class.name
-      assert_equal ClientSignInFlowState::SELECTOR_PENDING, cycle.state_id
-
-      cycle.advance_sign_in_to_session_issuance!
-
-      assert_predicate cycle, :sign_in_session_issuance_pending?, cycle_class.name
-      assert_equal ClientSignInFlowState::SESSION_ISSUANCE_PENDING, cycle.state_id
-
-      cycle.complete_sign_in!
-
-      assert_predicate cycle, :sign_in_completed?, cycle_class.name
-      assert_equal ClientSignInFlowState::COMPLETED, cycle.state_id
+      assert_raises(GovernanceLookupUnavailableError, cycle_class.name) { cycle.advance_sign_in_to_mfa! }
+      assert_equal cycle_class::STATE_IDS.first, cycle.reload.state_id, cycle_class.name
     end
   end
 
   test "sign-in cycles keep session-limit resolution outside the main graph" do
     SIGN_IN_CLASSES.each do |cycle_class|
       cycle = cycle_class.create!(cycle_attrs(cycle_class))
-      cycle.advance_sign_in_to_mfa!
 
       assert_not cycle.can_transition_to?(cycle_class::STATE_MODEL::SESSION_LIMIT_PENDING)
-
-      cycle.advance_sign_in_to_guardrail!
-      cycle.advance_sign_in_to_checkpoint!
-      cycle.advance_sign_in_to_selector!
-      cycle.advance_sign_in_to_session_issuance!
-
-      assert_predicate cycle, :sign_in_session_issuance_pending?, cycle_class.name
-      assert_not cycle.can_transition_to?(cycle_class::STATE_MODEL::SESSION_LIMIT_PENDING)
     end
-  end
-
-  test "sign-in cycle methods reject reverse transitions through FlowBase" do
-    cycle = ClientSignInFlow.create!(cycle_attrs(ClientSignInFlow))
-    cycle.advance_sign_in_to_mfa!
-
-    error =
-      assert_raises(FlowInvalidTransition) do
-        cycle.advance_sign_in_to_mfa!
-      end
-
-    assert_match(/invalid transition/, error.message)
-    assert_equal ClientSignInFlowState::MFA_PENDING, cycle.reload.state_id
-  end
-
-  test "sign-in cycle completion stamps completed_at while the current schema requires it" do
-    now = ClientSignInFlow.database_now
-    cycle = ClientSignInFlow.create!(
-      cycle_attrs(ClientSignInFlow).merge(issued_at: now - 1.minute, expires_at: now + 1.hour),
-    )
-    cycle.advance_sign_in_to_guardrail!
-    cycle.advance_sign_in_to_checkpoint!
-    cycle.advance_sign_in_to_selector!
-    cycle.advance_sign_in_to_session_issuance!
-
-    travel_to now do
-      cycle.complete_sign_in!
-    end
-
-    cycle.reload
-
-    assert_predicate cycle, :sign_in_completed?
-    assert_equal ClientSignInFlowState::COMPLETED, cycle.state_id
-    assert_operator cycle.completed_at, :>=, now
   end
 
   test "sign-in cycle can be cancelled from every non-terminal state" do
@@ -439,20 +355,20 @@ class SignFlowTest < ActiveSupport::TestCase
       cycle_attrs(ClientSignInFlow).merge(state_id: ClientSignInFlowState::FAILED),
     )
 
-    assert_raises(FlowInvalidTransition) { failed.advance_sign_in_to_guardrail! }
+    assert_raises(GovernanceLookupUnavailableError) { failed.advance_sign_in_to_guardrail! }
   end
 
-  test "sign-in cycle methods reject expired cycles" do
+  test "expired sign-in transition fails closed without changing its state" do
     now = Time.zone.local(2026, 5, 19, 11, 0, 0)
     cycle = ClientSignInFlow.create!(
       cycle_attrs(ClientSignInFlow).merge(issued_at: now - 1.minute, expires_at: now),
     )
 
     travel_to now do
-      assert_raises(FlowInvalidTransition) { cycle.advance_sign_in_to_mfa!.value! }
+      assert_raises(GovernanceLookupUnavailableError) { cycle.advance_sign_in_to_mfa! }
     end
 
-    assert_equal ClientSignInFlowState::EXPIRED, cycle.reload.state_id
+    assert_equal ClientSignInFlowState::PRIMARY_PENDING, cycle.reload.state_id
   end
 
   test "sign-in TTL is checked one microsecond below at and above the owning database clock" do
@@ -466,12 +382,11 @@ class SignFlowTest < ActiveSupport::TestCase
 
         model.stub(:database_now, now) do
           if microseconds.positive?
-            flow.advance_sign_in_to_mfa!
-
-            assert_predicate flow.reload, :sign_in_mfa_pending?
+            assert_raises(GovernanceLookupUnavailableError) { flow.advance_sign_in_to_mfa! }
+            assert_equal model::STATE_MODEL::PRIMARY_PENDING, flow.reload.state_id
           else
-            assert_raises(FlowInvalidTransition) { flow.advance_sign_in_to_mfa!.value! }
-            assert_predicate flow.reload, :sign_in_expired?
+            assert_raises(GovernanceLookupUnavailableError) { flow.advance_sign_in_to_mfa! }
+            assert_equal model::STATE_MODEL::PRIMARY_PENDING, flow.reload.state_id
           end
         end
       end
@@ -488,13 +403,13 @@ class SignFlowTest < ActiveSupport::TestCase
           issued_at: now - 3.minutes, expires_at: now - 1.minute,
         )
 
-        assert_raises(FlowInvalidTransition) { flow.advance_sign_in_to_mfa! }
+        assert_raises(GovernanceLookupUnavailableError) { flow.advance_sign_in_to_mfa! }
         assert_equal model.state_id_for(state), flow.reload.state_id
       end
     end
   end
 
-  test "overdue sign-in refuses invalid source only after persisting expiry in every realm" do
+  test "overdue sign-in fails closed without mutating its saved lifecycle state" do
     SIGN_IN_CLASSES.each do |model|
       now = model.database_now
       flow = model.create!(
@@ -502,72 +417,14 @@ class SignFlowTest < ActiveSupport::TestCase
         issued_at: now - 2.minutes, expires_at: now - 1.minute, return_to: "/dashboard",
       )
 
-      error = assert_raises(FlowInvalidTransition) { flow.complete_sign_in!.value! }
+      original_state = flow.state_id
 
-      assert_equal "cycle is expired", error.message
-      assert_equal model.state_id_for("EXPIRED"), flow.reload.state_id
+      assert_raises(GovernanceLookupUnavailableError) { flow.complete_sign_in! }
+      assert_equal original_state, flow.reload.state_id
     end
   end
 
-  test "joined sign-in transition returns expiry refusal for the outer owner to unwrap after commit" do
-    SIGN_IN_CLASSES.each do |model|
-      now = model.database_now
-      flow = model.create!(
-        nonce_digest: model.digest_nonce(SecureRandom.hex(16)),
-        issued_at: now - 2.minutes, expires_at: now - 1.minute, return_to: "/dashboard",
-      )
-
-      outcome = model.transaction(requires_new: true) { flow.advance_sign_in_to_mfa! }
-
-      assert_predicate outcome, :expired?
-      assert_equal model.state_id_for("EXPIRED"), flow.reload.state_id
-      assert_raises(FlowInvalidTransition) { outcome.value! }
-      assert_equal model.state_id_for("EXPIRED"), flow.reload.state_id
-    end
-  end
-
-  test "a nonjoinable transaction owner receives expiry refusal without rolling its expiry back" do
-    SIGN_IN_CLASSES.each do |model|
-      now = model.database_now
-      flow = model.create!(
-        nonce_digest: model.digest_nonce(SecureRandom.hex(16)),
-        issued_at: now - 2.minutes, expires_at: now - 1.minute,
-      )
-
-      outcome = model.transaction(requires_new: true, joinable: false) { flow.advance_sign_in_to_mfa! }
-
-      assert_predicate outcome, :expired?
-      assert_predicate flow.reload, :sign_in_expired?
-      assert_raises(FlowInvalidTransition) { outcome.value! }
-    end
-  end
-
-  test "expiry refusal rolls back preceding locked operation writes before committing only expiry" do
-    SIGN_IN_CLASSES.each do |model|
-      now = model.database_now
-      flow = model.create!(
-        nonce_digest: model.digest_nonce(SecureRandom.hex(16)),
-        issued_at: now - 2.minutes, expires_at: now - 1.minute, return_to: "/dashboard",
-      )
-
-      outcome =
-        model.transaction(requires_new: true) do
-          flow.with_cycle_lock do
-            flow.update!(return_to: "/unauthorized")
-            flow.advance_sign_in_to_mfa!
-
-            flunk("an expired operation must not continue to later writes")
-          end
-        end
-
-      assert_predicate outcome, :expired?
-      assert_equal "/dashboard", flow.reload.return_to
-      assert_equal model.state_id_for("EXPIRED"), flow.state_id
-      assert_raises(FlowInvalidTransition) { outcome.value! }
-    end
-  end
-
-  test "joined sign-up transition commits expiry before refusing completion in every realm" do
+  test "sign-up completion fails closed without mutating its saved lifecycle state" do
     SIGN_UP_CLASSES.each do |model|
       now = model.database_now
       attributes = { step: "start" }
@@ -581,42 +438,26 @@ class SignFlowTest < ActiveSupport::TestCase
         issued_at: now - 2.minutes, expires_at: now - 1.minute, return_to: "/dashboard",
       )
 
-      outcome = model.transaction(requires_new: true) { flow.complete_sign_up! }
+      original_status = flow.status_id
 
-      assert_predicate outcome, :expired?
-      assert_equal model.status_id_for("EXPIRED"), flow.reload.status_id
-      assert_raises(FlowInvalidTransition) { outcome.value! }
+      assert_raises(GovernanceLookupUnavailableError) { model.transaction(requires_new: true) { flow.complete_sign_up! } }
+      assert_equal original_status, flow.reload.status_id
     end
   end
 
   test "sign-up cycles cannot complete before sign-in handoff" do
     cycle = ClientSignUpFlow.create!(cycle_attrs(ClientSignUpFlow))
 
-    cycle.advance_sign_up_to_contact!
-    cycle.verify_sign_up_contact!
-    cycle.advance_sign_up_to_guardrail!
-    cycle.advance_sign_up_to_checkpoint!
-
     assert_not_respond_to cycle, :transition_to!
-    assert_raises(FlowInvalidTransition) { cycle.complete_sign_up! }
+    assert_raises(GovernanceLookupUnavailableError) { cycle.complete_sign_up! }
+    assert_equal ClientSignUpFlowStatus::STARTED, cycle.reload.status_id
   end
 
-  test "named sign-up transitions stamp completed_at after durable finalization" do
-    now = Time.zone.local(2026, 5, 18, 9, 0, 0)
+  test "sign-up forward transitions fail closed before changing the saved state" do
     cycle = ClientSignUpFlow.create!(cycle_attrs(ClientSignUpFlow))
 
-    travel_to now do
-      cycle.advance_sign_up_to_contact!
-      cycle.verify_sign_up_contact!
-      cycle.advance_sign_up_to_guardrail!
-      cycle.advance_sign_up_to_checkpoint!
-      cycle.begin_sign_up_finalization!
-      cycle.complete_sign_up!
-    end
-
-    assert_equal ClientSignUpFlowStatus::COMPLETED, cycle.status_id
-    assert_equal "COMPLETED", cycle.state
-    assert_operator cycle.completed_at, :>=, now
+    assert_raises(GovernanceLookupUnavailableError) { cycle.advance_sign_up_to_contact! }
+    assert_equal ClientSignUpFlowStatus::STARTED, cycle.reload.status_id
   end
 
   test "expired reflects expires_at and discard_at boundaries" do
@@ -636,23 +477,21 @@ class SignFlowTest < ActiveSupport::TestCase
   end
 
   test "client sign-in cycle can belong to a client token" do
-    user = Client.create!(security_mode_id: SecurityModeConfigurable::NORMAL, public_id: PublicId.generate, status_id: ClientStatus::ACTIVE)
-    token = ClientToken.create!(authentication_epoch: 0, user: user)
+    token = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
 
     cycle = ClientSignInFlow.create!(
-      cycle_attrs(ClientSignInFlow).merge(principal_id: user.id, token: token),
+      cycle_attrs(ClientSignInFlow).merge(principal_id: token.user_id, token: token),
     )
 
     assert_equal token, cycle.token
-    assert_equal user.id, cycle.principal_id
+    assert_equal token.user_id, cycle.principal_id
   end
 
   test "named sign-in transitions derive the step from the status" do
     cycle = ClientSignInFlow.create!(cycle_attrs(ClientSignInFlow))
 
-    cycle.advance_sign_in_to_mfa!
-
-    assert_equal ClientSignInFlow.state_id_for("MFA_PENDING"), cycle.state_id
+    assert_raises(GovernanceLookupUnavailableError) { cycle.advance_sign_in_to_mfa! }
+    assert_equal ClientSignInFlow.state_id_for("PRIMARY_PENDING"), cycle.reload.state_id
   end
 
   private
@@ -662,7 +501,7 @@ class SignFlowTest < ActiveSupport::TestCase
   end
 
   def cycle_attrs(cycle_class, nonce: "nonce")
-    principal_id = cycle_class.name.start_with?("Operator") ? operators(:one).id : clients(:one).id
+    principal_id = cycle_class.name.start_with?("Operator") ? 2_000 : 1_000
     attrs =
       if cycle_class < SignInFlow
         {

@@ -12,6 +12,32 @@ module SignDbscRegistrationEndpoint
     log_dbsc_request_observability!
     response.set_header("Cache-Control", "no-store")
 
+    root = dbsc_token_record
+    return dispatch_dbsc_request unless root
+
+    ActiveRecord::Base.connected_to(role: :writing) do
+      root.class.transaction do
+        device = root.device_session_record
+        device.lock!
+        root.lock!
+        unless root.active_status? && device.usable? && device.current_refresh_token_id == root.id &&
+            dbsc_presented_refresh_still_valid?(root)
+          head :unauthorized
+          return
+        end
+        @dbsc_locked_root = root
+        dispatch_dbsc_request
+      end
+    end
+  end
+
+  private
+
+  def dbsc_token_record
+    @dbsc_locked_root || token_from_refresh_cookie || current_session
+  end
+
+  def dispatch_dbsc_request
     if dbsc_session_id_header.present?
       handle_bound_cookie_refresh
     else
@@ -19,22 +45,26 @@ module SignDbscRegistrationEndpoint
     end
   end
 
-  private
+  def dbsc_presented_refresh_still_valid?(root)
+    secret = cookies[AuthenticationCookieName.refresh]
+    return true if secret.blank?
 
-  def load_current_resource
-    return nil if extract_access_token(AuthenticationBase::ACCESS_COOKIE_KEY).blank?
-
-    super
-  end
-
-  def dbsc_token_record
-    token_from_refresh_cookie || current_session
+    parsed = token_class.parse_refresh_token(secret)
+    parsed && parsed.first == root.public_id && root.refresh_token_digest_matches?(parsed.last)
   end
 
   def token_from_refresh_cookie
-    refresh_plain = cookies[AuthenticationBase::REFRESH_COOKIE_KEY].to_s
-    refresh_public_id, = token_class.parse_refresh_token(refresh_plain)
-    find_refresh_token_record(refresh_public_id)
+    refresh_plain = cookies[AuthenticationCookieName.refresh].to_s
+    parsed = token_class.parse_refresh_token(refresh_plain)
+    return unless parsed
+
+    refresh_public_id, verifier = parsed
+    root = find_refresh_token_record(refresh_public_id)
+    return unless root&.refresh_token_digest_matches?(verifier)
+    return unless root.active_status? && root.device_session_record.usable?
+    return unless root.device_session_record.current_refresh_token_id == root.id
+
+    root
   end
 
   def handle_registration
@@ -57,7 +87,7 @@ module SignDbscRegistrationEndpoint
         credentials: [
           {
             type: "cookie",
-            name: AuthenticationBase::DBSC_COOKIE_KEY,
+            name: AuthenticationCookieName.dbsc,
             attributes: dbsc_cookie_attributes_string,
           },
         ],

@@ -36,6 +36,8 @@ class ClientEmailCeremonyTransaction < OpBaseAppRecord
   include EmailCeremonyTransactionable
   include EmailCeremonyOtp
 
+  validates :evp_nonce_digest, :evp_token_digest, uniqueness: true, allow_nil: true
+
   validate :immutable_email_otp_terminal_facts
 
   ceremony_surface "app"

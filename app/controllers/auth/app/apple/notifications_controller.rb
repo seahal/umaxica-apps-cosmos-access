@@ -45,9 +45,9 @@ module Auth
           jws = payload.fetch("payload")
           raise JSON::ParserError, "payload is required" unless jws.is_a?(String) && jws.present?
 
-          ExternalAuthenticationAppleNotificationIngress.call(jws: jws)
+          ExternalAuthentication::AppleNotificationVerifier.from_credentials(jws: jws).call
           response.set_header("Cache-Control", "no-store")
-          head :ok
+          render plain: "Service unavailable", status: :service_unavailable
         rescue JSON::ParserError, ActionDispatch::Http::Parameters::ParseError, KeyError
           head :bad_request
         rescue ExternalAuthentication::AppleNotificationVerifier::VerificationError

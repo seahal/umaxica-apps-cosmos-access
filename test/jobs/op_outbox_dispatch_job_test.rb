@@ -4,21 +4,21 @@ require "test_helper"
 
 # WU-15 sender (D-26, D-117, D-121, BX-4, BX-10): the authority-stop participant row is the outbox.
 class OpOutboxDispatchJobTest < ActiveSupport::TestCase
-  fixtures :clients
+  self.fixture_table_names = %w(client_tokens client_device_sessions)
 
   setup do
-    client = clients(:one)
-    root = ClientToken.create!(authentication_epoch: 0, user: client)
+    root = client_tokens(:one)
+    @device = client_device_sessions(:one)
     @grant = OpAppGrant.create!(
       authentication_epoch: 0,
-      client_token: root, client_device_session: root.device_session, device_session_id: root.device_session_id,
+      client_token_id: root.id, device_session_id: root.device_session_id,
       oidc_client_id: "core-app-jp", oidc_scope: "openid", oidc_jti: SecureRandom.uuid, last_used_at: Time.current,
       refresh_token_expires_at: 1.day.from_now,
     )
     OpAuthorityStopCommitter.stop_root(
-      root:, cause: "browser_logout", principal_public_id: client.public_id, authority_evidence_ref: "a",
+      root:, cause: "browser_logout", principal_public_id: @device.principal_public_id, authority_evidence_ref: "a",
     )
-    @event = OpAppAuthorityStopParticipant.sole
+    @event = OpAppAuthorityStopParticipant.find_by!(sid: @grant.public_id)
   end
 
   test "an acknowledged delivery makes the participant final" do
@@ -62,13 +62,14 @@ class OpOutboxDispatchJobTest < ActiveSupport::TestCase
     assert_equal({ OpLogoutTokenIssuer::EVENT => {} }, claims.fetch("events"))
     assert_not claims.key?("nonce")
     id_token = OidcIdTokenIssuer.call(
-      resource: clients(:one), client: OidcClientRegistry.find!("core-app-jp"), nonce: "nonce",
-      sid: @grant.public_id,
+      resource_type: "client", subject: "cli_#{@device.principal_public_id}",
+      client: OidcClientRegistry.find!("core-app-jp"), nonce: "nonce", sid: @grant.public_id,
     )
     id_claims, id_header = decode_op_id_token_for_test(id_token, resource_type: "client")
 
     assert_equal "id-token+jwt", id_header.fetch("typ")
     assert_equal "nonce", id_claims.fetch("nonce")
+    assert_equal "cli_#{@device.principal_public_id}", id_claims.fetch("sub")
 
     assert_equal @grant.public_id, id_claims.fetch("sid")
     assert_equal id_claims.fetch("sid"), claims.fetch("sid")
@@ -176,7 +177,7 @@ class OpOutboxDispatchJobTest < ActiveSupport::TestCase
   test "a transient RP delivery failure preserves the OP stop until a later delivery succeeds" do
     OidcBackchannelLogoutClient.stub(:call, "http_503") { OpOutboxDispatchJob.perform_now }
 
-    assert_predicate @grant.client_token.reload, :revoked?
+    assert_predicate ClientToken.find(@grant.client_token_id).reload, :revoked?
     assert_not_nil @grant.reload.revoked_at
     assert_equal [status("pending"), "http_503", 1],
                  [@event.reload.status_id, @event.last_outcome, @event.delivery_attempts]
@@ -184,7 +185,7 @@ class OpOutboxDispatchJobTest < ActiveSupport::TestCase
     @event.update!(next_attempt_at: OpAppAuthorityStopParticipant.database_now - 1.second)
     OidcBackchannelLogoutClient.stub(:call, :acknowledged) { OpOutboxDispatchJob.perform_now }
 
-    assert_predicate @grant.client_token.reload, :revoked?
+    assert_predicate ClientToken.find(@grant.client_token_id).reload, :revoked?
     assert_not_nil @grant.reload.revoked_at
     assert_equal [status("acknowledged"), "acknowledged", 2],
                  [@event.reload.status_id, @event.last_outcome, @event.delivery_attempts]

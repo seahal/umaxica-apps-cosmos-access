@@ -7,27 +7,17 @@ class StylesheetTagsTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
   APPLICATION_LAYOUTS = {
-    "app/views/layouts/auth/app/application.html.erb" => "entrypoints/application",
-    "app/views/layouts/auth/org/application.html.erb" => "entrypoints/application",
     "app/views/layouts/visa/app/application.html.erb" => "entrypoints/application",
     "app/views/layouts/visa/org/application.html.erb" => "entrypoints/application",
   }.freeze
 
-  CHROME_APPLICATION_LAYOUTS = APPLICATION_LAYOUTS.keys.grep(%r{layouts/auth/}).freeze
-
   # One Inertia layout per user-facing FQDN, each loading only its own surface entrypoint.
   INERTIA_LAYOUTS = %w(
-    auth/app auth/org
     visa/app visa/org
   ).to_h do |surface|
     family, boundary = surface.split("/")
     ["app/views/layouts/#{surface}/inertia.html.erb", "entrypoints/inertia/#{family}_#{boundary}.tsx"]
   end.freeze
-
-  TURNSTILE_LAYOUTS = %w(
-    app/views/layouts/auth/app/application.html.erb
-    app/views/layouts/auth/org/application.html.erb
-  ).freeze
 
   FORBIDDEN_TAILWIND_FRAGMENTS = %w(
     bg-
@@ -109,30 +99,6 @@ class StylesheetTagsTest < ActiveSupport::TestCase
            %(Propshaft must resolve application.css for stylesheet_link_tag "application")
   end
 
-  test "Auth layouts include procedure chrome and semantic landmarks without navigation" do
-    CHROME_APPLICATION_LAYOUTS.each do |path|
-      contents = Rails.root.join(path).read
-
-      assert_includes contents, "<header>", "layout #{path} must include a header"
-      assert_not_includes contents, "<nav", "layout #{path} must not add navigation outside its procedure"
-      assert_includes contents, 'id="main"', "layout #{path} must place content in main#main"
-      assert_includes contents, "<footer>", "layout #{path} must include a footer"
-      assert_includes contents, 'render "layouts/shared/flash_messages"', "layout #{path} must render flash messages"
-      assert_includes contents, 'render "layouts/shared/current_banner"', "layout #{path} must render the banner"
-      assert_includes contents, 'render "layouts/shared/copyright"',
-                      "layout #{path} must render copyright"
-    end
-  end
-
-  test "Auth application layouts own Turnstile API loading" do
-    TURNSTILE_LAYOUTS.each do |path|
-      contents = Rails.root.join(path).read
-
-      assert_includes contents, 'render "layouts/shared/cloudflare_turnstile_api"',
-                      "Turnstile API loading must be layout-owned in #{path}"
-    end
-  end
-
   test "application-owned importmap entrypoints remain available" do
     assert_predicate Rails.root.join("config/importmap.rb"), :file?
     assert_not Rails.root.join("bin/importmap").exist?, "legacy bin/importmap must not be restored"
@@ -140,20 +106,6 @@ class StylesheetTagsTest < ActiveSupport::TestCase
     gemfile = Rails.root.join("Gemfile").read
 
     assert_match(/^\s*gem\s+["']importmap-rails["']/, gemfile)
-  end
-
-  test "application layouts keep the turbo refresh contract" do
-    %w(
-      app/views/layouts/auth/app/application.html.erb
-      app/views/layouts/auth/org/application.html.erb
-    ).each do |path|
-      contents = Rails.root.join(path).read
-
-      assert_includes contents, 'meta name="turbo-refresh-method" content="morph"',
-                      "missing turbo refresh method meta tag in #{path}"
-      assert_includes contents, 'meta name="turbo-refresh-scroll" content="preserve"',
-                      "missing turbo refresh scroll meta tag in #{path}"
-    end
   end
 
   # An Inertia shell owns the document and nothing else: the header, footer and preference controls

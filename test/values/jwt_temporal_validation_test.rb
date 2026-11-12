@@ -86,29 +86,6 @@ class JwtTemporalValidationTest < ActiveSupport::TestCase
     end
   end
 
-  test "anonymous preference JWT uses the exact 400 day lifetime without nbf" do
-    travel_to Time.utc(2026, 10, 22, 12) do
-      host = Rails.configuration.x.boot_config.fetch(:hosts).auth_service.host
-      issued_at = Time.current
-      snapshot = SecurityJwtPreferenceTokenCodec::ANONYMOUS_PREFERENCE_VALUES.transform_values(&:first)
-      token = PreferenceToken.encode(
-        snapshot, host: host, preference_type: "AppPreference",
-                  public_id: "temporal-preference", jti: "temporal-jti",
-                  jwt_issuer_id: "preference_app", issued_at: issued_at,
-      )
-
-      payload, header = JWT.decode(token, nil, false)
-
-      assert_equal issued_at.to_i, payload.fetch("iat")
-      assert_equal issued_at.to_i + 400.days.to_i, payload.fetch("exp")
-      assert_equal "app", payload.fetch("aud")
-      assert_equal "JWT", header.fetch("typ")
-      assert_not payload.key?("nbf")
-      assert_predicate PreferenceToken.decode(token, host: host, jwt_issuer_id: "preference_app"), :present?
-    end
-  end
-
-
   test "client assertions enforce the fixed thirty second iat boundary" do
     travel_to Time.utc(2026, 10, 22, 12) do
       now = Time.current

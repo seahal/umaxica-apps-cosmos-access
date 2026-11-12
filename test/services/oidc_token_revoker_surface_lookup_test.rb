@@ -10,22 +10,20 @@ require "test_helper"
 # an access token bound to an OAuth usage row rather than to a parent browser
 # session row.
 class OidcTokenRevokerSurfaceLookupTest < ActiveSupport::TestCase
-  fixtures :clients, :client_statuses, :client_token_kinds, :client_token_statuses,
-           :client_token_binding_methods, :client_token_dbsc_statuses,
-           :operators, :operator_statuses, :operator_token_kinds, :operator_token_statuses,
-           :operator_token_binding_methods, :operator_token_dbsc_statuses
+  self.fixture_table_names = %w(
+    client_tokens client_device_sessions client_token_kinds client_token_statuses
+    client_token_binding_methods client_token_dbsc_statuses operator_tokens operator_device_sessions
+    operator_token_kinds operator_token_statuses operator_token_binding_methods operator_token_dbsc_statuses
+  )
 
   test "a staff client revokes its own refresh token usage" do
-    token = OperatorToken.create!(
-      authentication_epoch: 0,
-      staff: operators(:one),
-      staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
-      staff_token_status_id: OperatorTokenStatus::ACTIVE,
-      discard_at: 1.day.from_now,
-    )
+    token = OperatorToken.find(ActiveRecord::FixtureSet.identify(:one))
     usage = OpOrgGrant.create!(
       authentication_epoch: 0,
-      operator_token: token, oidc_client_id: "core-org-jp", refresh_token_expires_at: 1.hour.from_now,
+      operator_token_id: token.id,
+      device_session_id: token.device_session_id,
+      oidc_client_id: "core-org-jp",
+      refresh_token_expires_at: 1.hour.from_now,
     )
     refresh_token = usage.issue_refresh_token!
 
@@ -42,17 +40,8 @@ class OidcTokenRevokerSurfaceLookupTest < ActiveSupport::TestCase
   end
 
   test "an access token sid that names only the parent does not revoke the parent" do
-    token = ClientToken.create!(
-      authentication_epoch: 0,
-      user: clients(:one),
-      user_token_kind_id: ClientTokenKind::BROWSER_WEB,
-      user_token_status_id: ClientTokenStatus::ACTIVE,
-      discard_at: 1.day.from_now,
-      oidc_client_id: "core-app-jp",
-      oidc_sid: SecureRandom.uuid,
-      oidc_jti: SecureRandom.uuid,
-    )
-    payload = { "sid" => token.oidc_sid, "jti" => token.oidc_jti }
+    token = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
+    payload = { "sid" => token.public_id, "jti" => SecureRandom.uuid }
 
     result =
       OidcClientRegistry.stub(:authenticate, true) do
@@ -68,17 +57,17 @@ class OidcTokenRevokerSurfaceLookupTest < ActiveSupport::TestCase
   end
 
   test "an access token whose jti does not match the session is not revoked" do
-    token = ClientToken.create!(
+    root = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
+    grant = OpAppGrant.create!(
       authentication_epoch: 0,
-      user: clients(:one),
-      user_token_kind_id: ClientTokenKind::BROWSER_WEB,
-      user_token_status_id: ClientTokenStatus::ACTIVE,
-      discard_at: 1.day.from_now,
+      client_token_id: root.id,
+      device_session_id: root.device_session_id,
       oidc_client_id: "core-app-jp",
-      oidc_sid: SecureRandom.uuid,
       oidc_jti: SecureRandom.uuid,
+      oidc_scope: "openid",
+      refresh_token_expires_at: 1.hour.from_now,
     )
-    payload = { "sid" => token.oidc_sid, "jti" => SecureRandom.uuid }
+    payload = { "sid" => grant.public_id, "jti" => SecureRandom.uuid }
 
     OidcClientRegistry.stub(:authenticate, true) do
       AuthenticationTokenService.stub(:decode_allow_expired, payload) do
@@ -88,6 +77,6 @@ class OidcTokenRevokerSurfaceLookupTest < ActiveSupport::TestCase
       end
     end
 
-    assert_not token.reload.revoked?
+    assert_not grant.reload.revoked?
   end
 end

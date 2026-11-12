@@ -6,7 +6,7 @@ class ApplicationRecord < ActiveRecord::Base
   self.strict_loading_by_default = true
 
   # Every domain gets its own dedicated abstract class with its own `connects_to`
-  # (PublishingRecord, OpBaseAppRecord, ...); nothing does business logic through
+  # (OpBaseAppRecord, OpBaseOrgRecord, ...); nothing does business logic through
   # ApplicationRecord directly. Without a connection of its own, though,
   # `ActiveRecord::Base.connection` (used by Rails and gems without a dedicated
   # class) has no connection unless the primary role is defined here. `primary`

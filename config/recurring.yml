@@ -3,27 +3,6 @@
 # explicitly so a local worker does not silently exercise a different set.
 
 development:
-  social_audit_delivery:
-    class: SocialAuditDeliveryJob
-    queue: retention
-    priority: 50
-    args:
-      - batch_size: 500
-    schedule: every 15 minutes
-  contact_audit_delivery:
-    class: ContactAuditDeliveryJob
-    queue: retention
-    priority: 50
-    args:
-      - batch_size: 500
-    schedule: every 15 minutes
-  passkey_audit_delivery:
-    class: PasskeyAuditDeliveryJob
-    queue: retention
-    priority: 50
-    args:
-      - batch_size: 500
-    schedule: every 15 minutes
   step_up_audit_delivery:
     class: StepUpAuditDeliveryJob
     queue: retention
@@ -99,13 +78,6 @@ development:
     args:
       - batch_size: 500
     schedule: every 15 minutes
-  processor_erasure_notification_retry:
-    class: ProcessorErasureNotificationRetryJob
-    queue: retention
-    priority: 50
-    args:
-      - batch_size: 100
-    schedule: every 15 minutes
   dpop_proof_state_purge:
     class: DpopProofStatePurgeJob
     queue: retention
@@ -127,20 +99,6 @@ development:
     args:
       - batch_size: 500
     schedule: every 15 minutes
-  enforcement_expiry:
-    class: EnforcementExpiryJob
-    queue: retention
-    priority: 50
-    args:
-      - batch_size: 200
-    schedule: every 15 minutes
-  enforcement_reconciliation:
-    class: EnforcementReconciliationJob
-    queue: retention
-    priority: 50
-    args:
-      - batch_size: 200
-    schedule: every 15 minutes
   # R5-WU10: durable back-channel logout delivery. The OP outbox is the source of truth; this sweep
   # leases due rows, so a lost enqueue or crashed worker never loses a logout intent.
   op_outbox_dispatch:
@@ -148,37 +106,10 @@ development:
     queue: default
     priority: 10
     schedule: every minute
-  # R5-WU06: applies committed identity stop events that have no OP receipt yet (crash/lost enqueue).
-  op_identity_event_sweep:
-    class: OpIdentityEventSweepJob
-    queue: default
-    priority: 10
-    schedule: every 5 minutes
 
 test: {}
 
 production:
-  social_audit_delivery:
-    class: SocialAuditDeliveryJob
-    queue: retention
-    priority: 50
-    args:
-      - batch_size: 500
-    schedule: every 15 minutes
-  contact_audit_delivery:
-    class: ContactAuditDeliveryJob
-    queue: retention
-    priority: 50
-    args:
-      - batch_size: 500
-    schedule: every 15 minutes
-  passkey_audit_delivery:
-    class: PasskeyAuditDeliveryJob
-    queue: retention
-    priority: 50
-    args:
-      - batch_size: 500
-    schedule: every 15 minutes
   step_up_audit_delivery:
     class: StepUpAuditDeliveryJob
     queue: retention
@@ -254,13 +185,6 @@ production:
     args:
       - batch_size: 500
     schedule: every 15 minutes
-  processor_erasure_notification_retry:
-    class: ProcessorErasureNotificationRetryJob
-    queue: retention
-    priority: 50
-    args:
-      - batch_size: 100
-    schedule: every 15 minutes
   dpop_proof_state_purge:
     class: DpopProofStatePurgeJob
     queue: retention
@@ -282,20 +206,6 @@ production:
     args:
       - batch_size: 500
     schedule: every 15 minutes
-  enforcement_expiry:
-    class: EnforcementExpiryJob
-    queue: retention
-    priority: 50
-    args:
-      - batch_size: 200
-    schedule: every 15 minutes
-  enforcement_reconciliation:
-    class: EnforcementReconciliationJob
-    queue: retention
-    priority: 50
-    args:
-      - batch_size: 200
-    schedule: every 15 minutes
   # R5-WU10: durable back-channel logout delivery. The OP outbox is the source of truth; this sweep
   # leases due rows, so a lost enqueue or crashed worker never loses a logout intent.
   op_outbox_dispatch:
@@ -303,9 +213,3 @@ production:
     queue: default
     priority: 10
     schedule: every minute
-  # R5-WU06: applies committed identity stop events that have no OP receipt yet (crash/lost enqueue).
-  op_identity_event_sweep:
-    class: OpIdentityEventSweepJob
-    queue: default
-    priority: 10
-    schedule: every 5 minutes

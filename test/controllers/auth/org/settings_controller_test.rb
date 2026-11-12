@@ -3,7 +3,7 @@
 
 require "test_helper"
 
-class Auth::Org::SettingsControllerTest < ActionDispatch::IntegrationTest
+class RetiredOrgSettingsControllerTest < ActionDispatch::IntegrationTest
   setup do
     @auth_host = ENV.fetch("PUBLIC_AUTH_STAFF_URL")
     @base_host = ENV.fetch("PUBLIC_AUTH_STAFF_URL")

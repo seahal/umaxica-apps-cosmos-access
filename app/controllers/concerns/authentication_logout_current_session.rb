@@ -43,16 +43,8 @@ class AuthenticationLogoutCurrentSession
 
   private
 
-  # A risk event without a resolved OP root is principal-wide and begins in the actor store before
-  # the stop is applied in OP, preserving the Zenith -> OP lock order.
   def stop_risk_authority!(_token_record)
-    actor = resource
-    unless [Client, Operator].include?(actor.class) && actor.persisted?
-      raise OpAuthorityStopCommitter::Refused, "risk stop requires an established principal"
-    end
-
-    SignRiskEnforcer.revoke!(actor)
-    true
+    raise OpAuthorityStopCommitter::Refused, "risk stop requires an established OP root session"
   end
 
   attr_reader :cause, :current, :resource, :token, :token_class, :session_public_id, :reason,
@@ -258,8 +250,7 @@ class AuthenticationLogoutCurrentSession
 
   # D-123: the stop names its principal; one that cannot be established is refused by the primitive.
   def principal_public_id_for(root)
-    actor = root.actor_record || resource
-    actor&.public_id.to_s
+    root.principal_public_id
   end
 
   def device_session_for_token(token_record)

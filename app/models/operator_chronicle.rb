@@ -52,7 +52,7 @@ class OperatorChronicle < ChronicleRecord
 
   belongs_to :staff_chronicle_event, class_name: "OperatorChronicleEvent", foreign_key: :event_id,
                                      inverse_of: :staff_chronicles
-  belongs_to :actor, polymorphic: true
+  validates :actor_id, :actor_type, presence: true
   belongs_to :staff_chronicle_level, class_name: "OperatorChronicleLevel", foreign_key: :level_id,
                                      inverse_of: :staff_chronicles
   # subject_id/subject_type for cross-DB compatibility (no FK)
@@ -61,6 +61,11 @@ class OperatorChronicle < ChronicleRecord
 
   validates :event_id, numericality: { only_integer: true }, allow_nil: true
   validates :level_id, numericality: { only_integer: true }, allow_nil: true
+  validates :context, jsonb_keys_uniqueness: {
+    keys: %w(transaction_public_id halt_generation),
+    conditions: -> { where(event_id: OperatorChronicleEvent::SIGN_FLOW_HALTED) },
+  }, if: :sign_flow_halted_event?
+  validate :sign_flow_halted_context_is_valid
   # Validate that event_id exists in staff_chronicle_events table
   validate :event_id_must_exist
   before_validation :default_actor_to_subject
@@ -71,15 +76,6 @@ class OperatorChronicle < ChronicleRecord
 
   def set_timestamp
     self.timestamp ||= Time.current
-  end
-
-  def staff
-    Operator.find(subject_id) if subject_type == "Operator"
-  end
-
-  def staff=(staff)
-    self.subject_id = staff.id.to_s
-    self.subject_type = "Operator"
   end
 
   def event_id_must_exist
@@ -106,5 +102,23 @@ class OperatorChronicle < ChronicleRecord
 
     self.actor_id = subject_id
     self.actor_type = subject_type
+  end
+
+  private
+
+  def sign_flow_halted_event?
+    event_id == OperatorChronicleEvent::SIGN_FLOW_HALTED
+  end
+
+  def sign_flow_halted_context_is_valid
+    return unless sign_flow_halted_event?
+
+    facts = context.is_a?(Hash) ? context.stringify_keys : {}
+    reference = facts["transaction_public_id"]
+    generation = facts["halt_generation"]
+    return if reference.is_a?(String) && reference.strip.present? &&
+      (generation.is_a?(String) || generation.is_a?(Integer)) && /\A(?:0|[1-9][0-9]*)\z/.match?(generation.to_s)
+
+    errors.add(:context, :invalid)
   end
 end

@@ -204,7 +204,8 @@ class JumpRtReturnPolicyTest < ActiveSupport::TestCase
 
   test "A02-10: the Visa handoff table matches the signed Jump edge catalog" do
     document = Rails.root.join("docs/operations/jump-rt-visa-edges.md").read
-    rows = document.scan(/^\| `([A-Z_]+)` \| `([^`]+)` \| `([A-Z_]+)` \| `([^`]+)` \| ([^|]+) \|$/)
+    # Markdown table cells may be padded by the formatter, so allow any spacing around cells.
+    rows = document.scan(/^\|\s*`([A-Z_]+)`\s*\|\s*`([^`]+)`\s*\|\s*`([A-Z_]+)`\s*\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|$/)
     expected =
       JumpRtReturnPolicy::EDGE_CATALOG.filter_map do |edge|
         issuer = edge.fetch(:issuer_namespace)

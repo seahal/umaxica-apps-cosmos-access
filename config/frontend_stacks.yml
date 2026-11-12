@@ -3,13 +3,9 @@
 version: 1
 stacks:
   importmap:
-    - auth/app/application
-    - auth/org/application
     - visa/app/application
     - visa/org/application
   vite:
-    - auth/app/inertia
-    - auth/org/inertia
     - visa/app/inertia
     - visa/org/inertia
   excluded:

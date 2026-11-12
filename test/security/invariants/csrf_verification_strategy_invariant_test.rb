@@ -24,8 +24,6 @@ module Security
 
       EXPECTED_STRATEGY = :header_or_legacy_token
       TOKEN_REQUIRED_ROOTS = %w(
-        app/controllers/auth/app/application_controller.rb
-        app/controllers/auth/org/application_controller.rb
         app/controllers/visa/app/authority_controller.rb
         app/controllers/visa/org/authority_controller.rb
       ).freeze
@@ -67,7 +65,7 @@ module Security
                      ApplicationController.forgery_protection_strategy
       end
 
-      test "Auth and Visa authority controllers require Rails tokens before surface callbacks" do
+      test "retained Visa authority controllers require Rails tokens before surface callbacks" do
         missing =
           TOKEN_REQUIRED_ROOTS.filter_map do |relative|
             source = Rails.root.join(relative).read

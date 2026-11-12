@@ -140,8 +140,9 @@ class AuthAdmissionBindingTest < ActiveSupport::TestCase
       end
 
       duplicate = binding.attributes.except("id").merge("entry_ref" => SecureRandom.uuid)
+      assert_raises(ActiveRecord::RecordInvalid) { binding.class.create!(duplicate) }
       assert_raises(ActiveRecord::RecordNotUnique, "#{surface}: one live binding per parent") do
-        binding.class.transaction(requires_new: true) { binding.class.create!(duplicate) }
+        binding.class.transaction(requires_new: true) { binding.class.insert_all!([duplicate]) }
       end
       assert_equal issuance.transaction.id, binding.reload.authorization_transaction_id
     end
@@ -542,7 +543,12 @@ class AuthAdmissionBindingTest < ActiveSupport::TestCase
       end.merge(authorization_transaction_id: parent.id),
     )
 
-    assert_raises(ActiveRecord::RecordNotUnique) { second.save!(validate: true) }
+    assert_raises(ActiveRecord::RecordInvalid) { second.save! }
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      ClientAuthAdmissionBinding.transaction(requires_new: true) do
+        ClientAuthAdmissionBinding.insert_all!([second.attributes.except("id")])
+      end
+    end
 
     expired =
       begin

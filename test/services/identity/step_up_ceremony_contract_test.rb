@@ -6,17 +6,15 @@ require "test_helper"
 class IdentityStepUpCeremonyContractTest < ActiveSupport::TestCase
   include ActiveSupport::Testing::TimeHelpers
 
-  fixtures :clients, :client_statuses, :client_token_kinds, :client_token_statuses
+  self.fixture_table_names = %w(
+    client_tokens client_device_sessions client_token_kinds client_token_statuses
+    client_token_binding_methods client_token_dbsc_statuses
+  )
 
   setup do
     @now = Time.zone.parse("2026-06-03 12:00:00")
-    @client = clients(:one)
-    @token = ClientToken.create!(
-      authentication_epoch: 0,
-      user: @client,
-      user_token_kind_id: ClientTokenKind::BROWSER_WEB,
-      user_token_status_id: ClientTokenStatus::ACTIVE,
-    )
+    @token = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
+    @principal_public_id = @token.device_session.principal_public_id
   end
 
   teardown do
@@ -114,12 +112,15 @@ class IdentityStepUpCeremonyContractTest < ActiveSupport::TestCase
       last_step_up_audience: "step_up:app",
       last_step_up_session_public_id: @token.public_id,
       last_step_up_phishing_resistant: false,
+      evidence_state_id: IdentityStepUpCeremonyContract::EVIDENCE_RECORDED,
       last_step_up_user_verified: false,
       last_step_up_credential_ref: "credential-public-id",
       last_step_up_full_reauthentication: false,
       last_step_up_resource_ref: "resource-public-id",
       last_step_up_tenant_ref: "tenant-public-id",
     )
+
+    root_attributes = @token.reload.attributes.slice("user_token_status_id", "discard_at")
 
     IdentityStepUpCeremonyFreshnessRevoker.call!(@token)
 
@@ -132,11 +133,13 @@ class IdentityStepUpCeremonyContractTest < ActiveSupport::TestCase
     assert_nil @token.last_step_up_audience
     assert_nil @token.last_step_up_session_public_id
     assert_not @token.last_step_up_phishing_resistant
-    assert_nil @token.last_step_up_user_verified
+    assert_equal IdentityStepUpCeremonyContract::EVIDENCE_ABSENT, @token.evidence_state_id
+    assert_same false, @token.last_step_up_user_verified
     assert_nil @token.last_step_up_credential_ref
-    assert_nil @token.last_step_up_full_reauthentication
+    assert_same false, @token.last_step_up_full_reauthentication
     assert_nil @token.last_step_up_resource_ref
     assert_nil @token.last_step_up_tenant_ref
+    assert_equal root_attributes, @token.attributes.slice("user_token_status_id", "discard_at")
   end
 
   test "fetch_surface_value rejects invalid surfaces" do
@@ -221,7 +224,7 @@ class IdentityStepUpCeremonyContractTest < ActiveSupport::TestCase
       "aud" => IdentityStepUpCeremonyContract.sign_audience("app"),
       "purpose" => IdentityStepUpCeremonyGrant::PURPOSE,
       "surface" => "app",
-      "actor_ref" => @client.public_id,
+      "actor_ref" => @principal_public_id,
       "session_ref" => @token.public_id,
       "transaction_id" => "step-up-txn",
       "jti" => "step-up-grant",
@@ -247,7 +250,7 @@ class IdentityStepUpCeremonyContractTest < ActiveSupport::TestCase
       "aud" => IdentityStepUpCeremonyContract.acme_audience("app"),
       "purpose" => IdentityStepUpCeremonyResult::PURPOSE,
       "surface" => "app",
-      "actor_ref" => @client.public_id,
+      "actor_ref" => @principal_public_id,
       "session_ref" => @token.public_id,
       "transaction_id" => "step-up-txn",
       "grant_jti" => "step-up-grant",

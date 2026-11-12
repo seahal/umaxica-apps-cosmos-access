@@ -41,15 +41,6 @@ class BranchCoverageBatch39EasyMissesTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { RedirectsJumpGatewayUrl.call(gateway_origin: "http://example.com") }
   end
 
-  test "ExternalAuthenticationAppleNotificationProcessor terminal short-circuit" do
-    event = Object.new
-    event.define_singleton_method(:terminal?) { true }
-    processor = ExternalAuthenticationAppleNotificationProcessor.allocate
-    processor.instance_variable_set(:@event, event)
-
-    assert_equal event, processor.call
-  end
-
   test "OidcLogoutRequest verify blank client_id and jti" do
     verifier = Object.new
     verifier.define_singleton_method(:verified) { |*_a, **_k| { "client_id" => "", "jti" => "x" } }

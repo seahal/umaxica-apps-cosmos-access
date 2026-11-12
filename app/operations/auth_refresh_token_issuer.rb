@@ -1,17 +1,25 @@
 # typed: false
 # frozen_string_literal: true
 
-# Rotates refresh tokens using one-time consume semantics.
-# Old rows are preserved and replay is detected via rotated_at.
-#
-# Auth owns refresh token rotation, replay detection, family revocation, and audit.
+# Browser root refresh is independent of RP grant refresh. The realm is explicit and the
+# caller builds the response inside the same transaction as the one-time rotation.
 class AuthRefreshTokenIssuer
   Result =
-    Data.define(:success, :token, :refresh_token, :previous_token, :reason) do
+    Data.define(:success, :token, :refresh_token, :previous_token, :reason, :response) do
+      public
+
       def success? = success
 
       def [](key)
-        public_send(key)
+        case key.to_sym
+        when :success then success
+        when :token then token
+        when :refresh_token then refresh_token
+        when :previous_token then previous_token
+        when :reason then reason
+        when :response then response
+        else raise KeyError, "unsupported refresh result key"
+        end
       end
 
       def fetch(key)
@@ -22,166 +30,105 @@ class AuthRefreshTokenIssuer
       end
     end
 
-  def self.call(refresh_token:)
-    new(refresh_token).call
+  def self.call(refresh_token:, resource_type:, response_builder: nil, precondition: nil)
+    new(refresh_token, resource_type, response_builder, precondition).call
   end
 
-  def initialize(refresh_token)
+  public
+
+  def initialize(refresh_token, resource_type, response_builder, precondition)
     @refresh_token = refresh_token
+    @response_builder = response_builder
+    @precondition = precondition
+    case resource_type
+    when "client"
+      @token_class = ClientToken
+      @device_class = ClientDeviceSession
+      @owner = OpBaseAppRecord
+    when "operator"
+      @token_class = OperatorToken
+      @device_class = OperatorDeviceSession
+      @owner = OpBaseOrgRecord
+    else
+      raise ArgumentError, "unsupported browser refresh realm"
+    end
   end
 
   def call
-    parsed = parse_refresh_token
+    parsed = @token_class.parse_refresh_token(@refresh_token)
     return failure(:invalid_format) unless parsed
 
     public_id, verifier = parsed
+    @owner.connected_to(role: :writing) do
+      @owner.transaction(requires_new: true) do
+        token = @token_class.find_by(public_id: public_id)
+        return failure(:token_not_found) unless token
+        return failure(:invalid_digest, token: token) unless token.refresh_token_digest_matches?(verifier)
 
-    result = nil
-    ActiveRecord::Base.connected_to(role: :writing) do
-      operation = -> { find_token(public_id) }
-      token = defined?(Prosopite) ? Prosopite.pause(&operation) : operation.call
+        device = @device_class.lock.find(token.device_session_id)
+        token.lock!
+        raise FlowConfigurationError, "browser refresh root device changed" unless token.device_session_id == device.id
 
-      return failure(:token_not_found) unless token
-      return failure(:invalid_digest, token: token) unless token.refresh_token_digest_matches?(verifier)
+        return failure(:inactive_token, token: token) unless device.usable?
 
-      digest = token.class.digest_refresh_token(verifier)
-      result = token.class.rotate_refresh!(presented_refresh_digest: digest)
-    end
-
-    case result[:status]
-    when :rotated
-      touch_oidc_connection!(result[:token])
-      success(
-        token: result[:token],
-        refresh_token: result[:refresh_token],
-        previous_token: result[:previous_token],
-      )
-    when :replay
-      handle_refresh_token_reuse(result[:token])
-      failure(:refresh_token_reuse_detected, token: result[:token])
-    else
-      failure(:inactive_token, token: result[:token])
+        @precondition&.call(token)
+        rotation = @token_class.rotate_refresh!(presented_refresh_digest: @token_class.digest_refresh_token(verifier))
+        case rotation.fetch(:status)
+        when :rotated
+          replacement = rotation.fetch(:token)
+          touch_oidc_connection!(replacement)
+          response = @response_builder.call(replacement, rotation.fetch(:refresh_token)) if @response_builder
+          Result.new(
+            success: true, token: replacement, refresh_token: rotation.fetch(:refresh_token),
+            previous_token: rotation.fetch(:previous_token), reason: nil, response: response,
+          )
+        when :replay
+          stop_replayed_device!(device, rotation.fetch(:token))
+          failure(:refresh_token_reuse_detected, token: rotation.fetch(:token))
+        when :invalid
+          failure(:inactive_token, token: rotation[:token])
+        else
+          raise RuntimeError, "unsupported browser rotation outcome"
+        end
+      end
     end
   end
 
   private
 
   def touch_oidc_connection!(token)
-    return unless token.respond_to?(:oidc_connection)
+    connection = token.oidc_connection
+    return unless connection
 
-    ActiveRecord::Base.connected_to(role: :writing) do
-      # rubocop:disable Rails/SkipsModelValidations
-      now = token.class.database_now
-      token.oidc_connection&.update_columns(last_used_at: now, updated_at: now)
-      # rubocop:enable Rails/SkipsModelValidations
-    end
+    now = @token_class.database_now
+    connection.update!(last_used_at: now, updated_at: now)
   end
 
-  def parse_refresh_token
-    ClientToken.parse_refresh_token(@refresh_token)
-  end
-
-  def find_token(public_id)
-    ClientToken.find_by(public_id: public_id) ||
-      OperatorToken.find_by(public_id: public_id)
-  end
-
-  # When reuse is observed (a valid token that no longer matches the
-  # stored digest), we treat the event as a family compromise and revoke
-  # every token in the same refresh token family. This is logged without
-  # the raw refresh verifier to avoid exposing secret_credentials.
-  def handle_refresh_token_reuse(token)
-    with_token_writing_connection(token) do
-      family_scope = refresh_token_family_scope(token)
-      now = token.class.database_now
-      # rubocop:disable Rails/SkipsModelValidations
-      family_scope.update_all(discard_at: now)
-      # rubocop:enable Rails/SkipsModelValidations
-
-      actor_key = actor_identifier_column(token) || :user_id
-      SignRiskEmitter.emit(
-        "refresh_reuse_detected",
-        actor_key => actor_identifier(token),
-        :user_token_id => token.public_id,
+  # The Device Session is the root/grant boundary, including grants whose issuing root
+  # is historical. Do not leave a rotated replacement or its grants usable after replay.
+  def stop_replayed_device!(device, token)
+    roots = @token_class.where(device_session_id: device.id).order(:id).lock.to_a
+    roots.each do |root|
+      OpAuthorityStopCommitter.stop_root(
+        root: root, cause: "risk", principal_public_id: device.principal_public_id,
+        authority_evidence_ref: "browser_refresh_reuse:#{token.public_id}",
       )
+      raise OpAuthorityStopCommitter::Refused, "browser replay stop did not revoke its root" unless root.reload.revoked?
     end
-
+    device.revoke!(reason: "refresh_token_reuse")
+    case token
+    when ClientToken
+      SignRiskEmitter.emit("refresh_reuse_detected", user_id: token.user_id, user_token_id: token.public_id)
+    when OperatorToken
+      SignRiskEmitter.emit("refresh_reuse_detected", staff_id: token.staff_id, user_token_id: token.public_id)
+    else
+      raise ArgumentError, "unsupported browser replay root"
+    end
     RefreshTokenReuseActivityRecorder.call(token: token, result: "token_family_revoked")
-
-    Rails.logger.warn(
-      # This is an internal diagnostic, not user-facing copy.
-      # rubocop:disable I18n/RailsI18n/DecorateString
-      "Refresh token reuse detected; the refresh token family was revoked so the user can sign in again.",
-      # rubocop:enable I18n/RailsI18n/DecorateString
-    )
-    Rails.logger.info(
-      JitLogEvent.format(
-        "authentication.refresh.reuse_detected",
-        # This is an internal diagnostic, not user-facing copy.
-        # rubocop:disable I18n/RailsI18n/DecorateString
-        message: "Refresh token reuse detected; the refresh token family was revoked.",
-        # rubocop:enable I18n/RailsI18n/DecorateString
-        token_id: token.public_id,
-        refresh_token_family_id: token.refresh_token_family_id,
-        actor_type: actor_type_label(token),
-        actor_id: actor_identifier(token),
-      ),
-    )
-  end
-
-  def refresh_token_family_scope(token)
-    family_id = token.refresh_token_family_id.to_s
-    return token.class.where(id: token.id) if family_id.blank?
-
-    token.class.where(refresh_token_family_id: family_id)
-  end
-
-  def with_token_writing_connection(token, &)
-    owner = connection_owner_for(token.class)
-    return yield if owner.blank?
-
-    owner.connected_to(role: :writing, &)
-  end
-
-  def connection_owner_for(klass)
-    owner = klass
-    owner = owner.superclass until owner.connection_class? || owner == ApplicationRecord
-    owner
-  end
-
-  def actor_identifier_column(token)
-    return :user_id if token.respond_to?(:user_id) && token.user_id.present?
-    return :staff_id if token.respond_to?(:staff_id) && token.staff_id.present?
-
-    nil
-  end
-
-  def actor_identifier(token)
-    column = actor_identifier_column(token)
-    column ? token.public_send(column) : nil
-  end
-
-  def actor_type_label(token)
-    actor_identifier_column(token)&.to_s&.delete_suffix("_id")
-  end
-
-  def success(token:, refresh_token:, previous_token:)
-    Result.new(
-      success: true,
-      token: token,
-      refresh_token: refresh_token,
-      previous_token: previous_token,
-      reason: nil,
-    )
+    Rails.logger.warn(JitLogEvent.format("authentication.refresh.reuse_detected", outcome: "device_revoked"))
   end
 
   def failure(reason, token: nil)
-    Result.new(
-      success: false,
-      token: token,
-      refresh_token: nil,
-      previous_token: nil,
-      reason: reason,
-    )
+    Result.new(success: false, token: token, refresh_token: nil, previous_token: nil, reason: reason, response: nil)
   end
 end

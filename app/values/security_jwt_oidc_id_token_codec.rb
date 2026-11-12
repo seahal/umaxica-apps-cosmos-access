@@ -39,7 +39,7 @@ class SecurityJwtOidcIdTokenCodec
       payload
     end
 
-    def build_payload(resource:, client:, nonce:, issued_at:, expires_at:, acr:, amr:, issuer:, subject:, sid:,
+    def build_payload(resource_type:, client:, nonce:, issued_at:, expires_at:, acr:, amr:, issuer:, subject:, sid:,
                       auth_time:, step_up_until:)
       issued_at = normalize_time!(issued_at)
       expires_at = normalize_time!(expires_at)
@@ -47,10 +47,13 @@ class SecurityJwtOidcIdTokenCodec
 
       raise ArgumentError, "sid is required" if sid.blank?
 
-      token_resource_type = resource_type_for_resource(resource)
+      token_resource_type = OidcSubject.normalize_resource_type(resource_type)
+      raise ArgumentError, "subject does not match the OP realm" if
+        OidcSubject.public_id_from(subject, resource_type: token_resource_type).blank?
+
       {
         "iss" => issuer.presence || OidcIssuer.for_client(client),
-        "sub" => subject.presence || OidcSubject.for(resource, resource_type: token_resource_type),
+        "sub" => subject,
         "aud" => [client.client_id],
         "exp" => expires_at.to_i,
         "iat" => issued_at.to_i,
@@ -72,13 +75,6 @@ class SecurityJwtOidcIdTokenCodec
       return "operator" if %w(operator staff).include?(client.resource_type)
 
       "client"
-    end
-
-    def resource_type_for_resource(resource)
-      case resource
-      when ::Operator then "operator"
-      else "client"
-      end
     end
 
     def decode_options(client_id:, resource_type:, issuer:, allow_expired:)

@@ -11,16 +11,21 @@ class SignUpExpiryJobTest < ActiveJob::TestCase
 
   test "expires overdue in-progress tickets on the app ticket database" do
     now = Time.current.change(usec: 0)
-    expired_client = create_flow(ClientSignUpFlow, now: now, expires_at: now - 1.second)
-    active_client = create_flow(ClientSignUpFlow, now: now, expires_at: now + 1.second)
+    expired_client = create_flow(ClientSignUpFlow, now: now, expires_at: now - Rational(1, 1_000_000))
+    boundary_client = create_flow(ClientSignUpFlow, now: now, expires_at: now)
+    active_client = create_flow(ClientSignUpFlow, now: now, expires_at: now + Rational(1, 1_000_000))
 
     travel_to now do
-      # Admission setup can exceed one second; freeze the owning database clock as well.
-      ClientSignUpFlow.stub(:database_now, now) { SignUpExpiryJob.perform_now(batch_size: 1) }
+      # Freeze the owning database clock for nearest-microsecond expiry boundaries.
+      ClientSignUpFlow.stub(:database_now, now) do
+        assert_raises(GovernanceLookupUnavailableError) { SignUpExpiryJob.perform_now(batch_size: 1) }
+      end
     end
 
     assert_equal ClientSignUpFlowStatus::EXPIRED, expired_client.reload.status_id
-    assert_predicate expired_client.reload, :cleanup_completed?
+    assert_not expired_client.reload.cleanup_completed?
+    assert_predicate boundary_client.reload, :sign_up_expired?
+    assert_not boundary_client.cleanup_completed?
     assert_predicate active_client.reload, :sign_up_in_progress?
   end
 
@@ -44,60 +49,46 @@ class SignUpExpiryJobTest < ActiveJob::TestCase
     assert_equal ClientSignUpFlowStatus::COMPLETED, completed.reload.status_id
   end
 
-  test "logs a failed expiry and still expires the other overdue tickets" do
+  test "an inaccessible historical ticket does not prevent local expiry of other tickets" do
     now = Time.current.change(usec: 0)
     failing = create_flow(ClientSignUpFlow, now: now, expires_at: now - 1.second)
     other = create_flow(ClientSignUpFlow, now: now, expires_at: now - 1.second)
-    real_call = SignUpTermination.method(:call)
+    failing.update!(discard_at: failing.created_at)
     logged = []
 
-    SignUpTermination.stub(
-      :call, ->(cycle:, **kwargs) {
-               if cycle.id == failing.id && cycle.is_a?(ClientSignUpFlow)
-                 raise ActiveRecord::StatementInvalid, "ticket database unavailable"
-               end
-
-               real_call.call(cycle: cycle, **kwargs)
-             },
-    ) do
-      Rails.logger.stub(:error, ->(message) { logged << message }) do
-        travel_to now do
-          SignUpExpiryJob.perform_now
-        end
+    Rails.logger.stub(:error, ->(message) { logged << message }) do
+      travel_to now do
+        assert_raises(FlowInvalidTransition, GovernanceLookupUnavailableError) { SignUpExpiryJob.perform_now }
       end
     end
 
     assert_predicate failing.reload, :sign_up_in_progress?
     assert_equal ClientSignUpFlowStatus::EXPIRED, other.reload.status_id
-    assert logged.any? { |line| line.include?("sign_up.expiry.failed") && line.include?(failing.public_id) }
+    assert_not other.cleanup_completed?
+    assert logged.any? { |line|
+      line.include?("sign_up.expiry.failed") && line.include?(failing.public_id) &&
+        line.include?("FlowInvalidTransition")
+    }
   end
 
-  test "lets a deadlock escape the per-ticket rescue so the job is retried" do
-    now = Time.current.change(usec: 0)
-    create_flow(ClientSignUpFlow, now: now, expires_at: now - 1.second)
-
-    SignUpTermination.stub(:call, ->(**) { raise ActiveRecord::Deadlocked, "deadlock detected" }) do
-      travel_to now do
-        assert_enqueued_with(job: SignUpExpiryJob) { SignUpExpiryJob.perform_now }
-      end
+  test "lets a database-clock deadlock escape so the job is retried" do
+    ClientSignUpFlow.stub(:database_now, -> { raise ActiveRecord::Deadlocked, "deadlock detected" }) do
+      assert_enqueued_with(job: SignUpExpiryJob) { SignUpExpiryJob.perform_now }
     end
   end
 
-  test "logs a ticket the termination left unexpired" do
+  test "expiry closes every local ticket but exposes unavailable Governance cleanup" do
     now = Time.current.change(usec: 0)
-    ticket = create_flow(ClientSignUpFlow, now: now, expires_at: now - 1.second)
-    skipped = Struct.new(:status, :ticket).new(:unchanged, nil)
-    logged = []
+    tickets = Array.new(2) { create_flow(ClientSignUpFlow, now: now, expires_at: now - 1.second) }
 
-    SignUpTermination.stub(:call, skipped) do
-      Rails.logger.stub(:warn, ->(message) { logged << message }) do
-        travel_to now do
-          SignUpExpiryJob.perform_now
-        end
-      end
+    travel_to now do
+      assert_raises(GovernanceLookupUnavailableError) { SignUpExpiryJob.perform_now }
     end
 
-    assert logged.any? { |line| line.include?("sign_up.expiry.skipped") && line.include?(ticket.public_id) }
+    tickets.each do |ticket|
+      assert_predicate ticket.reload, :sign_up_expired?
+      assert_not ticket.cleanup_completed?
+    end
   end
 
   test "uses the retention queue" do

@@ -37,6 +37,9 @@ contract until a route migration plan replaces them.
 > `specs/op-mediated-step-up/contracts/consumer-inventory.md` section 6 until a separate change
 > removes them.
 
+> **Amendment (2026-11-12, owner approved):** retained APP/ORG token and ceremony evidence uses
+> an independent, explicit evidence state. See [the evidence-state decision](#explicit-retained-evidence-state-2026-11-12).
+
 ## Context
 
 The step-up authentication mechanism gates sensitive operations (social-login unlink, withdrawal,
@@ -358,3 +361,54 @@ mutation are now one explicit operation boundary. Legacy AAL labels remain stora
 only and are not authorization inputs. The historical bootstrap and ownership language above is
 superseded where it conflicts with the delivered Base/Auth paths; first registration is a separate
 bootstrap transaction and cannot be reused as ordinary step-up freshness.
+
+## Explicit retained evidence state (2026-11-12)
+
+Status: accepted by the owner on 2026-11-12 during the Access-only database consistency work.
+Implementation and verification are tracked by
+[`specs/access-database-consistency/spec.md`](../specs/access-database-consistency/spec.md).
+This amendment replaces nullable-boolean representation for the retained APP/ORG evidence only.
+It preserves D6's absent-versus-negative distinction in
+[`specs/database-consistency-remediation/decisions.md`](../specs/database-consistency-remediation/decisions.md#d6--nine-intentional-nullable-step-up-evidence-fields).
+The former COM evidence described by D6 is retired and is outside this change.
+
+### Storage contract
+
+Each realm owns its own reference table and local foreign keys:
+
+| Realm | Reference model/table | Carriers |
+| --- | --- | --- |
+| APP | `ClientStepUpEvidenceState` / `client_step_up_evidence_states` | `client_tokens`, `client_step_up_ceremony_transactions` |
+| ORG | `OperatorStepUpEvidenceState` / `operator_step_up_evidence_states` | `operator_tokens`, `operator_step_up_ceremony_transactions` |
+
+The reference IDs are `ABSENT = 10` and `RECORDED = 20`. Each carrier has a required
+`evidence_state_id` foreign key. Initial construction uses `ABSENT`; a missing, unknown or unreadable
+state is never interpreted as a usable proof.
+
+The ceremony's `user_verified` and the token's `last_step_up_user_verified` and
+`last_step_up_full_reauthentication` are NOT NULL booleans. `ABSENT` uses false flags; a recorded
+negative result is `RECORDED` with false, not `ABSENT`. `RECORDED` is necessary but insufficient for
+authorization: readers still check the required method, credential, freshness, actor, session,
+purpose, audience, resource and tenant bindings. The realm-local reference rows do not share
+credentials, sessions or authority across surfaces.
+
+### Writers and lifecycle
+
+The named ceremony verification or registration-consumption writer records `RECORDED` together
+with the actual proof facts under its existing lock and transaction. Cancellation, expiry,
+revocation and consumption preserve whether that transaction recorded evidence. The workflow's
+`status` cannot substitute for `evidence_state_id`: both unverified and verified transactions can
+reach canceled, expired or revoked, and registration proof does not grant step-up freshness.
+
+The token freshness committer installs `RECORDED` with the bound evidence as one mutation.
+`consume_step_up_evidence!` and `revoke_step_up_authority!` clear its evidence to `ABSENT` and false
+flags atomically. That clearing does not revoke the root token or alter its status or deadline.
+Normal root revocation retains its separate existing behavior.
+
+Migration accepts only a coherent mapping from the old representation. It preserves recorded
+negative values and terminal ceremony history; contradictory existing evidence stops migration
+instead of being guessed or discarded. No production or shared database migration is authorized by
+this local change. Signed external result and token-claim shapes are unchanged.
+
+The owned axes and legal writers are recorded in
+[`docs/mermaid/idp-state-machine-transition-inventory.md`](../docs/mermaid/idp-state-machine-transition-inventory.md#retained-step-up-evidence-presence-2026-11-12).

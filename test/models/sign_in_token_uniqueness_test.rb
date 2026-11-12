@@ -4,20 +4,17 @@ require "test_helper"
 
 class SignInTokenUniquenessTest < ActiveSupport::TestCase
   CELLS = [
-    [Client, ClientStatus::ACTIVE, ClientVisibility::USER, ClientToken, :user, ClientSignInFlow],
-    [Operator, OperatorStatus::ACTIVE, OperatorVisibility::STAFF, OperatorToken, :staff, OperatorSignInFlow],
+    [ClientDeviceSession, ClientToken, :user_id, ClientSignInFlow],
+    [OperatorDeviceSession, OperatorToken, :staff_id, OperatorSignInFlow],
   ].freeze
 
-  CELLS.each do |principal_class, status, visibility, root_class, root_owner_key, flow_class|
+  CELLS.each do |device_class, root_class, owner_key, flow_class|
     test "#{flow_class.name} preserves nil parents raw uniqueness and unchanged-key query budget" do
-      actor = principal_class.create!(
-        security_mode_id: SecurityModeConfigurable::NORMAL, status_id: status,
-        visibility_id: visibility,
-      )
-      first_root = root_class.create!(:authentication_epoch => 0, root_owner_key => actor)
-      second_root = root_class.create!(:authentication_epoch => 0, root_owner_key => actor)
+      device = device_class.create!(owner_key => 9_700_001, :principal_public_id => "historical-subject")
+      first_root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
+      second_root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
       now = flow_class.database_now
-      metadata = { principal_id: actor.id,
+      metadata = { principal_id: 9_700_001,
                    state_id: flow_class.state_id_for("SESSION_ISSUANCE_PENDING"),
                    issued_at: now,
                    expires_at: now + 300, }
@@ -59,13 +56,10 @@ class SignInTokenUniquenessTest < ActiveSupport::TestCase
     end
 
     test "#{flow_class.name} refuses duplicate roots before a new flow is persisted" do
-      actor = principal_class.create!(
-        security_mode_id: SecurityModeConfigurable::NORMAL, status_id: status,
-        visibility_id: visibility,
-      )
-      root = root_class.create!(:authentication_epoch => 0, root_owner_key => actor)
+      device = device_class.create!(owner_key => 9_700_001, :principal_public_id => "historical-subject")
+      root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
       now = flow_class.database_now
-      metadata = { principal_id: actor.id,
+      metadata = { principal_id: 9_700_001,
                    state_id: flow_class.state_id_for("SESSION_ISSUANCE_PENDING"),
                    issued_at: now,
                    expires_at: now + 300,
@@ -80,14 +74,11 @@ class SignInTokenUniquenessTest < ActiveSupport::TestCase
     end
 
     test "#{flow_class.name} validates token attachment to a reused flow" do
-      actor = principal_class.create!(
-        security_mode_id: SecurityModeConfigurable::NORMAL, status_id: status,
-        visibility_id: visibility,
-      )
-      first_root = root_class.create!(:authentication_epoch => 0, root_owner_key => actor)
-      second_root = root_class.create!(:authentication_epoch => 0, root_owner_key => actor)
+      device = device_class.create!(owner_key => 9_700_001, :principal_public_id => "historical-subject")
+      first_root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
+      second_root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
       now = flow_class.database_now
-      metadata = { principal_id: actor.id,
+      metadata = { principal_id: 9_700_001,
                    state_id: flow_class.state_id_for("SESSION_ISSUANCE_PENDING"),
                    issued_at: now,
                    expires_at: now + 300, }

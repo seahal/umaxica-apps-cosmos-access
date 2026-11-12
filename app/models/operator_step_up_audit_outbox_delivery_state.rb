@@ -12,4 +12,9 @@ class OperatorStepUpAuditOutboxDeliveryState < OpBaseOrgRecord
            foreign_key: :delivery_state_id,
            inverse_of: :delivery_state,
            dependent: :restrict_with_error
+  has_many :sensitive_admission_outboxes,
+           class_name: "OperatorSensitiveAdmissionAuditOutbox",
+           foreign_key: :delivery_state_id,
+           inverse_of: :delivery_state,
+           dependent: :restrict_with_error
 end

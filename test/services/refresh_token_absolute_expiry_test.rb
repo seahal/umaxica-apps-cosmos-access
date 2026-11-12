@@ -4,10 +4,7 @@
 require "test_helper"
 
 class RefreshTokenAbsoluteExpiryTest < ActiveSupport::TestCase
-  fixtures :clients, :client_statuses, :client_token_kinds, :client_token_statuses,
-           :client_token_binding_methods, :client_token_dbsc_statuses,
-           :operators, :operator_statuses, :operator_token_kinds, :operator_token_statuses,
-           :operator_token_binding_methods, :operator_token_dbsc_statuses
+  self.fixture_table_names = %w(client_tokens operator_tokens client_device_sessions operator_device_sessions)
 
   %i(app org).each do |surface|
     test "#{surface} refresh rotation preserves the fixed absolute session deadline" do
@@ -25,7 +22,10 @@ class RefreshTokenAbsoluteExpiryTest < ActiveSupport::TestCase
 
         result =
           model.stub(:database_now, database_time) do
-            AuthRefreshTokenIssuer.call(refresh_token: refresh_token)
+            AuthRefreshTokenIssuer.call(
+              refresh_token: refresh_token,
+              resource_type: (surface == :app) ? "client" : "operator",
+            )
           end
 
         assert_predicate result, :success?
@@ -50,7 +50,10 @@ class RefreshTokenAbsoluteExpiryTest < ActiveSupport::TestCase
 
         result =
           model.stub(:database_now, absolute_expiry + 1.second) do
-            AuthRefreshTokenIssuer.call(refresh_token: refresh_token)
+            AuthRefreshTokenIssuer.call(
+              refresh_token: refresh_token,
+              resource_type: (surface == :app) ? "client" : "operator",
+            )
           end
 
         assert_not_predicate result, :success?
@@ -72,17 +75,19 @@ class RefreshTokenAbsoluteExpiryTest < ActiveSupport::TestCase
   def create_token(surface, expires_at:)
     case surface
     when :app
-      client = clients(:one)
-      client.update!(status_id: ClientStatus::ACTIVE)
       ClientToken.create!(
         authentication_epoch: 0,
-        user: client, user_token_kind_id: ClientTokenKind::BROWSER_WEB,
+        user_id: 1001, device_session: ClientDeviceSession.create!(
+          user_id: 1001, principal_public_id: "absolute-client",
+        ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
         user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: expires_at,
       )
     when :org
       OperatorToken.create!(
         authentication_epoch: 0,
-        staff: operators(:one), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
+        staff_id: 1002, device_session: OperatorDeviceSession.create!(
+          staff_id: 1002, principal_public_id: "absolute-operator",
+        ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
         staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: expires_at,
       )
     end

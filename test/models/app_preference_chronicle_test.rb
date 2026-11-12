@@ -42,32 +42,22 @@
 require "test_helper"
 
 class AppPreferenceChronicleTest < ActiveSupport::TestCase
-  fixtures :app_preferences,
-           :app_preference_chronicles,
+  fixtures :app_preference_chronicles,
            :app_preference_chronicle_events,
-           :app_preference_chronicle_levels,
-           :app_preference_statuses
+           :app_preference_chronicle_levels
 
   setup do
     @audit = app_preference_chronicles(:one)
-    @preference = app_preferences(:one)
   end
 
   test "uses bigint primary key" do
     assert_kind_of Integer, @audit.id
   end
 
-  test "belongs to app_preference" do
-    assert_equal @preference, @audit.app_preference
-  end
-
-  test "can set app_preference" do
-    new_pref = app_preferences(:two)
-    @audit.app_preference = new_pref
-
-    assert_equal new_pref.id, @audit.subject_id
+  test "retains the retired preference subject as historical scalar identity" do
+    assert_equal 1, @audit.subject_id
     assert_equal "AppPreference", @audit.subject_type
-    assert_equal new_pref, @audit.app_preference
+    assert_raises(NoMethodError) { @audit.app_preference }
   end
 
   test "belongs to app_preference_chronicle_level" do
@@ -78,14 +68,14 @@ class AppPreferenceChronicleTest < ActiveSupport::TestCase
     assert_equal app_preference_chronicle_events(:create_new_preference_token), @audit.app_preference_chronicle_event
   end
 
-  test "validates presence of subject_id" do
-    # The `before_create`/`before_update` reference guard resolves an AppPreference subject before
-    # the statement runs, so a nil id is rejected there rather than by the column. Pointing the
-    # audit at a subject type the guard does not resolve keeps this case on the NOT NULL contract.
-    @audit.subject_type = "SomeOtherType"
-    @audit.subject_id = nil
-
-    assert_raises(ActiveRecord::NotNullViolation) { @audit.save!(validate: false) }
+  test "database rejects a missing historical subject ID" do
+    assert_raises(ActiveRecord::NotNullViolation) do
+      AppPreferenceChronicle.transaction(requires_new: true) do
+        AppPreferenceChronicle.where(id: @audit.id).update_all(subject_id: nil)
+      end
+    end
+    assert_equal 1, @audit.reload.subject_id
+    assert_equal "AppPreference", @audit.subject_type
   end
 
   test "validates presence of subject_type" do
@@ -93,11 +83,5 @@ class AppPreferenceChronicleTest < ActiveSupport::TestCase
 
     assert_not @audit.valid?
     assert_includes @audit.errors[:subject_type], I18n.t("errors.messages.blank")
-  end
-
-  test "app_preference helper method returns nil when subject_type is not AppPreference" do
-    @audit.subject_type = "SomeOtherType"
-
-    assert_nil @audit.app_preference
   end
 end

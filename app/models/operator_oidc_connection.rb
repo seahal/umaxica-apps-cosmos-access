@@ -24,18 +24,16 @@
 class OperatorOidcConnection < OpBaseOrgRecord
   include OidcConnectionRecord
 
-  belongs_to :staff, class_name: "Operator"
   has_many :staff_tokens,
            class_name: "OperatorToken",
            foreign_key: :oidc_connection_id,
            dependent: :nullify,
            inverse_of: :oidc_connection
 
+  validates :staff_id, presence: true
   validates :client_id, uniqueness: { scope: :staff_id }
 
   def self.actor_foreign_key = :staff_id
-
-  def actor = staff
 
   def active_tokens
     staff_tokens.session_inventory

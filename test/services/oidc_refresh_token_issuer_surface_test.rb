@@ -10,24 +10,22 @@ require "test_helper"
 # tests pin the staff branch so a surface cannot silently drop out of rotation or
 # out of reuse reporting.
 class OidcRefreshTokenIssuerSurfaceTest < ActiveSupport::TestCase
-  fixtures :operators, :operator_statuses, :operator_token_kinds, :operator_token_statuses,
-           :operator_token_binding_methods, :operator_token_dbsc_statuses
+  self.fixture_table_names = %w(
+    client_tokens client_device_sessions client_token_kinds client_token_statuses
+    client_token_binding_methods client_token_dbsc_statuses operator_tokens operator_device_sessions
+    operator_token_kinds operator_token_statuses operator_token_binding_methods operator_token_dbsc_statuses
+  )
 
   test "a staff refresh token rotates and touches the staff connection" do
-    operator = operators(:one)
-    token = OperatorToken.create!(
-      authentication_epoch: 0,
-      staff: operator,
-      staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
-      staff_token_status_id: OperatorTokenStatus::ACTIVE,
-      discard_at: 1.day.from_now,
-    )
+    token = OperatorToken.find(ActiveRecord::FixtureSet.identify(:one))
+    token.update!(authentication_context: "normal")
     connection = OperatorOidcConnection.create!(
-      staff: operator, client_id: "core-org-jp", last_used_at: 3.days.ago,
+      staff_id: token.staff_id, client_id: "core-org-jp", last_used_at: 3.days.ago,
     )
     usage = OpOrgGrant.create!(
       authentication_epoch: 0,
-      operator_token: token, oidc_client_id: "core-org-jp", refresh_token_expires_at: 1.hour.from_now,
+      operator_token_id: token.id, device_session_id: token.device_session_id,
+      oidc_client_id: "core-org-jp", refresh_token_expires_at: 1.hour.from_now,
     )
     refresh_token = usage.issue_refresh_token!
 
@@ -39,22 +37,18 @@ class OidcRefreshTokenIssuerSurfaceTest < ActiveSupport::TestCase
   end
 
   test "replaying a staff refresh token is reported as reuse against the staff id" do
-    operator = operators(:one)
-    token = OperatorToken.create!(
-      authentication_epoch: 0,
-      staff: operator,
-      staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
-      staff_token_status_id: OperatorTokenStatus::ACTIVE,
-      discard_at: 1.day.from_now,
-    )
+    token = OperatorToken.find(ActiveRecord::FixtureSet.identify(:one))
+    token.update!(authentication_context: "normal")
     usage = OpOrgGrant.create!(
       authentication_epoch: 0,
-      operator_token: token, oidc_client_id: "core-org-jp", refresh_token_expires_at: 1.hour.from_now,
+      operator_token_id: token.id, device_session_id: token.device_session_id,
+      oidc_client_id: "core-org-jp", refresh_token_expires_at: 1.hour.from_now,
     )
     replayed = usage.issue_refresh_token!
     sibling = OpOrgGrant.create!(
       authentication_epoch: 0,
-      operator_token: token, oidc_client_id: "warp-org-jp", refresh_token_expires_at: 1.hour.from_now,
+      operator_token_id: token.id, device_session_id: token.device_session_id,
+      oidc_client_id: "warp-org-jp", refresh_token_expires_at: 1.hour.from_now,
     )
     sibling_refresh = sibling.issue_refresh_token!
 
@@ -77,13 +71,13 @@ class OidcRefreshTokenIssuerSurfaceTest < ActiveSupport::TestCase
     assert_predicate OidcRefreshTokenIssuer.call(
       refresh_token: sibling_refresh, resource_type: "operator", client_id: "warp-org-jp",
     ), :success?
-    assert_equal [["refresh_reuse_detected", { staff_id: operator.id, user_token_id: usage.public_id }]],
+    assert_equal [["refresh_reuse_detected", { staff_id: token.staff_id, user_token_id: usage.public_id }]],
                  emitted
     audit =
       ChronicleRecord.connected_to(role: :writing) do
         OperatorChronicle.where(
           event_id: OperatorChronicleEvent::REFRESH_TOKEN_REUSE_DETECTED,
-          subject_id: operator.id.to_s,
+          subject_id: token.staff_id.to_s,
           subject_type: "Operator",
         ).order(occurred_at: :desc).first
       end
@@ -93,17 +87,16 @@ class OidcRefreshTokenIssuerSurfaceTest < ActiveSupport::TestCase
   end
 
   test "unknown staff refresh credentials do not revoke either RP grant" do
-    operator = operators(:one)
-    token = OperatorToken.create!(
-      authentication_epoch: 0, staff: operator, staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
-      staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 1.day.from_now,
-    )
+    token = OperatorToken.find(ActiveRecord::FixtureSet.identify(:one))
+    token.update!(authentication_context: "normal")
     grant = OpOrgGrant.create!(
-      authentication_epoch: 0, operator_token: token, oidc_client_id: "core-org-jp",
+      authentication_epoch: 0, operator_token_id: token.id, device_session_id: token.device_session_id,
+      oidc_client_id: "core-org-jp",
       refresh_token_expires_at: 1.hour.from_now,
     )
     sibling = OpOrgGrant.create!(
-      authentication_epoch: 0, operator_token: token, oidc_client_id: "warp-org-jp",
+      authentication_epoch: 0, operator_token_id: token.id, device_session_id: token.device_session_id,
+      oidc_client_id: "warp-org-jp",
       refresh_token_expires_at: 1.hour.from_now,
     )
     current = grant.issue_refresh_token!
@@ -131,17 +124,11 @@ class OidcRefreshTokenIssuerSurfaceTest < ActiveSupport::TestCase
   end
 
   test "a client refresh token is refused after its parent Browser Session is revoked" do
-    client = clients(:one)
-    token = ClientToken.create!(
-      authentication_epoch: 0,
-      user: client,
-      user_token_kind_id: ClientTokenKind::BROWSER_WEB,
-      user_token_status_id: ClientTokenStatus::ACTIVE,
-      discard_at: 1.day.from_now,
-    )
+    token = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
     usage = OpAppGrant.create!(
       authentication_epoch: 0,
-      client_token: token,
+      client_token_id: token.id,
+      device_session_id: token.device_session_id,
       oidc_client_id: "core-app-jp",
       oidc_scope: "openid profile",
       refresh_token_expires_at: 1.hour.from_now,
@@ -163,17 +150,12 @@ class OidcRefreshTokenIssuerSurfaceTest < ActiveSupport::TestCase
   end
 
   test "refresh rotation locks the browser session before its RP session" do
-    operator = operators(:one)
-    token = OperatorToken.create!(
-      authentication_epoch: 0,
-      staff: operator,
-      staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
-      staff_token_status_id: OperatorTokenStatus::ACTIVE,
-      discard_at: 1.day.from_now,
-    )
+    token = OperatorToken.find(ActiveRecord::FixtureSet.identify(:one))
+    token.update!(authentication_context: "normal")
     usage = OpOrgGrant.create!(
       authentication_epoch: 0,
-      operator_token: token, oidc_client_id: "core-org-jp", refresh_token_expires_at: 1.hour.from_now,
+      operator_token_id: token.id, device_session_id: token.device_session_id,
+      oidc_client_id: "core-org-jp", refresh_token_expires_at: 1.hour.from_now,
     )
     refresh_token = usage.issue_refresh_token!
     lock_tables = []

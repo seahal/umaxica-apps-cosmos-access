@@ -275,18 +275,11 @@ module AuthEmailOtpChallenge
   end
 
   def email_otp_contact_model
-    case self
-    when ClientAuthCeremonySession then ClientEmail
-    else raise ArgumentError, "unsupported email authentication surface"
-    end
+    raise GovernanceLookupUnavailableError, "Governance email contact lookup is unavailable"
   end
 
-  def email_otp_owner(contact)
-    case contact
-    when ClientEmail
-      contact.association(:user).tap { |owner| owner.reset_scope }.scope.take
-    else raise ArgumentError, "unsupported email authentication Contact"
-    end
+  def email_otp_owner(_contact)
+    raise GovernanceLookupUnavailableError, "Governance email contact lookup is unavailable"
   end
 
   def email_otp_refusal(status)

@@ -22,7 +22,6 @@ module Security
       PUBLIC_CSP_REPORTS
       PUBLIC_WELL_KNOWN
       PUBLIC_ROBOTS_SITEMAPS
-      PUBLIC_PREFERENCE
       PUBLIC_WEB_EDGE
       PUBLIC_OAUTH_OIDC_SSO
       PUBLIC_SIGN_IN_UP
@@ -79,7 +78,8 @@ module Security
     test "Auth admission attachment is GET-only on the account surfaces" do
       entries =
         application_route_entries.select do |entry|
-          entry.controller_path.match?(%r{\Aauth/(app|org)/ceremony_bindings\z})
+          entry.controller_path.match?(%r{\Aauth/(app|org)/unavailable_ceremonies\z}) &&
+            entry.path == "/ceremony_bindings"
         end
 
       assert_equal 2, entries.size
@@ -146,13 +146,12 @@ module Security
     end
 
     def documented_public_content?(entry)
-        public_local_auth_admission?(entry) ||
+      public_local_auth_admission?(entry) ||
         public_health?(entry) ||
         public_revision?(entry) ||
         public_csp_report?(entry) ||
         public_well_known?(entry) ||
         public_robots_or_sitemap?(entry) ||
-        public_preference?(entry) ||
         public_web_or_edge?(entry)
     end
 
@@ -170,9 +169,9 @@ module Security
 
     def public_local_auth_admission?(entry)
       case entry.controller_path
-      when %r{\Aauth/(app|org)/ceremony_bindings\z}
+      when %r{\Aauth/(app|org)/unavailable_ceremonies\z}
         get?(entry) && entry.path == "/ceremony_bindings" && entry.action == "show"
-      when %r{\Avisa/(app|org)/ceremony_binding_confirmations\z}
+      when %r{\Avisa/(app|org)/unavailable_ceremonies\z}
         get?(entry) && entry.path == "/ceremony_bindings/:binding_ref/confirmation" && entry.action == "show"
       else
         false
@@ -193,20 +192,18 @@ module Security
 
     def public_robots_or_sitemap?(entry) = get?(entry) && ["/robots.txt", "/sitemap.xml"].include?(entry.path)
 
-    def public_preference?(entry)
-      entry.path.start_with?("/preference") || entry.path.start_with?("/api/v0/preferences")
-    end
-
     def public_web_or_edge?(entry) = entry.path.start_with?("/web/v0/", "/edge/v0/")
 
     def public_oauth_oidc_or_sso?(entry)
-      entry.path.start_with?("/oauth", "/oidc", "/sso", "/auth/", "/sign/oidc/handoff")
+      entry.path.start_with?("/oauth", "/oidc", "/sso", "/auth/", "/sign/oidc/handoff") ||
+        (entry.controller_path.match?(%r{\Avisa/(app|org)/api/v0/revocation_commands\z}) &&
+          entry.path == "/api/v0/revocation_commands" && entry.action == "create" && post?(entry))
     end
 
     def public_sign_in_or_up?(entry)
       if %w(/sign/cancellation /sign/switch).include?(entry.path)
         return entry.verb == "POST" && entry.action == "create" &&
-            entry.controller_path.match?(%r{\Aauth/(app|org)/sign/(cancellations|switches)\z})
+            entry.controller_path.match?(%r{\Aauth/(app|org)/unavailable_ceremonies\z})
       end
 
       entry.path == "/sign" || entry.path == "/oidc/callback" ||
@@ -224,30 +221,33 @@ module Security
     end
 
     def public_auth_verification?(entry)
+      return false unless entry.controller_path.match?(%r{\Aauth/(app|org)/unavailable_ceremonies\z})
+
       path_pattern, actions =
-        case entry.controller_path
-        when %r{\Aauth/(app|org)/verifications\z}
-          [%r{\A/verification\z}, { "show" => %w(GET), "create" => %w(POST) }]
-        when %r{\Aauth/(app|org)/verification/setups\z}
-          [%r{\A/verification/setup(?:/new)?\z}, { "new" => %w(GET), "create" => %w(POST) }]
-        when %r{\Aauth/(app|org)/verification/handoffs\z}
-          [%r{\A/verification/handoff\z}, { "show" => %w(GET), "create" => %w(POST) }]
-        when %r{\Aauth/(app|org)/verification/cancellations\z}
+        case entry.path
+        when "/verification"
+          [%r{\A/verification\z}, { "show" => %w(GET) }]
+        when "/verification/setup/new"
+          [%r{\A/verification/setup/new\z}, { "new" => %w(GET) }]
+        when "/verification/cancellation"
           [%r{\A/verification/cancellation\z}, { "create" => %w(POST) }]
-        when %r{\Aauth/(app|org)/verification/passkeys\z}
-          [%r{\A/verification/passkey(?:/(?:new|options))?\z},
-           { "new" => %w(GET), "options" => %w(POST), "create" => %w(POST) },]
-        when %r{\Aauth/(app|org)/verification/registration/passkeys\z}
-          [%r{\A/verification/registration/passkey(?:/(?:new|options))?\z},
-           { "new" => %w(GET), "options" => %w(POST), "create" => %w(POST) },]
-        when %r{\Aauth/(app|org)/verification/registration/handoffs\z}
-          [%r{\A/verification/registration/handoff\z}, { "show" => %w(GET), "create" => %w(POST) }]
-        when "auth/app/verification/totps"
+        when %r{\A/verification/(?:registration/)?handoff\z}
+          [%r{\A/verification/(?:registration/)?handoff\z}, { "show" => %w(GET), "create" => %w(POST) }]
+        when %r{\A/verification/(?:registration/)?passkey(?:/(?:new|options))?\z}
+          [%r{\A/verification/(?:registration/)?passkey(?:/(?:new|options))?\z},
+           { "new" => %w(GET), "create" => %w(POST) },]
+        when %r{\A/verification/totp(?:/new)?\z}
+          return false unless entry.controller_path == "auth/app/unavailable_ceremonies"
+
           [%r{\A/verification/totp(?:/new)?\z}, { "new" => %w(GET), "create" => %w(POST) }]
-        when %r{\Aauth/(app|org)/verification/emails\z}
+        when %r{\A/verification/emails(?:/new|/:id(?:/edit)?)?\z}
+          return false unless entry.controller_path == "auth/app/unavailable_ceremonies"
+
           [%r{\A/verification/emails(?:/new|/:id(?:/edit)?)?\z},
            { "new" => %w(GET), "edit" => %w(GET), "create" => %w(POST), "update" => %w(PATCH PUT) },]
-        when %r{\Aauth/(app|org)/verification/redeliveries\z}
+        when "/verification/emails/:email_id/redelivery"
+          return false unless entry.controller_path == "auth/app/unavailable_ceremonies"
+
           [%r{\A/verification/emails/:email_id/redelivery\z}, { "create" => %w(POST) }]
         else
           return false
@@ -256,18 +256,22 @@ module Security
     end
 
     def public_auth_settings_totp?(entry)
+      return false unless entry.controller_path == "auth/app/unavailable_ceremonies"
+
       path_pattern, actions =
-        case entry.controller_path
-        when "auth/app/settings/totps"
+        case entry.path
+        when %r{\A/settings/totps(?:/new)?\z}
           [%r{\A/settings/totps(?:/new)?\z}, { "new" => %w(GET), "create" => %w(POST) }]
-        when "auth/app/settings/totps/enrollments"
+        when "/settings/totps/enrollment"
           [%r{\A/settings/totps/enrollment\z}, { "create" => %w(POST), "destroy" => %w(DELETE) }]
-        when "auth/app/settings/totps/handoffs"
+        when "/settings/totps/handoff"
           [%r{\A/settings/totps/handoff\z}, { "show" => %w(GET), "create" => %w(POST) }]
+        when %r{\A/settings/(?:apple|google)(?:/edit)?\z}
+          [%r{\A/settings/(?:apple|google)(?:/edit)?\z},
+           { "show" => %w(GET), "edit" => %w(GET), "create" => %w(POST), "destroy" => %w(DELETE) },]
         else
           return false
         end
-
       route_matches?(entry, path_pattern, actions)
     end
 
@@ -291,8 +295,15 @@ module Security
     end
 
     def public_social?(entry)
-      entry.path.start_with?("/social/") &&
-        entry.controller_path.match?(%r{\Aauth/(app|org)/(?:social|omniauth)/})
+      case entry.controller_path
+      when "auth/app/unavailable_ceremonies"
+        path = %r{\A/social/(?:(?:google|apple)(?:/(?:callback|session|registration))?|failure|link_completion)\z}
+      when "auth/org/unavailable_ceremonies"
+        path = %r{\A/social/entra(?:/(?:callback|failure|session(?:/new)?))?\z}
+      else
+        return false
+      end
+      route_matches?(entry, path, { "show" => %w(GET), "new" => %w(GET), "create" => %w(POST) })
     end
 
     def public_apple_notification?(entry) = post?(entry) && entry.path == "/apple/notifications"

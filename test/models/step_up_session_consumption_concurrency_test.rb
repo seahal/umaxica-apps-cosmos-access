@@ -7,13 +7,10 @@ require "test_helper"
 # concurrency test cannot prove that only one worker consumes the same step-up session.
 class StepUpSessionConsumptionConcurrencyTest < ActiveSupport::TestCase
   self.use_transactional_tests = false
+  self.fixture_table_names = %w(client_tokens client_device_sessions)
 
   setup do
-    @user = Client.create!(
-      security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
-      visibility_id: ClientVisibility::BOTH,
-    )
-    @token = ClientToken.create!(authentication_epoch: 0, user: @user)
+    @token = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
     @step_up_session = ClientStepUpSession.create!(
       user_token: @token,
       scope: "account_update",
@@ -26,9 +23,7 @@ class StepUpSessionConsumptionConcurrencyTest < ActiveSupport::TestCase
 
   teardown do
     ClientStepUpSession.where(id: @step_up_session&.id).delete_all
-    ClientToken.where(id: @token&.id).delete_all
-    ClientAuthorityLock.where(client_id: @user&.id).delete_all
-    Client.where(id: @user&.id).delete_all
+    ActiveRecord::Base.connection_handler.clear_active_connections!
   end
 
   test "concurrent consumers produce exactly one result and destroy the session once" do

@@ -8,7 +8,7 @@ class OperatorStepUpContextTest < ActiveSupport::TestCase
       assert_raises(ActiveRecord::StatementInvalid) do
         OperatorStepUpContext.insert!(
           {
-            public_id: "123456789abcdefghijk",
+            public_id: "123456789abcdefghijkl",
             oidc_authorization_transaction_id: -1,
             grant_id: -1,
             bound_subject: "subject-ref",

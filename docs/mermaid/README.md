@@ -19,6 +19,14 @@ states are distinct.
 
 ## Canonical delivered axes at snapshot time (2026-10-06)
 
+The owner-approved 2026-11-12 APP/ORG evidence-presence axes are a later addition:
+[`idp-client-step-up-evidence.mmd`](./idp-client-step-up-evidence.mmd) and
+[`idp-operator-step-up-evidence.mmd`](./idp-operator-step-up-evidence.mmd), owned by
+[the dated transition inventory](./idp-state-machine-transition-inventory.md#retained-step-up-evidence-presence-2026-11-12).
+They distinguish absent evidence from recorded false booleans independently of token and ceremony
+workflow status. Their accepted contract and verification disposition are separate from the
+historical snapshot table below.
+
 The following diagrams are the canonical state graphs for the `two.md` cycle. Each realm-specific
 diagram uses the same named transition contract unless the table explicitly identifies an actor
 boundary. The detailed historical inventory below is retained for traceability and is not a second

@@ -7,18 +7,18 @@ require "test_helper"
 module Sign
   module Risk
     class EmitterComprehensiveTest < ActiveSupport::TestCase
-      fixtures :clients, :operators
+      self.fixture_table_names = []
 
       setup do
         ClientOccurrenceStatus.find_or_create_by!(id: ClientOccurrenceStatus::ACTIVE)
-        @user = clients(:one)
+        @user_id = 9_300_001
       end
 
       test "emit returns nil when feature is disabled" do
         original = ENV["RISK_ENFORCEMENT_DISABLED"]
         ENV["RISK_ENFORCEMENT_DISABLED"] = "true"
 
-        assert_nil SignRiskEmitter.emit("auth_failed", user_id: @user.id)
+        assert_nil SignRiskEmitter.emit("auth_failed", user_id: @user_id)
       ensure
         ENV["RISK_ENFORCEMENT_DISABLED"] = original
       end
@@ -30,7 +30,7 @@ module Sign
         ENV["RISK_ENFORCEMENT_ENABLED"] = "true"
 
         assert_difference "ClientOccurrence.count", 1 do
-          SignRiskEmitter.emit("auth_failed", user_id: @user.id, ip: "1.2.3.4", reason: "bad_token")
+          SignRiskEmitter.emit("auth_failed", user_id: @user_id, ip: "1.2.3.4", reason: "bad_token")
         end
 
         occurrence = ClientOccurrence.order(:id).last
@@ -47,11 +47,11 @@ module Sign
         original_enabled = ENV["RISK_ENFORCEMENT_ENABLED"]
         ENV["RISK_ENFORCEMENT_DISABLED"] = nil
         ENV["RISK_ENFORCEMENT_ENABLED"] = "true"
-        staff = operators(:one)
+        staff_id = 9_300_002
         OperatorOccurrenceStatus.find_or_create_by!(id: OperatorOccurrenceStatus::ACTIVE)
 
         assert_difference "OperatorOccurrence.count", 1 do
-          SignRiskEmitter.emit("auth_failed", staff_id: staff.id, ip: "5.6.7.8", reason: "locked")
+          SignRiskEmitter.emit("auth_failed", staff_id:, ip: "5.6.7.8", reason: "locked")
         end
 
         occurrence = OperatorOccurrence.order(:id).last
@@ -75,7 +75,7 @@ module Sign
           assert_difference "ClientOccurrence.count", 1 do
             SignRiskEmitter.emit(
               "auth_failed",
-              user_id: @user.id,
+              user_id: @user_id,
               email: "Retained@Example.com",
               ip: "203.0.113.10",
               reason: "bad_secret_credential",
@@ -86,7 +86,7 @@ module Sign
         occurrence = ClientOccurrence.order(:id).last
 
         assert_equal "risk.auth_failed", occurrence.event_type
-        assert_equal @user.id, occurrence.context.fetch("user_id")
+        assert_equal @user_id, occurrence.context.fetch("user_id")
         assert_match(/\A\h{64}\z/, occurrence.context.fetch("ip_hmac"))
         assert_match(/\A\h{64}\z/, occurrence.context.fetch("email_hmac"))
         assert_not_includes occurrence.context, "ip"
@@ -118,7 +118,7 @@ module Sign
 
         ClientOccurrence.stub(:create!, ->(**) { raise ActiveRecord::ActiveRecordError, "db error" }) do
           assert_nothing_raised do
-            SignRiskEmitter.emit("auth_failed", user_id: @user.id)
+          SignRiskEmitter.emit("auth_failed", user_id: @user_id)
           end
         end
       ensure

@@ -842,6 +842,12 @@ class BaseAuthAdmissionCoordinator < ApplicationService
         model:, parent_attributes:, transaction:, surface:, purpose:, base_browser_nonce:, base_browser_digest:,
         base_token:, resolved_intent:, now:, redeemed:, after_ended_ceremonies:,
       )
+    rescue ActiveRecord::RecordInvalid => e
+      raise unless e.record.is_a?(model) && e.record.errors.size == 1 &&
+        (e.record.errors.of_kind?(:authorization_transaction_id, :taken) ||
+         e.record.errors.of_kind?(:step_up_ceremony_transaction_id, :taken))
+
+      retry
     rescue ActiveRecord::RecordNotUnique
       retry
     end
@@ -1369,20 +1375,12 @@ class BaseAuthAdmissionCoordinator < ApplicationService
     end
 
     def admission_root_actor(token)
-      actor_class, association =
-        case token
-        when ClientToken then [Client, token.association(:user)]
-        when OperatorToken then [Operator, token.association(:staff)]
-        else raise Denied.new("Base token is invalid", code: "session_binding_mismatch")
-        end
-      actor =
-        actor_class.connection_class_for_self.connected_to(role: :writing) do
-          association.reset_scope
-          association.scope.take
-        end
-      raise Denied.new("Base actor is unavailable", code: "authorization_denied") unless actor
-
-      actor
+      case token
+      when ClientToken, OperatorToken
+        raise GovernanceLookupUnavailableError, "Governance admission actor lookup is unavailable"
+      else
+        raise Denied.new("Base token is invalid", code: "session_binding_mismatch")
+      end
     end
 
     def with_admission_ticket_locks!(binding, token, &)

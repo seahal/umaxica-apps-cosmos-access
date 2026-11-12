@@ -15,7 +15,6 @@ const minimalChrome: SurfaceChrome = {
   family_label: null,
   surface: "app",
   brand: { name: "Umaxica", href: "https://umaxica.app/" },
-  banner: null,
   restricted_mode: null,
   copyright: "(c) Umaxica",
 };
@@ -27,16 +26,11 @@ const page: { props: { chrome: SurfaceChrome; clear_history?: boolean } } = {
 beforeEach(() => {
   vi.mocked(router.clearHistory).mockClear();
   document.documentElement.lang = "en";
-  document.head.insertAdjacentHTML(
-    "beforeend",
-    '<meta name="ui-information" content="Information">',
-  );
 });
 
 afterEach(() => {
   page.props.chrome = minimalChrome;
   delete page.props.clear_history;
-  document.querySelectorAll('meta[name="ui-information"]').forEach((meta) => meta.remove());
 });
 
 describe("SurfaceLayout", () => {
@@ -67,40 +61,6 @@ describe("SurfaceLayout", () => {
     );
 
     expect(document.body.textContent).toContain("Auth");
-  });
-
-  test("renders a banner with a title", () => {
-    page.props.chrome = {
-      ...minimalChrome,
-      banner: { title: "Maintenance", body: "A maintenance window is planned." },
-    };
-
-    render(
-      <SurfaceLayout>
-        <p>page body</p>
-      </SurfaceLayout>,
-    );
-
-    const banner = screen.getByRole("region", { name: "Maintenance" });
-    expect(within(banner).getByRole("heading", { name: "Maintenance" })).toBeTruthy();
-    expect(within(banner).getByText("A maintenance window is planned.")).toBeTruthy();
-  });
-
-  test("uses the information landmark name when the banner has no title", () => {
-    page.props.chrome = {
-      ...minimalChrome,
-      banner: { title: null, body: "Information body" },
-    };
-
-    render(
-      <SurfaceLayout>
-        <p>page body</p>
-      </SurfaceLayout>,
-    );
-
-    const banner = screen.getByRole("region", { name: "Information" });
-    expect(within(banner).getByText("Information body")).toBeTruthy();
-    expect(within(banner).queryByRole("heading")).toBeNull();
   });
 
   test("renders Restricted Mode above the ordinary surface chrome", () => {

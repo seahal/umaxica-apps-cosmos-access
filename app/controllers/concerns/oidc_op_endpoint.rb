@@ -30,7 +30,7 @@ module OidcOpEndpoint
     )
     return render_oauth_bearer_error(result.error) unless result.success?
 
-    render json: ::OidcUserInfoResponseSerializer.build(resource: result.resource, payload: result.payload)
+    render plain: "Service unavailable", status: :service_unavailable
   rescue ActiveRecord::ActiveRecordError => e
     Rails.logger.error(
       JitLogEvent.format("oidc.userinfo.dependency_unavailable", error_class: e.class.name),

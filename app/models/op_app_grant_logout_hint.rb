@@ -8,4 +8,5 @@ class OpAppGrantLogoutHint < OpBaseAppRecord
   belongs_to :grant, class_name: "OpAppGrant", inverse_of: :logout_hint
 
   validates :id_token, presence: true
+  validates :grant_id, uniqueness: true
 end

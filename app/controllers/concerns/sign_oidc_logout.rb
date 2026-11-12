@@ -7,10 +7,9 @@ module SignOidcLogout
   OIDC_LOGOUT_REQUEST_SESSION_KEY = :oidc_logout_request
   OIDC_LOGOUT_COMPLETED_SESSION_KEY = :oidc_logout_completed
   OIDC_LOGOUT_REALMS = {
-    "app" => { device: ClientDeviceSession, grant: OpAppGrant, root: :client_token, resource_type: "client" },
-    "org" => { device: OperatorDeviceSession, grant: OpOrgGrant, root: :operator_token, resource_type: "operator" },
+    "app" => { device: ClientDeviceSession, grant: OpAppGrant, resource_type: "client" },
+    "org" => { device: OperatorDeviceSession, grant: OpOrgGrant, resource_type: "operator" },
   }.freeze
-  include ::PreferenceWriteBoundary
 
   # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
   included do
@@ -96,17 +95,16 @@ module SignOidcLogout
 
   def perform_oidc_end_session_logout(result, device:, root:)
     prepare_sign_out_completion_notice!
-    resource = current_resource
     precondition_failed = false
     begin
       logout = AuthenticationLogoutCurrentSession.new(
-        current: Actor, resource: resource, token: root, token_class: token_class,
+        token: root, token_class: token_class,
         session_public_id: device.public_id, reason: "oidc_rp_initiated_logout", cause: "rp_initiated_logout",
         cascade_device_session_tokens: true,
         precondition: -> { device.reload.usable? && device.public_id == result.device_session_public_id },
       )
       logout.call
-      record_logout_audit(resource)
+      record_logout_audit(root)
     rescue AuthenticationLogoutCurrentSession::CommitOutcomeUnknown => e
       log_oidc_logout_failure("commit_unknown", e)
       return render_sign_out_indeterminate!
@@ -123,7 +121,7 @@ module SignOidcLogout
         clear_oidc_logout_browser!
         return render_oidc_already_signed_out
       end
-      finish_oidc_committed_logout(result, actor: resource)
+      finish_oidc_committed_logout(result)
     when :active
       precondition_failed ? render_oidc_end_session_forbidden : render_oidc_stop_failure
     when :unknown
@@ -133,13 +131,7 @@ module SignOidcLogout
     end
   end
 
-  def finish_oidc_committed_logout(result, actor:)
-    begin
-      write_preference!(operation: :sign_out, actor:, submitted: {})
-    rescue StandardError => e
-      log_visa_preference_write_failure(:sign_out, e)
-    end
-
+  def finish_oidc_committed_logout(result)
     clear_oidc_logout_browser!
     if result.post_logout_redirect_uri.present?
       redirect_to_jump_url(post_logout_redirect_uri_with_state(result), strict: true, status: :see_other)
@@ -316,15 +308,15 @@ module SignOidcLogout
   def oidc_logout_hint_grant(result, device)
     realm = oidc_logout_realm
     grant_class = realm.fetch(:grant)
-    grant =
-      grant_class.connection_class_for_self.connected_to(role: :writing) do
-        grant_class.includes(realm.fetch(:root)).find_by(public_id: result.sid, oidc_client_id: result.client_id)
-      end
-    root = grant&.public_send(realm.fetch(:root))
-    return unless root && root.device_session_id == device.id
-    return unless result.subject == OidcSubject.for(root.actor_record, resource_type: realm.fetch(:resource_type))
+    grant_class.connection_class_for_self.connected_to(role: :writing) do
+      grant = grant_class.find_by(public_id: result.sid, oidc_client_id: result.client_id)
+      return unless grant && grant.device_session_id == device.id
 
-    grant
+      subject = "#{OidcSubject.prefix_for(realm.fetch(:resource_type))}_#{device.principal_public_id}"
+      return unless result.subject == subject
+
+      grant
+    end
   end
 
   def sign_out_confirmation_form_path

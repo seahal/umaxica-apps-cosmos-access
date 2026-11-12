@@ -5,22 +5,19 @@
 
 require "test_helper"
 
-require_relative "../support/oidc_rp_logout_hint_helper"
-
 class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
-  include OidcRpLogoutHintHelper
-
-  fixtures :clients, :operators, :client_token_kinds, :operator_token_kinds
+  self.fixture_table_names = %w(client_tokens operator_tokens client_device_sessions operator_device_sessions)
 
   CASES = {
     "app" => {
       token: ClientToken,
       grant: OpAppGrant,
+      hint: OpAppGrantLogoutHint,
       stop: OpAppAuthorityStop,
       participant: OpAppAuthorityStopParticipant,
       target: OpAppAuthorityStopRootTarget,
-      owner: :user,
-      preference: AppPreference,
+      owner: :user_id,
+      device: ClientDeviceSession,
       root: :client_token,
       kind: :user_token_kind_id,
       kind_value: ClientTokenKind::BROWSER_WEB,
@@ -30,11 +27,12 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     "org" => {
       token: OperatorToken,
       grant: OpOrgGrant,
+      hint: OpOrgGrantLogoutHint,
       stop: OpOrgAuthorityStop,
       participant: OpOrgAuthorityStopParticipant,
       target: OpOrgAuthorityStopRootTarget,
-      owner: :staff,
-      preference: OrgPreference,
+      owner: :staff_id,
+      device: OperatorDeviceSession,
       root: :operator_token,
       kind: :staff_token_kind_id,
       kind_value: OperatorTokenKind::BROWSER_WEB,
@@ -44,453 +42,68 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
   }.freeze
 
   CASES.each do |realm, config|
-    test "#{realm} authorization GET refuses a session revoked outside the browser" do
-      actor =
-        if realm == "app"
-          clients(:one)
-        else
-          Operator.create!(
-            security_mode_id: SecurityModeConfigurable::ADVANCED,
-            status_id: OperatorStatus::ACTIVE,
-            visibility_id: OperatorVisibility::STAFF,
-          )
-        end
+    test "#{realm} authorization GET explicitly refuses new admission and never stops an existing device" do
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
       root = config.fetch(:token).create!(
-        :authentication_epoch => 0,
-        config.fetch(:owner) => actor,
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
       )
-      visa_host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
-      access_token = AuthenticationToken.encode(
-        actor,
-        host: visa_host,
-        session_public_id: root.device_session.public_id,
-        oidc_sid: root.device_session.public_id,
-        oidc_jti: root.oidc_jti,
-        resource_type: config.fetch(:resource_type),
-        jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(config.fetch(:resource_type)),
-        authentication_context: root.authentication_context_value.to_s,
-      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
       browser = open_session
-      browser.host!(visa_host)
+      browser.host!(host)
       browser.https!
-      browser.cookies << Rack::Test::Cookie.new(
-        "#{AuthenticationBase::ACCESS_COOKIE_KEY}=#{Rack::Utils.escape(access_token)}",
-        URI.parse("https://#{visa_host}/"),
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
       )
-
-      root.device_session.revoke!(reason: "server_revocation")
-
-      client = OidcClientRegistry.find!("core-#{realm}-jp")
-      state = "revoked-op-session"
-      browser.get(
-        "/oauth/authorize",
-        params: {
-          response_type: "code",
-          client_id: client.client_id,
-          redirect_uri: client.redirect_uris_by_realm.fetch(config.fetch(:resource_type)).first,
-          code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
-          code_challenge_method: "S256",
-          scope: "openid",
-          state:,
-          nonce: "revoked-op-session-nonce",
-          prompt: "none",
-          ri: "jp",
-        },
-        headers: { "Sec-Fetch-Mode" => "navigate", "Sec-Fetch-Dest" => "document" },
-      )
-
-      assert_equal 302, browser.response.status
-      callback = URI.parse(jump_rt_url_from_location_for_test(browser.response.location))
-      callback_params = Rack::Utils.parse_nested_query(callback.query.to_s)
-
-      assert_equal "login_required", callback_params.fetch("error")
-      assert_equal state, callback_params.fetch("state")
-      assert_nil callback_params["code"]
-      assert_predicate root.device_session.reload, :revoked?
-    end
-
-    test "#{realm} committed logout reissues the anonymous Preference JWT after a successful stop" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      browser = visa_browser(config, actor, root)
-      stage_no_hint(browser)
-      preference_class = config.fetch(:preference)
-      before_count = preference_class.count
-
-      browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
-
-      assert_equal 303, browser.response.status
-      assert_predicate root.reload, :revoked?
-      assert_equal before_count + 1, preference_class.count
-      token = browser.cookies[PreferenceCookieName.anonymous_jwt]
-      hosts = Rails.configuration.x.boot_config.fetch(:hosts)
-      host = (realm == "app") ? hosts.visa_service.host : hosts.visa_staff.host
-      claims = PreferenceToken.decode(token, host:, jwt_issuer_id: "preference_#{realm}")
-      preference = preference_class.find_by!(public_id: claims.fetch("sub"))
-
-      active_status_id = (realm == "app") ? AppPreference::ACTIVE_STATUS_ID : OrgPreference::ACTIVE_STATUS_ID
-
-      assert_equal active_status_id, preference.status_id
-      [PreferenceCookieName.anonymous_jwt, PreferenceIoKeys::Cookies::LANGUAGE,
-       PreferenceCookieName.anonymous_experience,].each do |name|
-        assert_includes browser.response.headers["Set-Cookie"].to_s, "#{name}="
-      end
-    end
-
-    test "#{realm} committed logout copies stored display, consent, Web Push, receipt, and binding" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      browser = visa_browser(config, actor, root)
-      stage_no_hint(browser)
-      hosts = Rails.configuration.x.boot_config.fetch(:hosts)
-      if realm == "app"
-        visa_host = hosts.visa_service.host
-        preference_class = AppPreference
-        status_class = AppPreferenceStatus
-        prefix = "App"
-        active_status_id = AppPreference::ACTIVE_STATUS_ID
-        receipt_class = AppPreferenceConsentReceipt
-        web_push_option_class = AppPreferenceWebPushOption
-        web_push_class = AppPreferenceWebPush
-        binding_class = AppPreferenceBrowserBinding
-        theme_option_id = AppPreferenceThemeOption::DARK
-        language_option_id = AppPreferenceLanguageOption::EN
-        region_option_id = AppPreferenceRegionOption::US
-        web_push_enabled_id = AppPreferenceWebPushOption::ENABLED
-      else
-        visa_host = hosts.visa_staff.host
-        preference_class = OrgPreference
-        status_class = OrgPreferenceStatus
-        prefix = "Org"
-        active_status_id = OrgPreference::ACTIVE_STATUS_ID
-        receipt_class = OrgPreferenceConsentReceipt
-        web_push_option_class = OrgPreferenceWebPushOption
-        web_push_class = OrgPreferenceWebPush
-        binding_class = OrgPreferenceBrowserBinding
-        theme_option_id = OrgPreferenceThemeOption::DARK
-        language_option_id = OrgPreferenceLanguageOption::EN
-        region_option_id = OrgPreferenceRegionOption::US
-        web_push_enabled_id = OrgPreferenceWebPushOption::ENABLED
-      end
-      status_class.ensure_defaults!
-      decision_time = preference_class.database_now
-      expires_at = Time.at(
-        decision_time.to_i + SecurityJwtPreferenceTokenCodec::ANONYMOUS_REALM_TOKEN_TTL.to_i,
-      ).utc
-      source = preference_class.create!(
-        status_id: active_status_id,
-        jti: JitSecurityJwtJtiGenerator.generate,
-        last_issued_at: decision_time,
-        last_issued_expires_at: expires_at,
-      )
-
-      snapshot = {}
-      PreferenceClassRegistry::CHILD_RECORD_TYPES.each do |type|
-        option_class = PreferenceClassRegistry.option_class(prefix, type)
-        option_class.ensure_defaults!
-        option_id =
-          case type
-          when :theme then theme_option_id
-          when :language then language_option_id
-          when :region then region_option_id
-          else PreferenceClassRegistry.default_option_id(prefix, type)
-          end
-        option = option_class.find(option_id)
-        PreferenceClassRegistry.record_class(prefix, type).create!(preference_id: source.id, option_id: option.id)
-        snapshot[type.to_s] = option.name unless type == :region
-      end
-
-      source_cookie = PreferenceClassRegistry.cookie_class(prefix).create!(
-        preference_id: source.id, consented: true, functional: true, performant: false, targetable: true,
-      )
-      source_receipt = receipt_class.create!(
-        preference_id: source.id, version: SecureRandom.uuid, recorded_at: decision_time,
-      )
-      web_push_option_class.ensure_defaults!
-      source_push = web_push_class.create!(preference_id: source.id, option_id: web_push_enabled_id)
-      binding_value = PreferenceBrowserBinding.mint_value
-      source_binding = binding_class.create!(
-        preference_id: source.id, digest: PreferenceBrowserBinding.digest_for(binding_value),
-      )
-
-      # Deliberately make the signed display projection disagree with persisted state. Sign-out must copy
-      # the database row rather than treating the browser cookie as a source of Preference values.
-      cookie_snapshot = snapshot.merge("theme" => "system", "language" => "ja")
-      token = PreferenceToken.encode(
-        cookie_snapshot,
-        host: visa_host,
-        preference_type: preference_class.name,
-        public_id: source.public_id,
-        jti: source.jti,
-        jwt_issuer_id: "preference_#{realm}",
-        issued_at: decision_time,
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
       )
       browser.cookies << Rack::Test::Cookie.new(
-        "#{PreferenceCookieName.anonymous_jwt}=#{Rack::Utils.escape(token)}", URI.parse("https://#{visa_host}/"),
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
       )
-      browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
+      before = config.fetch(:stop).count
+      browser.get("/oauth/authorize", params: { ri: "jp" })
 
-      assert_equal 303, browser.response.status
-      assert_predicate root.reload, :revoked?
-      claims = PreferenceToken.decode(
-        browser.cookies[PreferenceCookieName.anonymous_jwt],
-        host: visa_host, jwt_issuer_id: "preference_#{realm}",
-      )
-      target = config.fetch(:preference).find_by!(public_id: claims.fetch("sub"))
-
-      retired_status_id = (realm == "app") ? AppPreference::RETIRED_STATUS_ID : OrgPreference::RETIRED_STATUS_ID
-      active_status_id = (realm == "app") ? AppPreference::ACTIVE_STATUS_ID : OrgPreference::ACTIVE_STATUS_ID
-
-      assert_equal retired_status_id, source.reload.status_id
-      assert_equal active_status_id, target.status_id
-      assert_equal "dark", claims.fetch("preferences").fetch("theme")
-      assert_equal "en", claims.fetch("preferences").fetch("language")
-      PreferenceClassRegistry::CHILD_RECORD_TYPES.each do |type|
-        record_class = PreferenceClassRegistry.record_class(realm.capitalize, type)
-
-        assert_equal record_class.find_by!(preference_id: source.id).option_id,
-                     record_class.find_by!(preference_id: target.id).option_id, type.to_s
-      end
-
-      target_cookie = PreferenceClassRegistry.cookie_class(realm.capitalize).find_by!(preference_id: target.id)
-      source_consent = [
-        source_cookie.consented, source_cookie.functional, source_cookie.performant, source_cookie.targetable,
-      ]
-      target_consent = [
-        target_cookie.consented, target_cookie.functional, target_cookie.performant, target_cookie.targetable,
-      ]
-
-      assert_equal source_consent, target_consent
-      target_receipt = ((realm == "app") ? AppPreferenceConsentReceipt : OrgPreferenceConsentReceipt)
-        .find_by!(preference_id: target.id)
-
-      assert_equal [source_receipt.version, source_receipt.recorded_at],
-                   [target_receipt.version, target_receipt.recorded_at]
-      target_push = ((realm == "app") ? AppPreferenceWebPush : OrgPreferenceWebPush).find_by!(preference_id: target.id)
-
-      assert_equal source_push.option_id, target_push.option_id
-      target_binding = ((realm == "app") ? AppPreferenceBrowserBinding : OrgPreferenceBrowserBinding)
-        .find_by!(preference_id: target.id)
-
-      assert_equal source_binding.digest, target_binding.digest
-    end
-
-    test "#{realm} Preference copy failure rolls back its setting transaction after logout commits" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      browser = visa_browser(config, actor, root)
-      stage_no_hint(browser)
-      hosts = Rails.configuration.x.boot_config.fetch(:hosts)
-      if realm == "app"
-        visa_host = hosts.visa_service.host
-        preference_class = AppPreference
-        status_class = AppPreferenceStatus
-        prefix = "App"
-        active_status_id = AppPreference::ACTIVE_STATUS_ID
-        receipt_class = AppPreferenceConsentReceipt
-        cookie_class = AppPreferenceCookie
-      else
-        visa_host = hosts.visa_staff.host
-        preference_class = OrgPreference
-        status_class = OrgPreferenceStatus
-        prefix = "Org"
-        active_status_id = OrgPreference::ACTIVE_STATUS_ID
-        receipt_class = OrgPreferenceConsentReceipt
-        cookie_class = OrgPreferenceCookie
-      end
-      status_class.ensure_defaults!
-      PreferenceClassRegistry::CHILD_RECORD_TYPES.each do |type|
-        PreferenceClassRegistry.option_class(prefix, type).ensure_defaults!
-      end
-      decision_time = preference_class.database_now
-      expires_at = Time.at(
-        decision_time.to_i + SecurityJwtPreferenceTokenCodec::ANONYMOUS_REALM_TOKEN_TTL.to_i,
-      ).utc
-      source = preference_class.create!(
-        status_id: active_status_id,
-        jti: JitSecurityJwtJtiGenerator.generate,
-        last_issued_at: decision_time,
-        last_issued_expires_at: expires_at,
-      )
-      PreferenceClassRegistry::CHILD_RECORD_TYPES.each do |type|
-        PreferenceClassRegistry.record_class(prefix, type).create!(
-          preference_id: source.id,
-          option_id: PreferenceClassRegistry.default_option_id(prefix, type),
-        )
-      end
-      source_cookie = cookie_class.create!(
-        preference_id: source.id, consented: true, functional: true, performant: false, targetable: true,
-      )
-      source_receipt = receipt_class.create!(
-        preference_id: source.id, version: SecureRandom.uuid, recorded_at: decision_time,
-      )
-      snapshot =
-        PreferenceWriteBoundary::ANONYMOUS_DISPLAY_TYPES.each_with_object({}) do |type, values|
-          record_class = PreferenceClassRegistry.record_class(prefix, type)
-          record = record_class.find_by!(preference_id: source.id)
-          option = PreferenceClassRegistry.option_class(prefix, type).find(record.option_id)
-          values[type.to_s] = option.name
-        end
-      token = PreferenceToken.encode(
-        snapshot,
-        host: visa_host,
-        preference_type: preference_class.name,
-        public_id: source.public_id,
-        jti: source.jti,
-        jwt_issuer_id: "preference_#{realm}",
-        issued_at: decision_time,
-      )
-      browser.cookies << Rack::Test::Cookie.new(
-        "#{PreferenceCookieName.anonymous_jwt}=#{Rack::Utils.escape(token)}", URI.parse("https://#{visa_host}/"),
-      )
-      old_token = browser.cookies[PreferenceCookieName.anonymous_jwt]
-      row_count = preference_class.count
-      failure = ->(**) { raise ActiveRecord::ConnectionNotEstablished, "receipt writer unavailable" }
-
-      receipt_class.stub(:create!, failure) do
-        browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
-      end
-
-      assert_equal 303, browser.response.status
-      assert_predicate root.reload, :revoked?
-      assert_equal row_count, preference_class.count
-      assert_equal active_status_id, source.reload.status_id
-      assert_equal source_cookie.attributes, cookie_class.find_by!(preference_id: source.id).attributes
-      assert_equal source_receipt.attributes, receipt_class.find_by!(preference_id: source.id).attributes
-      assert_equal old_token, browser.cookies[PreferenceCookieName.anonymous_jwt]
-      [PreferenceCookieName.anonymous_jwt, PreferenceIoKeys::Cookies::LANGUAGE,
-       PreferenceCookieName.anonymous_experience,].each do |name|
-        assert_not_includes browser.response.headers["Set-Cookie"].to_s, "#{name}="
-      end
-      assert_not browser.cookies[AuthenticationBase::ACCESS_COOKIE_KEY].present?
-    end
-
-    test "#{realm} committed logout remains successful when Preference issuance fails" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      browser = visa_browser(config, actor, root)
-      stage_no_hint(browser)
-      preference_class = config.fetch(:preference)
-      before_count = preference_class.count
-
-      PreferenceToken.stub(:encode, nil) do
-        browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
-      end
-
-      assert_equal 303, browser.response.status
-      assert_predicate root.reload, :revoked?
-      assert_equal before_count, preference_class.count
-      assert_not browser.cookies[AuthenticationBase::ACCESS_COOKIE_KEY].present?
-    end
-
-    test "#{realm} authorization coordinator failure without redirect renders JSON" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      browser = visa_browser(config, actor, root)
-      client = OidcClientRegistry.find!("core-#{realm}-jp")
-      failure = OidcAuthorizeCoordinator::Result.new(
-        success: false, redirect_url: nil, redirect_uri: nil,
-        error: "server_error", error_description: "authorization unavailable",
-      )
-      OidcAuthorizeCoordinator.stub(:call, failure) do
-        browser.get(
-          "/oauth/authorize", params: {
-            response_type: "code",
-            client_id: client.client_id,
-            redirect_uri: client.redirect_uris_by_realm.fetch(config.fetch(:resource_type)).first,
-            code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
-            code_challenge_method: "S256",
-            scope: "openid",
-            state: "state",
-            nonce: "nonce",
-          },
-        )
-
-        assert_equal 200, browser.response.status
-        form = Nokogiri::HTML(browser.response.body).at_css("form#visa-authorization-continuation-form")
-
-        assert form, "silent authorization GET must render its POST continuation"
-        fields = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
-        browser.post(
-          form["action"], params: fields, headers: {
-            "Origin" => "https://#{browser.host}",
-            "Sec-Fetch-Site" => "same-origin",
-            "Sec-Fetch-Mode" => "navigate",
-            "Sec-Fetch-Dest" => "document",
-          },
-        )
-      end
-
-      assert_equal 400, browser.response.status
-      assert_nil browser.response.location
-      assert_equal(
-        { "error" => "server_error", "error_description" => "authorization unavailable" },
-        browser.response.parsed_body,
-      )
-      assert_predicate root.reload, :currently_usable?
-    end
-
-    # The continuation answer redirects through Jump to the RP callback, and browsers apply
-    # form-action to every hop, so each registered RP callback origin of this realm must be allowed
-    # on the continuation page; an ordinary Visa page keeps the global policy.
-    test "#{realm} silent authorization continuation allows this realm's registered RP callbacks" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      browser = visa_browser(config, actor, root)
-      resource_type = config.fetch(:resource_type)
-      warp = OidcClientRegistry.find!("warp-#{realm}-jp")
-      warp_callback = URI.parse(warp.redirect_uris_by_realm.fetch(resource_type).first)
-      other_realm_callbacks =
-        OidcClientRegistry.client_ids.flat_map do |client_id|
-          OidcClientRegistry.find!(client_id).redirect_uris_by_realm.except(resource_type).values.flatten
-        end
-      own_realm_callbacks =
-        OidcClientRegistry.client_ids.flat_map do |client_id|
-          OidcClientRegistry.find!(client_id).redirect_uris_by_realm.fetch(resource_type, [])
-        end
-      foreign_origins =
-        (other_realm_callbacks - own_realm_callbacks).map do |uri|
-          parsed = URI.parse(uri)
-          "#{parsed.scheme}://#{parsed.host}"
-        end
-
-      browser.get(
-        "/oauth/authorize", params: {
-          response_type: "code",
-          client_id: warp.client_id,
-          redirect_uri: warp_callback.to_s,
-          code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
-          code_challenge_method: "S256",
-          scope: "openid",
-          state: "state",
-          nonce: "nonce",
-        },
-      )
-
-      assert_equal 200, browser.response.status
-      form_action = browser.response.headers.fetch("Content-Security-Policy").split(";").map(&:strip)
-        .find { |directive| directive.start_with?("form-action ") }.split(/\s+/).drop(1)
-
-      assert Nokogiri::HTML(browser.response.body).at_css("form#visa-authorization-continuation-form")
-      assert_includes form_action, "#{warp_callback.scheme}://#{warp_callback.host}"
-      assert_includes form_action, Rails.configuration.x.boot_config.fetch(:jump).origin.to_s
-      assert_equal form_action.uniq, form_action
-
-      browser.get("/", params: { ri: "jp" })
-      global_form_action = browser.response.headers.fetch("Content-Security-Policy").split(";").map(&:strip)
-        .find { |directive| directive.start_with?("form-action ") }.split(/\s+/).drop(1)
-
-      assert_not_includes global_form_action, "#{warp_callback.scheme}://#{warp_callback.host}"
-      (foreign_origins - global_form_action).each { |origin| assert_not_includes form_action, origin }
-      assert_empty global_form_action - form_action
+      assert_equal 503, browser.response.status
+      assert_equal before, config.fetch(:stop).count
+      assert_not_predicate root.reload, :revoked?
+      assert_predicate root.device_session.reload, :usable?
     end
 
     test "#{realm} logout confirmation posts to its separate confirmation endpoint" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
       [nil, "jp"].each do |region|
-        browser = visa_browser(config, actor, root)
+        host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+        browser = open_session
+        browser.host!(host)
+        browser.https!
+        type = config.fetch(:resource_type)
+        payload = AuthorizationTokenClaims.build(
+          resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+          access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+          oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+        )
+        credential = JitSecurityJwtKeyring.encode(
+          payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                   issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+        )
+        browser.cookies << Rack::Test::Cookie.new(
+          "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+        )
         browser.get("/oidc/logout", params: region ? { ri: region } : {})
         if region.nil?
           assert_equal 302, browser.response.status
@@ -534,23 +147,72 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} validates hint signature issuer audience and accepts an expired hint" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      grant = create_grant(config, actor, root, "core-#{realm}-jp")
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      client = OidcClientRegistry.find!("core-#{realm}-jp")
+      grant = config.fetch(:grant).create!(
+        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
+        :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
+      )
+      resource_type = config.fetch(:resource_type)
+      config.fetch(:hint).create!(
+        grant: grant,
+        id_token: OidcIdTokenIssuer.call(
+          resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
+          expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
+          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          sid: grant.public_id, auth_time: grant.oidc_auth_time,
+        ),
+      )
       client = OidcClientRegistry.find!(grant.oidc_client_id)
       foreign = OidcIdTokenIssuer.call(
-        resource: actor, client: client, nonce: "nonce", issuer: "https://foreign.example",
+        resource_type: config.fetch(:resource_type), client: client, nonce: "nonce", issuer: "https://foreign.example",
         jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(config.fetch(:resource_type)),
-        subject: OidcSubject.for(actor, resource_type: config.fetch(:resource_type)), sid: grant.public_id,
+        subject: "#{OidcSubject.prefix_for(config.fetch(:resource_type))}_#{root.principal_public_id}",
+        sid: grant.public_id,
       )
       invalids = [
-        ["#{grant.logout_hint.id_token}x", client.client_id],
+        ["#{config.fetch(:hint).find_by!(grant_id: grant.id).id_token}x", client.client_id],
         [foreign, client.client_id],
-        [grant.logout_hint.id_token, "warp-#{realm}-jp"],
+        [config.fetch(:hint).find_by!(grant_id: grant.id).id_token, "warp-#{realm}-jp"],
       ]
       invalids.each do |token, client_id|
-        browser = visa_browser(config, actor, root)
-        request_hint(browser, grant, locale: "en", token: token, client_id: client_id)
+        host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+        browser = open_session
+        browser.host!(host)
+        browser.https!
+        type = config.fetch(:resource_type)
+        payload = AuthorizationTokenClaims.build(
+          resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+          access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+          oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+        )
+        credential = JitSecurityJwtKeyring.encode(
+          payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                   issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+        )
+        browser.cookies << Rack::Test::Cookie.new(
+          "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+        )
+        client = OidcClientRegistry.find!(grant.oidc_client_id)
+        browser.get(
+          "/oidc/logout", params: {
+            id_token_hint: token,
+            client_id: client_id,
+            post_logout_redirect_uri: client.post_logout_redirect_uris.first,
+            state: "test-state",
+            ri: "jp",
+            lx: "en",
+          },
+        )
 
         assert_equal 400, browser.response.status
         assert_nil browser.response.location
@@ -561,13 +223,41 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       end
 
       expired = OidcIdTokenIssuer.call(
-        resource: actor, client: client, nonce: "nonce", issued_at: 10.minutes.ago, expires_at: 1.minute.ago,
+        resource_type: config.fetch(:resource_type), client: client, nonce: "nonce",
+        issued_at: 10.minutes.ago, expires_at: 1.minute.ago,
         issuer: OidcIssuer.for_resource_type(config.fetch(:resource_type)),
         jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(config.fetch(:resource_type)),
-        subject: OidcSubject.for(actor, resource_type: config.fetch(:resource_type)), sid: grant.public_id,
+        subject: "#{OidcSubject.prefix_for(config.fetch(:resource_type))}_#{root.principal_public_id}",
+        sid: grant.public_id,
       )
-      browser = visa_browser(config, actor, root)
-      request_hint(browser, grant, locale: "en", token: expired)
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      client = OidcClientRegistry.find!(grant.oidc_client_id)
+      browser.get(
+        "/oidc/logout", params: {
+          id_token_hint: expired,
+          client_id: grant.oidc_client_id,
+          post_logout_redirect_uri: client.post_logout_redirect_uris.first,
+          state: "test-state",
+          ri: "jp",
+          lx: "en",
+        },
+      )
 
       assert_equal 303, browser.response.status
       pending = browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY]
@@ -579,12 +269,60 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} invalid hint displays a localized public error" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      grant = create_grant(config, actor, root, "core-#{realm}-jp")
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      client = OidcClientRegistry.find!("core-#{realm}-jp")
+      grant = config.fetch(:grant).create!(
+        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
+        :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
+      )
+      resource_type = config.fetch(:resource_type)
+      config.fetch(:hint).create!(
+        grant: grant,
+        id_token: OidcIdTokenIssuer.call(
+          resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
+          expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
+          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          sid: grant.public_id, auth_time: grant.oidc_auth_time,
+        ),
+      )
       %w(en ja).each do |locale|
-        browser = visa_browser(config, actor, root)
-        request_hint(browser, grant, locale: locale, token: "invalid-hint")
+        host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+        browser = open_session
+        browser.host!(host)
+        browser.https!
+        type = config.fetch(:resource_type)
+        payload = AuthorizationTokenClaims.build(
+          resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+          access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+          oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+        )
+        credential = JitSecurityJwtKeyring.encode(
+          payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                   issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+        )
+        browser.cookies << Rack::Test::Cookie.new(
+          "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+        )
+        client = OidcClientRegistry.find!(grant.oidc_client_id)
+        browser.get(
+          "/oidc/logout", params: {
+            id_token_hint: "invalid-hint",
+            client_id: grant.oidc_client_id,
+            post_logout_redirect_uri: client.post_logout_redirect_uris.first,
+            state: "test-state",
+            ri: "jp",
+            lx: locale,
+          },
+        )
 
         assert_equal 400, browser.response.status
         assert_equal I18n.t("sign.shared.sign_out.invalid_request", locale: locale), browser.response.body
@@ -594,9 +332,31 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} invalid hint preserves the protocol error in JSON" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      browser = visa_browser(config, actor, root)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
       browser.get(
         "/oidc/logout", params: { id_token_hint: "invalid-hint", ri: "jp" },
                         headers: { "Accept" => "application/json" },
@@ -610,9 +370,31 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} an unregistered return URI is refused even without a hint" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      browser = visa_browser(config, actor, root)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
       browser.get(
         "/oidc/logout", params: {
           client_id: "core-#{realm}-jp", post_logout_redirect_uri: "https://attacker.example/return", ri: "jp",
@@ -626,17 +408,42 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} retry after an unknown uncommitted stop ends the same device" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      browser = visa_browser(config, actor, root)
-      stage_no_hint(browser)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
+
+      assert_equal 200, browser.response.status
+      assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
       AuthenticationLogoutCurrentSession.stub(:new, ->(**) { UncommittedUnknown.new }) do
         browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
       end
 
       assert_equal 503, browser.response.status
       assert_not_predicate root.reload, :revoked?
-      assert_predicate browser.cookies[AuthenticationBase::ACCESS_COOKIE_KEY], :present?
+      assert_predicate browser.cookies[AuthenticationCookieName.access], :present?
       assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
       browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
 
@@ -645,20 +452,63 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} a new pending request supersedes the previous completion marker" do
-      actor = actor_for(realm)
-      old_root = create_root(config, actor)
-      new_root = create_root(config, actor)
-      browser = visa_browser(config, actor, old_root)
-      stage_no_hint(browser)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      old_root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      new_root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: old_root.device_session.public_id,
+        oidc_jti: old_root.oidc_jti, authentication_context: old_root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
+
+      assert_equal 200, browser.response.status
+      assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
       browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
 
       assert_equal 303, browser.response.status
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
-      cookie = visa_access(actor, new_root, host, config)
-      browser.cookies << Rack::Test::Cookie.new(
-        "#{AuthenticationBase::ACCESS_COOKIE_KEY}=#{Rack::Utils.escape(cookie)}", URI.parse("https://#{host}/"),
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: new_root.device_session.public_id,
+        oidc_jti: new_root.oidc_jti, authentication_context: new_root.strict_authentication_context_value.to_s,
       )
-      stage_no_hint(browser)
+      cookie = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(cookie)}", URI.parse("https://#{host}/"),
+      )
+      browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
+
+      assert_equal 200, browser.response.status
+      assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
       travel 5.minutes
       browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
 
@@ -667,18 +517,58 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} an old confirmation after a new sign-in cannot end the new device" do
-      actor = actor_for(realm)
-      old_root = create_root(config, actor)
-      new_root = create_root(config, actor)
-      browser = visa_browser(config, actor, old_root)
-      stage_no_hint(browser)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      old_root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      new_root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: old_root.device_session.public_id,
+        oidc_jti: old_root.oidc_jti, authentication_context: old_root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
+
+      assert_equal 200, browser.response.status
+      assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
       browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
 
       assert_equal 303, browser.response.status
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
-      new_cookie = visa_access(actor, new_root, host, config)
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: new_root.device_session.public_id,
+        oidc_jti: new_root.oidc_jti, authentication_context: new_root.strict_authentication_context_value.to_s,
+      )
+      new_cookie = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
       browser.cookies << Rack::Test::Cookie.new(
-        "#{AuthenticationBase::ACCESS_COOKIE_KEY}=#{Rack::Utils.escape(new_cookie)}", URI.parse("https://#{host}/"),
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(new_cookie)}", URI.parse("https://#{host}/"),
       )
       browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
 
@@ -687,16 +577,48 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} verified hint without an OP session is forbidden in both languages" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      grant = create_grant(config, actor, root, "core-#{realm}-jp")
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      client = OidcClientRegistry.find!("core-#{realm}-jp")
+      grant = config.fetch(:grant).create!(
+        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
+        :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
+      )
+      resource_type = config.fetch(:resource_type)
+      config.fetch(:hint).create!(
+        grant: grant,
+        id_token: OidcIdTokenIssuer.call(
+          resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
+          expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
+          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          sid: grant.public_id, auth_time: grant.oidc_auth_time,
+        ),
+      )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
       browser = open_session
       browser.host!(host)
       browser.https!
 
       { "en" => "This action is not allowed.", "ja" => "禁止された振る舞いです" }.each do |locale, message|
-        request_hint(browser, grant, locale: locale)
+        client = OidcClientRegistry.find!(grant.oidc_client_id)
+        browser.get(
+          "/oidc/logout", params: {
+            id_token_hint: config.fetch(:hint).find_by!(grant_id: grant.id).id_token,
+            client_id: grant.oidc_client_id,
+            post_logout_redirect_uri: client.post_logout_redirect_uris.first,
+            state: "test-state",
+            ri: "jp",
+            lx: locale,
+          },
+        )
 
         assert_equal 403, browser.response.status
         assert_equal message, browser.response.body
@@ -708,12 +630,66 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} a hint for another device of the same person cannot select its grant" do
-      actor = actor_for(realm)
-      current = create_root(config, actor)
-      other = create_root(config, actor)
-      grant = create_grant(config, actor, other, "core-#{realm}-jp")
-      browser = visa_browser(config, actor, current)
-      request_hint(browser, grant, locale: "en")
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      current = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      other = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      client = OidcClientRegistry.find!("core-#{realm}-jp")
+      grant = config.fetch(:grant).create!(
+        :authentication_epoch => 0, config.fetch(:root) => other, :oidc_client_id => client.client_id,
+        :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
+        :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
+      )
+      resource_type = config.fetch(:resource_type)
+      config.fetch(:hint).create!(
+        grant: grant,
+        id_token: OidcIdTokenIssuer.call(
+          resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
+          expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
+          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{other.principal_public_id}",
+          sid: grant.public_id, auth_time: grant.oidc_auth_time,
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: current.device_session.public_id,
+        oidc_jti: current.oidc_jti, authentication_context: current.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      client = OidcClientRegistry.find!(grant.oidc_client_id)
+      browser.get(
+        "/oidc/logout", params: {
+          id_token_hint: config.fetch(:hint).find_by!(grant_id: grant.id).id_token,
+          client_id: grant.oidc_client_id,
+          post_logout_redirect_uri: client.post_logout_redirect_uris.first,
+          state: "test-state",
+          ri: "jp",
+          lx: "en",
+        },
+      )
 
       assert_equal 403, browser.response.status
       assert_equal "This action is not allowed.", browser.response.body
@@ -725,13 +701,67 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} a hint for an unrelated person cannot select its grant" do
-      current_actor = actor_for(realm)
-      other_actor = fresh_actor(realm)
-      current = create_root(config, current_actor)
-      other = create_root(config, other_actor)
-      grant = create_grant(config, other_actor, other, "core-#{realm}-jp")
-      browser = visa_browser(config, current_actor, current)
-      request_hint(browser, grant, locale: "en")
+      current_actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      other_actor = 9_000_000 + SecureRandom.random_number(1_000_000)
+      current = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => current_actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => current_actor, :principal_public_id => "logout-#{current_actor}",
+        ),
+      )
+      other = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => other_actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => other_actor, :principal_public_id => "logout-#{other_actor}",
+        ),
+      )
+      client = OidcClientRegistry.find!("core-#{realm}-jp")
+      grant = config.fetch(:grant).create!(
+        :authentication_epoch => 0, config.fetch(:root) => other, :oidc_client_id => client.client_id,
+        :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
+        :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
+      )
+      resource_type = config.fetch(:resource_type)
+      config.fetch(:hint).create!(
+        grant: grant,
+        id_token: OidcIdTokenIssuer.call(
+          resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
+          expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
+          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{other.principal_public_id}",
+          sid: grant.public_id, auth_time: grant.oidc_auth_time,
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: current_actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: current.device_session.public_id,
+        oidc_jti: current.oidc_jti, authentication_context: current.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      client = OidcClientRegistry.find!(grant.oidc_client_id)
+      browser.get(
+        "/oidc/logout", params: {
+          id_token_hint: config.fetch(:hint).find_by!(grant_id: grant.id).id_token,
+          client_id: grant.oidc_client_id,
+          post_logout_redirect_uri: client.post_logout_redirect_uris.first,
+          state: "test-state",
+          ri: "jp",
+          lx: "en",
+        },
+      )
 
       assert_equal 403, browser.response.status
       assert_equal "This action is not allowed.", browser.response.body
@@ -751,7 +781,10 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
 
       assert_equal 200, browser.response.status
-      assert_equal "You are already signed out.", page_description(browser)
+      page = Nokogiri::HTML(browser.response.body).at_css("script[data-page='app']")
+
+      assert page
+      assert_equal "You are already signed out.", JSON.parse(page.text).fetch("props").fetch("description")
       page = Nokogiri::HTML(browser.response.body).at_css("script[data-page='app']")
       props = JSON.parse(page.text).fetch("props")
 
@@ -762,15 +795,55 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} confirmation refuses a different current device" do
-      actor = actor_for(realm)
-      original = create_root(config, actor)
-      replacement = create_root(config, actor)
-      browser = visa_browser(config, actor, original)
-      stage_no_hint(browser)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      original = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      replacement = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
-      cookie = visa_access(actor, replacement, host, config)
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: original.device_session.public_id,
+        oidc_jti: original.oidc_jti, authentication_context: original.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
       browser.cookies << Rack::Test::Cookie.new(
-        "#{AuthenticationBase::ACCESS_COOKIE_KEY}=#{Rack::Utils.escape(cookie)}", URI.parse("https://#{host}/"),
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
+
+      assert_equal 200, browser.response.status
+      assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: replacement.device_session.public_id,
+        oidc_jti: replacement.oidc_jti, authentication_context: replacement.strict_authentication_context_value.to_s,
+      )
+      cookie = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(cookie)}", URI.parse("https://#{host}/"),
       )
       browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
 
@@ -781,10 +854,35 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} a repeated confirmation reports already signed out and writes no second stop" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      browser = visa_browser(config, actor, root)
-      stage_no_hint(browser)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
+
+      assert_equal 200, browser.response.status
+      assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
       browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
 
       assert_equal 303, browser.response.status
@@ -792,15 +890,43 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
 
       assert_equal 200, browser.response.status
-      assert_equal "You are already signed out.", page_description(browser)
+      page = Nokogiri::HTML(browser.response.body).at_css("script[data-page='app']")
+
+      assert page
+      assert_equal "You are already signed out.", JSON.parse(page.text).fetch("props").fetch("description")
       assert_equal stops, config.fetch(:stop).count
     end
 
     test "#{realm} programming errors during the stop propagate" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      browser = visa_browser(config, actor, root)
-      stage_no_hint(browser)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
+
+      assert_equal 200, browser.response.status
+      assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
       failure = ->(**) { raise NoMethodError, "broken stop implementation" }
 
       OpAuthorityStopCommitter.stub(:stop_root, failure) do
@@ -811,10 +937,35 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} a failed precondition on an active device is forbidden" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      browser = visa_browser(config, actor, root)
-      stage_no_hint(browser)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
+
+      assert_equal 200, browser.response.status
+      assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
       failure = ->(**) { raise AuthenticationLogoutCurrentSession::PreconditionFailed, "changed" }
       OpAuthorityStopCommitter.stub(:stop_root, failure) do
         browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
@@ -822,14 +973,39 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
 
       assert_equal 403, browser.response.status
       assert_not_predicate root.reload, :revoked?
-      assert_predicate browser.cookies[AuthenticationBase::ACCESS_COOKIE_KEY], :present?
+      assert_predicate browser.cookies[AuthenticationCookieName.access], :present?
     end
 
     test "#{realm} a failed precondition after a committed stop reports already signed out" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      browser = visa_browser(config, actor, root)
-      stage_no_hint(browser)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
+
+      assert_equal 200, browser.response.status
+      assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
       original_new = AuthenticationLogoutCurrentSession.method(:new)
       factory = ->(**arguments) { CommittedPrecondition.new(original_new.call(**arguments)) }
       AuthenticationLogoutCurrentSession.stub(:new, factory) do
@@ -837,16 +1013,44 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       end
 
       assert_equal 200, browser.response.status
-      assert_equal "You are already signed out.", page_description(browser)
+      page = Nokogiri::HTML(browser.response.body).at_css("script[data-page='app']")
+
+      assert page
+      assert_equal "You are already signed out.", JSON.parse(page.text).fetch("props").fetch("description")
       assert_predicate root.reload, :revoked?
-      assert_not browser.cookies[AuthenticationBase::ACCESS_COOKIE_KEY].present?
+      assert_not browser.cookies[AuthenticationCookieName.access].present?
     end
 
     test "#{realm} an unreadable persisted device preserves the browser and returns unknown" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      browser = visa_browser(config, actor, root)
-      stage_no_hint(browser)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
+
+      assert_equal 200, browser.response.status
+      assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
       device_class = root.device_session.class
       original_find = device_class.method(:find_by)
       stop_failed = false
@@ -870,15 +1074,56 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       assert_equal 503, browser.response.status
       assert_nil browser.response.location
       assert_not_predicate root.reload, :revoked?
-      assert_predicate browser.cookies[AuthenticationBase::ACCESS_COOKIE_KEY], :present?
+      assert_predicate browser.cookies[AuthenticationCookieName.access], :present?
     end
 
     test "#{realm} a stop failing before commit keeps the browser and pending request" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      grant = create_grant(config, actor, root, "core-#{realm}-jp")
-      browser = visa_browser(config, actor, root)
-      stage_no_hint(browser)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      client = OidcClientRegistry.find!("core-#{realm}-jp")
+      grant = config.fetch(:grant).create!(
+        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
+        :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
+      )
+      resource_type = config.fetch(:resource_type)
+      config.fetch(:hint).create!(
+        grant: grant,
+        id_token: OidcIdTokenIssuer.call(
+          resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
+          expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
+          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          sid: grant.public_id, auth_time: grant.oidc_auth_time,
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
+
+      assert_equal 200, browser.response.status
+      assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
       failure = ->(**) { raise ActiveRecord::ConnectionNotEstablished, "stop failed before commit" }
       OpAuthorityStopCommitter.stub(:stop_root, failure) do
         browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
@@ -888,15 +1133,40 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       assert_nil browser.response.location
       assert_not_predicate root.reload, :revoked?
       assert_predicate grant.reload, :active?
-      assert_predicate browser.cookies[AuthenticationBase::ACCESS_COOKIE_KEY], :present?
+      assert_predicate browser.cookies[AuthenticationCookieName.access], :present?
       assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
     end
 
     test "#{realm} an unknown commit keeps the browser and a retry observes the committed stop" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      browser = visa_browser(config, actor, root)
-      stage_no_hint(browser)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
+
+      assert_equal 200, browser.response.status
+      assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
       original_new = AuthenticationLogoutCurrentSession.method(:new)
       factory = ->(**arguments) { CommittedUnknown.new(original_new.call(**arguments)) }
       AuthenticationLogoutCurrentSession.stub(:new, factory) do
@@ -906,68 +1176,232 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       assert_equal 503, browser.response.status
       assert_nil browser.response.location
       assert_predicate root.reload, :revoked?
-      assert_predicate browser.cookies[AuthenticationBase::ACCESS_COOKIE_KEY], :present?
+      assert_predicate browser.cookies[AuthenticationCookieName.access], :present?
       assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
       stops = config.fetch(:stop).count
       browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
 
       assert_equal 200, browser.response.status
-      assert_equal "You are already signed out.", page_description(browser)
+      page = Nokogiri::HTML(browser.response.body).at_css("script[data-page='app']")
+
+      assert page
+      assert_equal "You are already signed out.", JSON.parse(page.text).fetch("props").fetch("description")
       assert_equal stops, config.fetch(:stop).count
     end
 
     test "#{realm} a notice store failure after commit renders the signed-out page" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      grant = create_grant(config, actor, root, "core-#{realm}-jp")
-      browser = visa_browser(config, actor, root)
-      stage_no_hint(browser)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      client = OidcClientRegistry.find!("core-#{realm}-jp")
+      grant = config.fetch(:grant).create!(
+        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
+        :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
+      )
+      resource_type = config.fetch(:resource_type)
+      config.fetch(:hint).create!(
+        grant: grant,
+        id_token: OidcIdTokenIssuer.call(
+          resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
+          expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
+          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          sid: grant.public_id, auth_time: grant.oidc_auth_time,
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
+
+      assert_equal 200, browser.response.status
+      assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
       Valkey::AuthState::SignOutNoticeStore.stub(:new, FailingNoticeStore.new) do
         browser.post("/oidc/logout/confirmation?ri=jp&lx=en")
       end
 
       assert_equal 200, browser.response.status
-      assert_equal I18n.t("sign.shared.sign_out.completed_description", locale: :en), page_description(browser)
+      page = Nokogiri::HTML(browser.response.body).at_css("script[data-page='app']")
+
+      assert page
+      assert_equal I18n.t("sign.shared.sign_out.completed_description", locale: :en),
+                   JSON.parse(page.text).fetch("props").fetch("description")
       assert_nil browser.response.location
       assert_predicate root.reload, :revoked?
       assert_predicate grant.reload, :revoked?
-      assert_not browser.cookies[AuthenticationBase::ACCESS_COOKIE_KEY].present?
+      assert_not browser.cookies[AuthenticationCookieName.access].present?
       assert_equal 1, config.fetch(:target).where(root_id: root.id).count
     end
 
     test "#{realm} a missing Jump ticket after commit renders the signed-out page" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      grant = create_grant(config, actor, root, "core-#{realm}-jp")
-      browser = visa_browser(config, actor, root)
-      request_hint(browser, grant, locale: "en")
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      client = OidcClientRegistry.find!("core-#{realm}-jp")
+      grant = config.fetch(:grant).create!(
+        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
+        :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
+      )
+      resource_type = config.fetch(:resource_type)
+      config.fetch(:hint).create!(
+        grant: grant,
+        id_token: OidcIdTokenIssuer.call(
+          resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
+          expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
+          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          sid: grant.public_id, auth_time: grant.oidc_auth_time,
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      client = OidcClientRegistry.find!(grant.oidc_client_id)
+      browser.get(
+        "/oidc/logout", params: {
+          id_token_hint: config.fetch(:hint).find_by!(grant_id: grant.id).id_token,
+          client_id: grant.oidc_client_id,
+          post_logout_redirect_uri: client.post_logout_redirect_uris.first,
+          state: "test-state",
+          ri: "jp",
+          lx: "en",
+        },
+      )
       3.times do
         break unless browser.response.redirect?
 
-        browser.get(jump_rt_url_from_location_for_test(browser.response.location))
+        location = URI.parse(browser.response.location)
+        jump_host = URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
+        if location.host == jump_host
+          rt = Rack::Utils.parse_nested_query(location.query.to_s).fetch("rt")
+          jump_claims, = JWT.decode(rt, nil, false)
+          browser.get(jump_claims.fetch("url"))
+        else
+          browser.get(location.to_s)
+        end
       end
 
       assert_equal 200, browser.response.status
       JumpRtIssuer.stub(:call, nil) { browser.post("/oidc/logout/confirmation?ri=jp&lx=en") }
 
       assert_equal 200, browser.response.status
-      assert_equal I18n.t("sign.shared.sign_out.completed_description", locale: :en), page_description(browser)
+      page = Nokogiri::HTML(browser.response.body).at_css("script[data-page='app']")
+
+      assert page
+      assert_equal I18n.t("sign.shared.sign_out.completed_description", locale: :en),
+                   JSON.parse(page.text).fetch("props").fetch("description")
       assert_nil browser.response.location
       assert_predicate root.reload, :revoked?
       assert_predicate grant.reload, :revoked?
-      assert_not browser.cookies[AuthenticationBase::ACCESS_COOKIE_KEY].present?
+      assert_not browser.cookies[AuthenticationCookieName.access].present?
     end
 
     test "#{realm} a rejected Jump gateway after commit renders the signed-out page" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      grant = create_grant(config, actor, root, "core-#{realm}-jp")
-      browser = visa_browser(config, actor, root)
-      request_hint(browser, grant, locale: "en")
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      client = OidcClientRegistry.find!("core-#{realm}-jp")
+      grant = config.fetch(:grant).create!(
+        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
+        :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
+      )
+      resource_type = config.fetch(:resource_type)
+      config.fetch(:hint).create!(
+        grant: grant,
+        id_token: OidcIdTokenIssuer.call(
+          resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
+          expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
+          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          sid: grant.public_id, auth_time: grant.oidc_auth_time,
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      client = OidcClientRegistry.find!(grant.oidc_client_id)
+      browser.get(
+        "/oidc/logout", params: {
+          id_token_hint: config.fetch(:hint).find_by!(grant_id: grant.id).id_token,
+          client_id: grant.oidc_client_id,
+          post_logout_redirect_uri: client.post_logout_redirect_uris.first,
+          state: "test-state",
+          ri: "jp",
+          lx: "en",
+        },
+      )
       3.times do
         break unless browser.response.redirect?
 
-        browser.get(jump_rt_url_from_location_for_test(browser.response.location))
+        location = URI.parse(browser.response.location)
+        jump_host = URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
+        if location.host == jump_host
+          rt = Rack::Utils.parse_nested_query(location.query.to_s).fetch("rt")
+          jump_claims, = JWT.decode(rt, nil, false)
+          browser.get(jump_claims.fetch("url"))
+        else
+          browser.get(location.to_s)
+        end
       end
 
       assert_equal 200, browser.response.status
@@ -975,23 +1409,83 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       RedirectsJumpGatewayUrl.stub(:call, failed) { browser.post("/oidc/logout/confirmation?ri=jp&lx=en") }
 
       assert_equal 200, browser.response.status
-      assert_equal I18n.t("sign.shared.sign_out.completed_description", locale: :en), page_description(browser)
+      page = Nokogiri::HTML(browser.response.body).at_css("script[data-page='app']")
+
+      assert page
+      assert_equal I18n.t("sign.shared.sign_out.completed_description", locale: :en),
+                   JSON.parse(page.text).fetch("props").fetch("description")
       assert_nil browser.response.location
       assert_predicate root.reload, :revoked?
       assert_predicate grant.reload, :revoked?
-      assert_not browser.cookies[AuthenticationBase::ACCESS_COOKIE_KEY].present?
+      assert_not browser.cookies[AuthenticationCookieName.access].present?
     end
 
     test "#{realm} programming errors after commit propagate" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      grant = create_grant(config, actor, root, "core-#{realm}-jp")
-      browser = visa_browser(config, actor, root)
-      request_hint(browser, grant, locale: "en")
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      client = OidcClientRegistry.find!("core-#{realm}-jp")
+      grant = config.fetch(:grant).create!(
+        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
+        :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
+      )
+      resource_type = config.fetch(:resource_type)
+      config.fetch(:hint).create!(
+        grant: grant,
+        id_token: OidcIdTokenIssuer.call(
+          resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
+          expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
+          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          sid: grant.public_id, auth_time: grant.oidc_auth_time,
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      client = OidcClientRegistry.find!(grant.oidc_client_id)
+      browser.get(
+        "/oidc/logout", params: {
+          id_token_hint: config.fetch(:hint).find_by!(grant_id: grant.id).id_token,
+          client_id: grant.oidc_client_id,
+          post_logout_redirect_uri: client.post_logout_redirect_uris.first,
+          state: "test-state",
+          ri: "jp",
+          lx: "en",
+        },
+      )
       3.times do
         break unless browser.response.redirect?
 
-        browser.get(jump_rt_url_from_location_for_test(browser.response.location))
+        location = URI.parse(browser.response.location)
+        jump_host = URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
+        if location.host == jump_host
+          rt = Rack::Utils.parse_nested_query(location.query.to_s).fetch("rt")
+          jump_claims, = JWT.decode(rt, nil, false)
+          browser.get(jump_claims.fetch("url"))
+        else
+          browser.get(location.to_s)
+        end
       end
       failure = ->(**) { raise NoMethodError, "broken redirect implementation" }
 
@@ -1004,15 +1498,71 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} redirect construction failure after commit renders the signed-out page" do
-      actor = actor_for(realm)
-      root = create_root(config, actor)
-      grant = create_grant(config, actor, root, "core-#{realm}-jp")
-      browser = visa_browser(config, actor, root)
-      request_hint(browser, grant, locale: "en")
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      client = OidcClientRegistry.find!("core-#{realm}-jp")
+      grant = config.fetch(:grant).create!(
+        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
+        :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
+      )
+      resource_type = config.fetch(:resource_type)
+      config.fetch(:hint).create!(
+        grant: grant,
+        id_token: OidcIdTokenIssuer.call(
+          resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
+          expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
+          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          sid: grant.public_id, auth_time: grant.oidc_auth_time,
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      client = OidcClientRegistry.find!(grant.oidc_client_id)
+      browser.get(
+        "/oidc/logout", params: {
+          id_token_hint: config.fetch(:hint).find_by!(grant_id: grant.id).id_token,
+          client_id: grant.oidc_client_id,
+          post_logout_redirect_uri: client.post_logout_redirect_uris.first,
+          state: "test-state",
+          ri: "jp",
+          lx: "en",
+        },
+      )
       3.times do
         break unless browser.response.redirect?
 
-        browser.get(jump_rt_url_from_location_for_test(browser.response.location))
+        location = URI.parse(browser.response.location)
+        jump_host = URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin.to_s).host
+        if location.host == jump_host
+          rt = Rack::Utils.parse_nested_query(location.query.to_s).fetch("rt")
+          jump_claims, = JWT.decode(rt, nil, false)
+          browser.get(jump_claims.fetch("url"))
+        else
+          browser.get(location.to_s)
+        end
       end
 
       assert_equal 200, browser.response.status
@@ -1023,18 +1573,34 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       end
 
       assert_equal 200, browser.response.status
-      assert_equal I18n.t("sign.shared.sign_out.completed_description", locale: :en), page_description(browser)
+      page = Nokogiri::HTML(browser.response.body).at_css("script[data-page='app']")
+
+      assert page
+      assert_equal I18n.t("sign.shared.sign_out.completed_description", locale: :en),
+                   JSON.parse(page.text).fetch("props").fetch("description")
       assert_nil browser.response.location
       assert_predicate root.reload, :revoked?
       assert_predicate grant.reload, :revoked?
       assert config.fetch(:participant).exists?(grant_id: grant.id)
-      assert_not browser.cookies[AuthenticationBase::ACCESS_COOKIE_KEY].present?
+      assert_not browser.cookies[AuthenticationCookieName.access].present?
     end
 
     test "#{realm} confirmation stops both rotated roots and grants through the Visa OP" do
-      actor = actor_for(realm)
-      predecessor = create_root(config, actor)
-      other_root = create_root(config, actor)
+      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      predecessor = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
+      other_root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+        ),
+      )
       predecessor.rotate_refresh_token!
       rotated = config.fetch(:token).rotate_refresh!(presented_refresh_digest: predecessor.reload.refresh_token_digest)
 
@@ -1043,11 +1609,78 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
 
       assert_equal predecessor.device_session_id, current.device_session_id
 
-      origin = create_grant(config, actor, current, "core-#{realm}-jp")
-      sibling = create_grant(config, actor, current, "warp-#{realm}-jp")
-      other_grant = create_grant(config, actor, other_root, "warp-#{realm}-jp")
-      browser = visa_browser(config, actor, current)
-      stage_no_hint(browser)
+      client = OidcClientRegistry.find!("core-#{realm}-jp")
+      origin = config.fetch(:grant).create!(
+        :authentication_epoch => 0, config.fetch(:root) => current, :oidc_client_id => client.client_id,
+        :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
+        :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
+      )
+      resource_type = config.fetch(:resource_type)
+      config.fetch(:hint).create!(
+        grant: origin,
+        id_token: OidcIdTokenIssuer.call(
+          resource_type:, client:, nonce: origin.oidc_nonce, issued_at: Time.current,
+          expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
+          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{current.principal_public_id}",
+          sid: origin.public_id, auth_time: origin.oidc_auth_time,
+        ),
+      )
+      client = OidcClientRegistry.find!("warp-#{realm}-jp")
+      sibling = config.fetch(:grant).create!(
+        :authentication_epoch => 0, config.fetch(:root) => current, :oidc_client_id => client.client_id,
+        :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
+        :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
+      )
+      resource_type = config.fetch(:resource_type)
+      config.fetch(:hint).create!(
+        grant: sibling,
+        id_token: OidcIdTokenIssuer.call(
+          resource_type:, client:, nonce: sibling.oidc_nonce, issued_at: Time.current,
+          expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
+          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{current.principal_public_id}",
+          sid: sibling.public_id, auth_time: sibling.oidc_auth_time,
+        ),
+      )
+      client = OidcClientRegistry.find!("warp-#{realm}-jp")
+      other_grant = config.fetch(:grant).create!(
+        :authentication_epoch => 0, config.fetch(:root) => other_root, :oidc_client_id => client.client_id,
+        :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
+        :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
+      )
+      resource_type = config.fetch(:resource_type)
+      config.fetch(:hint).create!(
+        grant: other_grant,
+        id_token: OidcIdTokenIssuer.call(
+          resource_type:, client:, nonce: other_grant.oidc_nonce, issued_at: Time.current,
+          expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
+          jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{other_root.principal_public_id}",
+          sid: other_grant.public_id, auth_time: other_grant.oidc_auth_time,
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: current.device_session.public_id,
+        oidc_jti: current.oidc_jti, authentication_context: current.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
+
+      assert_equal 200, browser.response.status
+      assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
       browser.post("/oidc/logout/confirmation?ri=jp")
 
       assert_equal 303, browser.response.status
@@ -1090,99 +1723,6 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
 
   class FailingNoticeStore
     def issue!(**) = raise(Umaxica::Valkey::Unavailable, "notice storage unavailable")
-  end
-
-  private
-
-  def actor_for(realm)
-    case realm
-    when "app" then clients(:one)
-    when "org" then Operator.create!(
-      security_mode_id: SecurityModeConfigurable::ADVANCED,
-      status_id: OperatorStatus::ACTIVE, visibility_id: OperatorVisibility::STAFF,
-    )
-    else raise ArgumentError, "unsupported realm"
-    end
-  end
-
-  def page_description(browser)
-    page = Nokogiri::HTML(browser.response.body).at_css("script[data-page='app']")
-
-    assert page
-    JSON.parse(page.text).fetch("props").fetch("description")
-  end
-
-  def stage_no_hint(browser)
-    browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
-
-    assert_equal 200, browser.response.status
-    assert_predicate browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY], :present?
-  end
-
-  def fresh_actor(realm)
-    case realm
-    when "app" then Client.create!(
-      security_mode_id: SecurityModeConfigurable::NORMAL,
-      status_id: ClientStatus::ACTIVE, visibility_id: ClientVisibility::USER,
-    )
-    when "org" then Operator.create!(
-      security_mode_id: SecurityModeConfigurable::ADVANCED,
-      status_id: OperatorStatus::ACTIVE, visibility_id: OperatorVisibility::STAFF,
-    )
-    else raise ArgumentError, "unsupported realm"
-    end
-  end
-
-  def visa_browser(config, actor, root)
-    host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
-    browser = open_session
-    browser.host!(host)
-    browser.https!
-    cookie = visa_access(actor, root, host, config)
-    browser.cookies << Rack::Test::Cookie.new(
-      "#{AuthenticationBase::ACCESS_COOKIE_KEY}=#{Rack::Utils.escape(cookie)}", URI.parse("https://#{host}/"),
-    )
-    browser
-  end
-
-  def request_hint(browser, grant, locale:, token: grant.logout_hint.id_token, client_id: grant.oidc_client_id)
-    client = OidcClientRegistry.find!(grant.oidc_client_id)
-    browser.get(
-      "/oidc/logout", params: {
-        id_token_hint: token,
-        client_id: client_id,
-        post_logout_redirect_uri: client.post_logout_redirect_uris.first,
-        state: "test-state",
-        ri: "jp",
-        lx: locale,
-      },
-    )
-  end
-
-  def create_root(config, actor)
-    config.fetch(:token).create!(
-      :authentication_epoch => 0, config.fetch(:owner) => actor, config.fetch(:kind) => config.fetch(:kind_value),
-    )
-  end
-
-  def create_grant(config, actor, root, client_id)
-    client = OidcClientRegistry.find!(client_id)
-    grant = config.fetch(:grant).create!(
-      :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client_id,
-      :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
-      :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
-    )
-    store_oidc_rp_logout_hint!(grant, actor, client)
-    grant
-  end
-
-  def visa_access(actor, root, host, config)
-    AuthenticationToken.encode(
-      actor, host:, session_public_id: root.device_session.public_id, oidc_sid: root.device_session.public_id,
-             oidc_jti: root.oidc_jti, resource_type: config.fetch(:resource_type),
-             jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(config.fetch(:resource_type)),
-             authentication_context: root.authentication_context_value.to_s,
-    )
   end
 end
 

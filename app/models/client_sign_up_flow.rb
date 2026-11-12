@@ -149,20 +149,22 @@ class ClientSignUpFlow < OpBaseAppRecord
   belongs_to :token, class_name: "ClientToken", optional: true
   belongs_to :auth_admission_binding, class_name: "ClientAuthAdmissionBinding", optional: false
   attr_readonly :auth_admission_binding_id
-  belongs_to :principal, class_name: "Client", optional: true
   belongs_to :status, class_name: "ClientSignUpFlowStatus"
   belongs_to :cleanup_status, class_name: "ClientSignUpFlowCleanupStatus", optional: false
 
   validates :status_id, inclusion: { in: ->(record) { record.class::STATUS_IDS } }
   validates :step, presence: true, inclusion: { in: STEPS }
   validates :state, presence: true
+  validates :auth_admission_binding_id,
+            uniqueness: { conditions: -> { where(status_id: ClientSignUpFlow.sign_up_in_progress_status_ids) } },
+            if: :sign_up_in_progress?
   validate :legacy_state_matches_status
   validate :step_matches_status
   validate :completed_status_has_completed_at
   validate :sign_up_admission_is_redeemed, on: :create
 
   validates :social_provider, inclusion: { in: SOCIAL_ENTRY_METHODS }, allow_nil: true
-  validates :result_digest, length: { maximum: 64 }
+  validates :result_digest, length: { maximum: 64 }, uniqueness: true, allow_nil: true
 
   before_validation :assign_default_status_id
   before_validation :sync_legacy_state_from_status
@@ -173,92 +175,24 @@ class ClientSignUpFlow < OpBaseAppRecord
 
   public
 
-  # Source lock precedes OP SID/parent/Flow locks, including expiry and cleanup decisions.
-  # Completion is reconciled before generic expiry evaluation, never from current actor status.
-  def with_cycle_lock
-    return super if @registration_lock_held || principal_id.blank?
-
-    AppZenithRecord.connected_to(role: :writing) do
-      Client.transaction do
-        owner = Client.lock.find(principal_id)
-        OpBaseAppRecord.connected_to(role: :writing) do
-          self.class.transaction do
-            lock_registration_parent!
-            @registration_lock_held = true
-            begin
-              super do
-                if principal_id != owner.id
-                  raise ClientRegistrationCompletion::Conflict, "Registration actor changed while locking"
-                end
-
-                receipt = registration_completion
-                complete_from_registration!(receipt) if receipt
-                yield
-              end
-            ensure
-              @registration_lock_held = false
-            end
-          end
-        end
-      end
-    end
-  end
-
   def registration_completion
-    receipt = ClientRegistrationCompletion.find_by(sign_up_flow_ref: public_id)
-    if !receipt && principal_id && ClientRegistrationCompletion.exists?(client_id: principal_id)
-      raise ClientRegistrationCompletion::Conflict, "Client completion belongs to another signup flow"
-    end
-
-    receipt&.verify_flow!(self)
+    raise GovernanceLookupUnavailableError, "Governance registration completion lookup is unavailable"
   end
 
   def lock_registration_parent!
-    binding = association(:auth_admission_binding).scope.take!
-    ceremony = binding.association(:admitted_auth_ceremony_session).scope.lock.take!
-    parent = binding.association(:authorization_transaction).scope.lock.take!
-    binding.lock!
-    unless binding.entry_intent == "sign_up" && binding.purpose == "authentication_handoff" &&
-        ceremony.authorization_transaction_ref == parent.transaction_id
-      raise ArgumentError, "Registration parent ownership mismatch"
-    end
-
-    @registration_ceremony, @registration_parent, @registration_binding = ceremony, parent, binding
+    raise GovernanceLookupUnavailableError, "Governance registration authority is unavailable"
   end
 
   def require_registration_authority!
-    now = self.class.database_now
-    unless @registration_ceremony && @registration_parent && @registration_binding &&
-        @registration_ceremony.active?(now: now) && @registration_ceremony.admitted? &&
-        @registration_parent.pending? && @registration_parent.expires_at > now &&
-        @registration_binding.redeemed? && !@registration_binding.retired? &&
-        @registration_binding.curfew_at > now && expires_at > now && !lapsed?(now)
-      raise FlowInvalidTransition, "Registration parent is no longer authorized"
-    end
+    raise GovernanceLookupUnavailableError, "Governance registration authority is unavailable"
   end
 
   private
 
-  def complete_from_registration!(receipt)
-    receipt.verify_flow!(self)
-    return self if sign_up_completed?
-    unless status_id == ClientSignUpFlowStatus::FINALIZING
-      raise ClientRegistrationCompletion::Conflict, "Committed registration has a conflicting flow state"
+  def transition_sign_up_to!(next_status_name, changes: {}, timestamp_fields: [])
+    unless %w(EXPIRED CANCELLED HALTED).include?(next_status_name)
+      raise GovernanceLookupUnavailableError, "Governance sign-up authority is unavailable"
     end
-
-    @completing_registration = true
-    begin
-      complete_sign_up!
-    ensure
-      @completing_registration = false
-    end
-    self
-  end
-
-  private
-
-  def cycle_expires_at_lapsed?(now)
-    return false if @completing_registration
 
     super
   end

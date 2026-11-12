@@ -27,7 +27,7 @@
 require "test_helper"
 
 class ClientVerificationTest < ActiveSupport::TestCase
-  fixtures :clients, :client_tokens
+  self.fixture_table_names = %w(client_tokens client_device_sessions)
 
   test "issue_for_token! revokes previous active verification for same token" do
     token = client_tokens(:one)

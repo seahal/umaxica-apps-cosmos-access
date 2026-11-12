@@ -5,8 +5,16 @@ require "test_helper"
 class JwtRegistryPublicKeyBoundaryTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
+  test "retired preference realms have no signing registry entry" do
+    %w(preference_app preference_org).each do |issuer_id|
+      assert_raises(JitSecurityJwtRegistry::ConfigurationError, issuer_id) do
+        JitSecurityJwtRegistry.issuer(issuer_id)
+      end
+    end
+  end
+
   test "public key lookup returns verification-only keys for active private keysets" do
-    %w(auth preference_app preference_org).each do |issuer_id|
+    %w(auth).each do |issuer_id|
       issuer = JitSecurityJwtRegistry.issuer(issuer_id)
       signing_key = JitSecurityJwtRegistry.private_key_for(issuer_id, issuer.current_kid)
       verification_key = JitSecurityJwtRegistry.public_key_for(issuer_id, issuer.current_kid)

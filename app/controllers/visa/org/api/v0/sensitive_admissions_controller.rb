@@ -18,21 +18,10 @@ module Visa
           public
 
           def create
-            issuance = VisaSensitiveAdmissionIssuer.call!(
-              surface: "org", actor: @actor, token: @root_token, grant: @grant, payload: @payload,
-              request_params: sensitive_admission_params,
-            )
-            render json: {
-              admission_ref: issuance.admission.public_ref,
-              authorization_url: issuance.authorization_url,
-            }, status: :created
-          rescue VisaSensitiveAdmissionIssuer::InvalidRequest, ActionController::ParameterMissing
+            sensitive_admission_params
+            render plain: "Service unavailable", status: :service_unavailable
+          rescue ActionController::ParameterMissing
             render json: { error: "invalid_request" }, status: :bad_request
-          rescue ActiveRecord::ActiveRecordError, PG::Error => e
-            Rails.logger.error(
-              "visa.o9_admission_issuance_unavailable error_class=#{e.class.name} realm=org",
-            )
-            render json: { error: "temporarily_unavailable" }, status: :service_unavailable
           end
 
           private
@@ -47,27 +36,32 @@ module Visa
 
             auth = OidcAccessTokenAuthenticator.call(
               access_token: request.authorization.to_s.delete_prefix("Bearer "),
-              resource_type: RESOURCE_TYPE,
-              host: request.host,
-              authorization_scheme: "Bearer",
+              resource_type: RESOURCE_TYPE, host: request.host, authorization_scheme: "Bearer",
             )
-            unless auth.success? && auth.payload["client_id"] == CLIENT_ID && auth.resource.is_a?(Operator)
+            unless auth.success? && auth.payload["client_id"] == CLIENT_ID && auth.token.is_a?(OperatorToken)
               return render(json: { error: "invalid_token" }, status: :unauthorized)
             end
 
-            @payload = auth.payload
-            @actor = auth.resource
-            @grant = OpOrgGrant.includes(:operator_token).find_by(
-              public_id: @payload["sid"], oidc_client_id: CLIENT_ID,
-            )
-            return render(json: { error: "invalid_token" }, status: :unauthorized) unless @grant&.active?
-
-            @root_token = @grant.operator_token
+            grant =
+              OpOrgGrant.connection_class_for_self.connected_to(role: :writing) do
+                OpOrgGrant.uncached do
+                  OpOrgGrant.find_by(public_id: auth.payload["sid"], oidc_client_id: CLIENT_ID)
+                end
+              end
+            unless sensitive_admission_binding_valid?(auth, grant)
+              render json: { error: "invalid_token" }, status: :unauthorized
+            end
           rescue ActiveRecord::ActiveRecordError, PG::Error => e
             Rails.logger.error(
-              "visa.o9_admission_authentication_unavailable error_class=#{e.class.name} realm=org",
+              "visa.sensitive_admission_authentication_unavailable error_class=#{e.class.name} realm=org",
             )
             render json: { error: "temporarily_unavailable" }, status: :service_unavailable
+          end
+
+          def sensitive_admission_binding_valid?(auth, grant)
+            device = auth.device
+            grant&.active? && device.usable? && device.current_refresh_token_id == auth.token.id &&
+              grant.operator_token_id == auth.token.id && grant.device_session_id == device.id
           end
 
           def sensitive_admission_params

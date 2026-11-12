@@ -39,13 +39,47 @@ module Security
 
     test "undeclared concrete controllers resolve to deny_all instead of inheriting parent mode" do
       assert_equal :open, ParentController.authentication_mode_for(:index)
-      assert_empty UndeclaredController.access_policy_rules
       assert_empty UndeclaredController.local_authentication_mode_rules
       assert_equal :deny_all, UndeclaredController.authentication_mode_for(:index)
     end
 
-    test "legacy access policy DSL temporarily maps to authentication mode metadata" do
+    test "private mode requires an explicit local declaration" do
       assert_equal :private, PrivateController.authentication_mode_for(:show)
+    end
+
+    test "unknown authentication modes reject declarations without changing existing rules" do
+      before = MixedController.local_authentication_mode_rules.dup
+
+      assert_raises(AuthenticationBase::InvalidPolicyError) do
+        MixedController.declare_authentication_mode!(:unknown)
+      end
+      assert_equal before, MixedController.local_authentication_mode_rules
+    end
+
+    test "the OP runtime boundary cannot be removed through either Rails callback API" do
+      controller =
+        Class.new(ApplicationController) do
+          include AuthenticationBase
+        end
+
+      assert_raises(AuthenticationBase::SkipNotAllowedError) do
+        controller.skip_before_action(:enforce_op_boundary_mode!)
+      end
+      assert_raises(AuthenticationBase::SkipNotAllowedError) do
+        controller.skip_action_callback(:process_action, :before, :enforce_op_boundary_mode!)
+      end
+    end
+
+    test "unrelated Rails callbacks remain removable" do
+      controller =
+        Class.new(ApplicationController) do
+          include AuthenticationBase
+
+          before_action :unrelated_callback
+        end
+      controller.skip_before_action(:unrelated_callback)
+
+      assert_not_includes controller._process_action_callbacks.map(&:filter), :unrelated_callback
     end
 
     test "local AUTHENTICATION_MODE constant is honored without inheritance" do
@@ -60,8 +94,6 @@ module Security
 
     test "surface application controllers default to deny_all" do
       [
-        Auth::App::ApplicationController,
-        Auth::Org::ApplicationController,
         Visa::App::AuthorityController,
         Visa::Org::AuthorityController,
       ].each do |controller_class|

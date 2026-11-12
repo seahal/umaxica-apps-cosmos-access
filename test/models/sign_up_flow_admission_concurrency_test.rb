@@ -56,8 +56,16 @@ class SignUpFlowAdmissionConcurrencyTest < ActiveSupport::TestCase
                   nonce_digest: flow_class.digest_nonce(SecureRandom.hex(32)),
                 )
                 [:created, flow.id]
-              rescue ActiveRecord::RecordNotUnique
-                [:conflict]
+              rescue ActiveRecord::RecordNotUnique => e
+                constraint = e.cause.result.error_field(PG::Result::PG_DIAG_CONSTRAINT_NAME)
+                raise unless constraint == "idx_client_signup_one_in_progress_per_admission"
+
+                [:database_conflict, constraint]
+              rescue ActiveRecord::RecordInvalid => e
+                raise unless e.record.is_a?(flow_class) && e.record.errors.size == 1 &&
+                  e.record.errors.of_kind?(:auth_admission_binding_id, :taken)
+
+                [:validation_conflict, e.record.errors.details[:auth_admission_binding_id]]
               end
             end
           ensure
@@ -69,7 +77,19 @@ class SignUpFlowAdmissionConcurrencyTest < ActiveSupport::TestCase
       results = Timeout.timeout(10) { workers.map(&:value!) }
 
       assert_equal 2, backends.uniq.length
-      assert_equal %i(conflict created), results.map(&:first).sort
+      assert_equal 1, results.count { |result| result.first == :created }
+      conflict = results.find { |result| result.first != :created }
+      case conflict.first
+      when :database_conflict
+
+        assert_equal "idx_client_signup_one_in_progress_per_admission", conflict.last
+      when :validation_conflict
+
+        assert_equal [:taken], conflict.last.pluck(:error)
+      else
+        flunk("unexpected sign-up admission race outcome")
+      end
+
       assert_equal 1, flow_class.where(auth_admission_binding_id: binding.id).count
       assert_equal results.find { |result| result.first == :created }.last,
                    flow_class.find_by!(auth_admission_binding_id: binding.id).id

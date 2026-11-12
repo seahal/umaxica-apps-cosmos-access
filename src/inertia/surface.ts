@@ -3,14 +3,14 @@ import { createInertiaApp, type ResolvedComponent } from "@inertiajs/react";
 import SurfaceLayout from "@/layouts/SurfaceLayout";
 import { applyTheme, readThemeCookie, watchThemeCookie } from "@/lib/theme";
 
-// Shared pieces for the Auth and Visa Inertia entrypoints.
+// Shared pieces for the independent Visa Inertia entrypoints.
 //
 // Each trust boundary boots its own Inertia application and globs only its own page directory, so
 // one surface can never resolve another surface's page component. The glob stays a literal in each
 // entrypoint because Vite can only rewrite a literal.
 
 /**
- * Rails sends surface-qualified component names ("auth/app/sign_ins/new") so the Inertia page
+ * Rails sends surface-qualified component names ("visa/app/oidc/logouts/show") so the Inertia page
  * object stays self-describing in logs and in the browser devtools, while each entrypoint globs
  * only its own directory. A name that does not carry this surface's prefix is a cross-surface
  * render and fails loudly rather than falling through to a "Page not found" that looks like a

@@ -494,18 +494,13 @@ Current infrastructure / environment decisions:
 - `adr/aurora-postgresql-minor-version-tracking.md` — development PostgreSQL follows each new Aurora
   PostgreSQL minor release on release day, using the AWS-confirmed community version; misses are
   recorded; production and major upgrades are decided separately.
-- `adr/fakecloud-podman-staging-environment.md` — staging is a Podman-hosted FakeCloud environment
-  provisioned with Terraform (not OpenTofu, not an AWS account); environment-agnostic
-  `terraform/modules/` with all emulator specifics in `terraform/environments/<env>/`; staging owns
-  bucket names distinct from local development; `DEPLOYMENT_TIER=staging` runs production Rails
-  configuration against the emulator while `production` keeps the AWS credential chain. The unit of
-  deployment is the OCI container run by Podman with no host-OS assumption (the RHEL-host intent is
-  dropped; Kubernetes is left open but not adopted). The no-real-AWS scope covers object storage and
-  streaming only: the relational database is outside FakeCloud's coverage and is deferred, while
-  Valkey stays a plain container and needs no alternative. Outbound email (SES over SMTP) and SMS
-  (SNS, whose client accepts no custom endpoint) keep using real AWS, making SMS the second real-AWS
-  exception after the database. Records that no Terraform command has yet been run against any
-  environment.
+- `adr/aws-emulator-podman-staging-environment.md` — AWS Emulator replaces FakeCloud (superseded
+  `adr/fakecloud-podman-staging-environment.md`) for development and Podman-hosted staging,
+  provisioned with Terraform. The image is built locally from a digest-pinned base and a
+  version-pinned, checksum-verified RPM. SigV4 authentication stays on with the per-run generated
+  keys, telemetry is off, and publication is loopback-only on 9297. Emulator state is in-memory and
+  disposable, and Terraform re-applies after each restart. The database, Valkey, observability, SES
+  and SMS stay outside the emulator. MSK is best-effort. Not yet implemented.
 
 Current health / edge access decisions:
 

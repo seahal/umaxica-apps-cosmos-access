@@ -8,14 +8,14 @@ require "jit_security_jwt_keyring"
 # answer at all when they should refuse, rather than raising. Each is a single
 # line, which is exactly why a wrong copy reads as plausible.
 class SurfaceCredentialMappingAndKeyDecodingTest < ActiveSupport::TestCase
-  fixtures :operators, :operator_statuses
+  self.fixture_table_names = []
 
   # The risk score is read from the occurrence table of the actor's own surface;
   # scoring a staff sign-in against the client table would report someone else's
   # recent failures as theirs.
   test "the risk score is read from the occurrence table of the actor's own surface" do
     assert_equal 0, SignRiskEngine.score
-    assert_equal 0, SignRiskEngine.score(staff_id: operators(:one).id)
+    assert_equal 0, SignRiskEngine.score(staff_id: 9_300_004)
     assert_raises(ArgumentError) { SignRiskEngine.score(visitor_id: 1) }
     assert_equal 0, SignRiskEngine.score(user_id: 1)
   end

@@ -38,6 +38,7 @@ class ClientStepUpSession < OpBaseAppRecord
   belongs_to :user_token, class_name: "ClientToken", inverse_of: :step_up_session
 
   validates :step_up_ceremony_transaction_ref, uniqueness: true, allow_nil: true
+  validates :passkey_challenge_ref, uniqueness: true, allow_nil: true
   validates :scope, presence: true
   validates :return_to, presence: true
   validates :user_token_id, uniqueness: true

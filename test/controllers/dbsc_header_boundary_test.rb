@@ -14,7 +14,6 @@ require_relative "../../app/lib/dbsc_proof_verifier"
 require_relative "../../app/services/dbsc_verification_service"
 require_relative "../../app/serializers/dbsc_header_serializer"
 require_relative "../../app/controllers/concerns/auth_io_keys"
-require_relative "../../app/controllers/concerns/preference_io_keys"
 require_relative "../../app/controllers/concerns/dbsc_request_logging"
 require_relative "../../app/controllers/concerns/dbsc_canonical_url"
 require_relative "../../app/controllers/concerns/sign_dbsc_registration_endpoint"
@@ -22,7 +21,38 @@ require_relative "../../app/controllers/concerns/sign_dbsc_registration_endpoint
 class DbscHeaderBoundaryTest < Minitest::Test
   include ActiveSupport::Testing::Assertions
 
-  Record = Struct.new(:dbsc_session_id, :dbsc_challenge, :dbsc_public_key, :dbsc_challenge_issued_at)
+  class Record
+    class Device
+      def lock! = self
+
+      def usable? = true
+
+      def current_refresh_token_id = 1
+    end
+
+    attr_accessor :dbsc_session_id, :dbsc_challenge, :dbsc_public_key, :dbsc_challenge_issued_at
+
+    def self.transaction
+      yield
+    end
+
+    def initialize(dbsc_session_id, dbsc_challenge, dbsc_public_key = nil, dbsc_challenge_issued_at = nil)
+      @dbsc_session_id = dbsc_session_id
+      @dbsc_challenge = dbsc_challenge
+      @dbsc_public_key = dbsc_public_key
+      @dbsc_challenge_issued_at = dbsc_challenge_issued_at
+    end
+
+    def id = 1
+
+    def lock! = self
+
+    def active_status? = true
+
+    def device_session_record = @device_session_record ||= Device.new
+
+    def refresh_token_digest_matches?(_verifier) = true
+  end
 
   # These hosts supply only persistence/identity dependencies; the public Rails
   # dispatch, input parsing, response generation and logging use production code.
@@ -33,6 +63,8 @@ class DbscHeaderBoundaryTest < Minitest::Test
       super()
       @record = record
     end
+
+    def cookies = {}
 
     private
 

@@ -6,7 +6,7 @@ require "test_helper"
 # Passkey ceremony behavior lives under Auth::Org::Verification and is covered by
 # Auth::Org::Verification::PasskeysControllerTest. The former general settings
 # surface must remain absent rather than becoming an alias for Base management.
-class Auth::Org::Settings::PasskeysControllerTest < ActionDispatch::IntegrationTest
+class RetiredOrgSettingsPasskeysControllerTest < ActionDispatch::IntegrationTest
   test "retired passkey settings paths have no route or redirect" do
     host! ENV.fetch("PUBLIC_AUTH_STAFF_URL")
 

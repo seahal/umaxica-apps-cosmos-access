@@ -59,7 +59,13 @@ class OidcAuthorizationTransactionableTest < ActiveSupport::TestCase
     transactions.first.update!(secret_sign_in_flow: @secret_flow)
 
     assert_equal @secret_flow.id, transactions.first.reload.secret_sign_in_flow.id
-    assert_raises(ActiveRecord::RecordNotUnique) { transactions.last.update!(secret_sign_in_flow: @secret_flow) }
+    assert_raises(ActiveRecord::RecordInvalid) { transactions.last.update!(secret_sign_in_flow: @secret_flow) }
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      ClientOidcAuthorizationTransaction.transaction(requires_new: true) do
+        ClientOidcAuthorizationTransaction.where(id: transactions.last.id)
+          .update_all(secret_sign_in_flow_id: @secret_flow.id)
+      end
+    end
     assert_raises(ActiveRecord::InvalidForeignKey) { transactions.last.update!(secret_sign_in_flow_id: -1) }
     error = assert_raises(ActiveRecord::StatementInvalid) { @secret_flow.destroy! }
 

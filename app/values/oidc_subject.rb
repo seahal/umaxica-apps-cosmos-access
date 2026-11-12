@@ -9,8 +9,8 @@ module OidcSubject
 
   module_function
 
-  def for(resource, resource_type: nil)
-    normalized_type = normalize_resource_type(resource_type.nil? ? infer_resource_type(resource) : resource_type)
+  def for(resource, resource_type:)
+    normalized_type = normalize_resource_type(resource_type)
     raw_subject =
       if resource.respond_to?(:oidc_subject) && resource.oidc_subject.present?
         resource.oidc_subject
@@ -42,13 +42,5 @@ module OidcSubject
 
   def prefix_for(resource_type)
     PREFIXES.fetch(normalize_resource_type(resource_type))
-  end
-
-  def infer_resource_type(resource)
-    case resource
-    when ::Operator then "operator"
-    when ::Client then "client"
-    else raise ArgumentError, "unsupported OIDC resource"
-    end
   end
 end

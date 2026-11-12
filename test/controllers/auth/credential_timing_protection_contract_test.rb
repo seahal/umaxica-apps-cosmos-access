@@ -2,51 +2,9 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require Rails.root.join("lib/omniauth/strategies/umaxica_entra")
 
 class AuthCredentialTimingProtectionContractTest < ActiveSupport::TestCase
-  MINIMUM_RESPONSE_BUDGET_CONTROLLERS = [
-    Auth::App::Sign::In::PasskeysController,
-    Auth::App::Sign::In::Passkey::OptionsController,
-    Auth::App::Sign::In::Passkey::VerificationsController,
-    Auth::Org::Sign::In::PasskeysController,
-    Auth::Org::Sign::In::Passkey::OptionsController,
-    Auth::Org::Sign::In::Passkey::VerificationsController,
-  ].freeze
-
-  DUMMY_WORK_CONTROLLERS = [
-    Auth::App::Sign::In::EmailsController,
-  ].freeze
-
-  test "Email authentication timing does not expose identifier-backed shared OTP policy" do
-    [Auth::App::Sign::In::EmailsController, SignInOtpResender].each do |boundary|
-      assert_not_includes boundary.included_modules.map(&:name), "CommonOtp", boundary.name
-    end
-  end
-
-  test "credential controllers that include MinimumResponseBudget register start and enforce callbacks" do
-    MINIMUM_RESPONSE_BUDGET_CONTROLLERS.each do |controller_class|
-      filters = controller_class._process_action_callbacks.map(&:filter)
-
-      assert_includes filters, :start_minimum_response_budget, controller_class.name
-      assert_includes filters, :enforce_minimum_response_budget, controller_class.name
-    end
-  end
-
-  test "credential controllers either use response budget or documented dummy work" do
-    protected_controllers = MINIMUM_RESPONSE_BUDGET_CONTROLLERS + DUMMY_WORK_CONTROLLERS
-    expected = [
-      Auth::App::Sign::In::EmailsController,
-      Auth::App::Sign::In::PasskeysController,
-      Auth::App::Sign::In::Passkey::OptionsController,
-      Auth::App::Sign::In::Passkey::VerificationsController,
-      Auth::Org::Sign::In::PasskeysController,
-      Auth::Org::Sign::In::Passkey::OptionsController,
-      Auth::Org::Sign::In::Passkey::VerificationsController,
-    ]
-
-    assert_equal expected.map(&:name).sort, protected_controllers.map(&:name).sort
-  end
-
   # The Entra strategy's request phase used to pad its response time so a valid
   # and an invalid connection_public_id could not be told apart by timing. The
   # org surface now federates a single tenant read from configuration, so the

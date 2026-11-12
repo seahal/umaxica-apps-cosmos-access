@@ -4,6 +4,8 @@
 require "test_helper"
 
 class OidcAccessJwtChildRevokeIndependenceTest < ActiveSupport::TestCase
+  self.fixture_table_names = %w(client_tokens client_device_sessions)
+
   test "Access JWT TTL is five minutes with thirty-second leeway" do
     assert_equal 5.minutes, SecurityTokenLifetimes::OIDC_ACCESS_JWT_TTL
     assert_equal 30, SecurityTokenLifetimes::OIDC_ACCESS_JWT_CLOCK_LEEWAY_SECONDS
@@ -20,7 +22,9 @@ class OidcAccessJwtChildRevokeIndependenceTest < ActiveSupport::TestCase
     result = authenticate(access_token_for(root, session))
 
     assert_predicate result, :success?
-    assert_equal root.user, result.resource
+    assert_equal root, result.token
+    assert_equal root.device_session.principal_public_id, result.principal_public_id
+    assert_not_respond_to result, :resource
   end
 
   test "revoking only the RP Session does not invalidate an already-issued Access JWT" do
@@ -54,7 +58,7 @@ class OidcAccessJwtChildRevokeIndependenceTest < ActiveSupport::TestCase
   test "an Access JWT is refused when its Base Session lacks a finite expiry" do
     root, session = create_rp_session
     token = access_token_for(root, session)
-    root.update!(discard_at: Float::INFINITY)
+    root.update!(discard_at: Float::INFINITY, purge_eligible_at: Float::INFINITY)
 
     result = authenticate(token)
 
@@ -71,14 +75,7 @@ class OidcAccessJwtChildRevokeIndependenceTest < ActiveSupport::TestCase
   end
 
   test "revoked RP Session remains inactive while parent Base Browser Session stays usable" do
-    root = ClientToken.create!(authentication_epoch: 0, user: Client.create!(security_mode_id: SecurityModeConfigurable::NORMAL))
-    session = OpAppGrant.create!(
-      authentication_epoch: 0,
-      client_token: root,
-      oidc_client_id: "core-app-jp",
-      oidc_scope: "openid profile",
-      refresh_token_expires_at: 1.hour.from_now,
-    )
+    root, session = create_rp_session
 
     RpSessionRevoker.call(
       scope: :rp_session, record: session, cause: "token_revocation",
@@ -100,15 +97,11 @@ class OidcAccessJwtChildRevokeIndependenceTest < ActiveSupport::TestCase
   end
 
   def create_rp_session
-    root = ClientToken.create!(
-      authentication_epoch: 0,
-      user: Client.create!(security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE),
-      user_token_kind_id: ClientTokenKind::BROWSER_WEB,
-      user_token_status_id: ClientTokenStatus::ACTIVE,
-    )
+    root = ClientToken.includes(:device_session).find(ActiveRecord::FixtureSet.identify(:one))
     session = OpAppGrant.create!(
       authentication_epoch: 0,
-      client_token: root,
+      client_token_id: root.id,
+      device_session_id: root.device_session_id,
       oidc_client_id: rp_client.client_id,
       oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid,
@@ -119,7 +112,7 @@ class OidcAccessJwtChildRevokeIndependenceTest < ActiveSupport::TestCase
 
   def access_token_for(root, session, jti: session.oidc_jti)
     AuthenticationTokenService.encode(
-      root.user,
+      nil,
       host: OidcIssuer.host_for_resource_type("client"),
       resource_type: "client",
       session_public_id: root.public_id,
@@ -130,7 +123,8 @@ class OidcAccessJwtChildRevokeIndependenceTest < ActiveSupport::TestCase
       scopes: %w(openid),
       issuer: OidcIssuer.for_resource_type("client"),
       audiences: [rp_client.aud],
-      subject: OidcSubject.for(root.user, resource_type: "client"),
+      subject: "cli_#{root.device_session.principal_public_id}",
+      authentication_context: root.strict_authentication_context_value.to_s,
       jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type("client"),
       client_id: rp_client.client_id,
     )

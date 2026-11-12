@@ -10,8 +10,6 @@ class LayoutTitleContractTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
   CANONICAL_LAYOUTS = {
-    "app/views/layouts/auth/app/application.html.erb" => "APP",
-    "app/views/layouts/auth/org/application.html.erb" => "ORG",
     "app/views/layouts/visa/app/application.html.erb" => "VISA APP",
     "app/views/layouts/visa/org/application.html.erb" => "VISA ORG",
   }.freeze

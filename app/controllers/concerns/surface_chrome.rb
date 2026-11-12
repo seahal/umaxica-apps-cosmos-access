@@ -3,23 +3,14 @@
 
 # Builds the shared Inertia props that the React surface layout renders as page chrome.
 #
-# Before the Inertia migration this data was read straight out of the ERB layout by helpers
-# (`current_banner_for`, `t(...)`, `*_url`). A React layout cannot reach any of that, so the chrome
-# becomes a serialized prop shared by every Inertia response of the surface. Everything that is a
-# server responsibility stays here: translation, route generation, the banner query, and the
-# decision about which navigation a visitor is allowed to see.
-#
-# The shared payload is per surface by construction: each including controller declares its own
-# family, surface and banner domain, and `inertia_share` runs in that controller's instance, so one
-# surface can never publish another surface's chrome.
+# The shared payload is per surface: each controller declares its own family and surface,
+# and `inertia_share` runs in that controller's instance.
 module SurfaceChrome
   extend ActiveSupport::Concern
 
-  # Chrome differs between Auth and Visa; `banner_domain` selects the banner stream, and nil opts
-  # out of banner lookup for the Visa protocol pages.
   FAMILY_CHROME = {
-    "auth" => { family_label: nil, banner_domain: :sign },
-    "visa" => { family_label: "VISA", banner_domain: nil },
+    "auth" => { family_label: nil },
+    "visa" => { family_label: "VISA" },
   }.freeze
 
   # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
@@ -48,11 +39,10 @@ module SurfaceChrome
   def surface_chrome
     configuration = chrome_configuration
 
-    chrome = {
+    {
       family_label: configuration.fetch(:family_label),
       surface: configuration.fetch(:surface),
       brand: chrome_brand,
-      banner: chrome_banner(configuration.fetch(:banner_domain)),
       restricted_mode: chrome_restricted_mode,
       footer_navigation: nil,
       cookie_controls: nil,
@@ -60,7 +50,6 @@ module SurfaceChrome
       account_navigation: chrome_account_navigation,
       copyright: chrome_copyright,
     }
-    chrome
   end
 
   # Restricted Mode (Emergency Access) is a property of the session, not of a
@@ -113,21 +102,6 @@ module SurfaceChrome
     return { name: ENV.fetch("BRAND_NAME"), href: nil } if family == "auth"
 
     raise ArgumentError, "unsupported chrome family: #{family.inspect}"
-  end
-
-  # The banner query previously ran inside a layout partial on every response. It stays server-side
-  # but moves out of the view, because a React layout cannot reach a Rails helper.
-  def chrome_banner(domain)
-    return nil if domain.blank?
-
-    banner = CurrentBannerQuery.call(
-      tld: chrome_configuration.fetch(:surface).to_sym,
-      domain: domain,
-      region: :global,
-    )
-    return nil if banner.blank?
-
-    { title: banner.title.presence, body: banner.body }
   end
 
   # Auth and Visa host ceremonies, not RP navigation. They publish no cross-surface account links.

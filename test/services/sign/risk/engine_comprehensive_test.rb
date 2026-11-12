@@ -7,11 +7,11 @@ require "test_helper"
 module Sign
   module Risk
     class EngineComprehensiveTest < ActiveSupport::TestCase
-      fixtures :clients
+      self.fixture_table_names = []
 
       setup do
         ClientOccurrenceStatus.find_or_create_by!(id: ClientOccurrenceStatus::ACTIVE)
-        @user = clients(:one)
+        @user_id = 9_300_003
 
         original_disabled = ENV["RISK_ENFORCEMENT_DISABLED"]
         original_enabled = ENV["RISK_ENFORCEMENT_ENABLED"]
@@ -31,7 +31,7 @@ module Sign
       end
 
       test "score returns 0 for user with no events" do
-        assert_equal 0, SignRiskEngine.score(user_id: @user.id)
+        assert_equal 0, SignRiskEngine.score(user_id: @user_id)
       end
     end
   end

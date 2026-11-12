@@ -33,9 +33,9 @@ class Auth::RouteNamingTest < ActionDispatch::IntegrationTest
 
   test "top-level sign entry routes resolve conventionally on the account sign surfaces" do
     SURFACES.each_key do |surface|
-      assert_recognizes_sign_route(surface, "/sign/up", :get, "auth/#{surface}/sign/ups", "show")
-      assert_recognizes_sign_route(surface, "/sign/in", :get, "auth/#{surface}/sign/ins", "show")
-      # Design D: the entry is a GET that redeems `entry_ref`; there is no POST entry.
+      assert_recognizes_sign_route(surface, "/sign/up", :get, "auth/#{surface}/unavailable_ceremonies", "show")
+      assert_recognizes_sign_route(surface, "/sign/in", :get, "auth/#{surface}/unavailable_ceremonies", "show")
+      # Existing entry paths refuse new ceremonies; no POST entry is added.
       assert_unrecognized(surface, "/sign/up", :post)
       assert_unrecognized(surface, "/sign/in", :post)
       assert_unrecognized(surface, "/sign/up/entrance", :get)
@@ -58,9 +58,9 @@ class Auth::RouteNamingTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "sign check routes use checks controller namespace and old checkpoint route is absent" do
-    assert_recognizes_sign_route(:app, "/sign/in/check", :get, "auth/app/sign/in/checks", "show")
-    assert_recognizes_sign_route(:org, "/sign/in/check", :get, "auth/org/sign/in/checks", "show")
+  test "sign check routes refuse ceremonies while the old checkpoint route is absent" do
+    assert_recognizes_sign_route(:app, "/sign/in/check", :get, "auth/app/unavailable_ceremonies", "show")
+    assert_recognizes_sign_route(:org, "/sign/in/check", :get, "auth/org/unavailable_ceremonies", "show")
 
     SURFACES.each_key do |surface|
       assert_unrecognized(surface, "/sign/in/check", :patch)
@@ -85,7 +85,7 @@ class Auth::RouteNamingTest < ActionDispatch::IntegrationTest
     { get: ["/sign/in/secret/new", "new"], post: ["/sign/in/secret", "create"] }.each do |verb, (path, action)|
       route = Rails.application.routes.recognize_path("http://#{host}#{path}", method: verb)
 
-      assert_equal "auth/app/sign/in/secrets", route.fetch(:controller)
+      assert_equal "auth/app/unavailable_ceremonies", route.fetch(:controller)
       assert_equal action, route.fetch(:action)
     end
     assert_equal "/sign/in/secret/new", new_auth_app_sign_in_secret_path

@@ -43,15 +43,13 @@ class SignUpFlowAdmissionOwnershipTest < ActiveSupport::TestCase
   end
 
   %i(app).each do |surface|
-    test "#{surface} completed registration keeps its retention and principal when its Flow is collected" do
+    test "#{surface} completed Flow preserves its historical principal and retention until collection" do
       own = @contexts.fetch(surface).first
       flow_class = own.fetch(:flow_class)
-      principal =
-        Client.create!(status_id: ClientStatus::VERIFIED_WITH_SIGN_UP, security_mode_id: ClientSecurityMode::NORMAL)
-      principal_before = principal.attributes
+      historical_principal_id = 123_456
       now = flow_class.database_now
       flow = flow_class.create!(
-        auth_admission_binding: own.fetch(:binding), principal_id: principal.id,
+        auth_admission_binding: own.fetch(:binding), principal_id: historical_principal_id,
         step: "completed", status_id: flow_class.status_id_for("COMPLETED"), completed_at: now,
         entry_method: "email", issued_at: now, expires_at: now + 15.minutes,
         nonce_digest: flow_class.digest_nonce("owner-browser"),
@@ -63,14 +61,20 @@ class SignUpFlowAdmissionOwnershipTest < ActiveSupport::TestCase
         parent: own.fetch(:parent), now: later, retention_period: 1.second,
       )
       assert flow_class.exists?(flow.id), "default infinite retention is not shortened"
+      assert_equal historical_principal_id, flow.reload.principal_id
       flow.discard_now!(purge_after: 2.hours)
+      boundary = flow.reload.purge_eligible_at
+
+      assert_not AuthAdmissionBindingPurger.purge_for_parent!(
+        parent: own.fetch(:parent), now: boundary - Rational(1, 1_000_000), retention_period: 1.second,
+      )
+      assert_equal historical_principal_id, flow.reload.principal_id
 
       assert AuthAdmissionBindingPurger.purge_for_parent!(
-        parent: own.fetch(:parent), now: later, retention_period: 1.second,
+        parent: own.fetch(:parent), now: boundary, retention_period: 1.second,
       )
       assert_not flow_class.exists?(flow.id)
       assert_not own.fetch(:binding).class.exists?(own.fetch(:binding).id)
-      assert_equal principal_before, principal.reload.attributes
     end
 
     test "#{surface} creation refuses missing Admission and a parent at or beyond its deadline" do
@@ -139,7 +143,7 @@ class SignUpFlowAdmissionOwnershipTest < ActiveSupport::TestCase
       assert_raises(ArgumentError) { SignUpCycleLocator.new({}, surface: surface, cycle_class: foreign_class) }
     end
 
-    test "#{surface} binding purge waits for terminal Flow retention and deletes children first" do
+    test "#{surface} terminal Flow with unfinished cleanup keeps its Binding" do
       own = @contexts.fetch(surface).first
       flow_class = own.fetch(:flow_class)
       now = flow_class.database_now
@@ -156,34 +160,16 @@ class SignUpFlowAdmissionOwnershipTest < ActiveSupport::TestCase
       assert flow_class.exists?(flow.id)
       assert binding.class.exists?(binding.id)
 
-      SignUpTermination.call(cycle: flow, event: :cancel)
+      flow.cancel_sign_up!
 
-      assert_predicate flow.reload, :cleanup_completed?
+      assert_predicate flow.reload, :sign_up_cancelled?
+      assert_not_predicate flow, :cleanup_completed?
       flow.discard_now!(purge_after: 2.hours)
-      boundary = flow.reload.purge_eligible_at
-      replacement = flow_class.create!(
-        auth_admission_binding: binding, step: "start", entry_method: "email",
-        issued_at: now, expires_at: now + 15.minutes, nonce_digest: flow_class.digest_nonce("replacement-browser"),
-      )
 
       assert_not AuthAdmissionBindingPurger.purge_for_parent!(parent: parent, now: later, retention_period: retention)
-      assert flow_class.exists?(flow.id), "one live child retains terminal history as well"
-      assert flow_class.exists?(replacement.id)
-      SignUpTermination.call(cycle: replacement, event: :cancel)
-
-      assert_not AuthAdmissionBindingPurger.purge_for_parent!(
-        parent: parent, now: boundary - Rational(1, 1_000_000), retention_period: retention,
-      )
       assert flow_class.exists?(flow.id)
       assert binding.class.exists?(binding.id)
-      assert AuthAdmissionBindingPurger.purge_for_parent!(parent: parent, now: boundary, retention_period: retention)
-      assert_not flow_class.exists?(flow.id)
-      assert_not flow_class.exists?(replacement.id)
-      assert_not binding.class.exists?(binding.id)
       assert parent.class.exists?(parent.id)
-      assert AuthAdmissionBindingPurger.purge_for_parent!(
-        parent: parent, now: boundary + Rational(1, 1_000_000), retention_period: retention,
-      )
     end
 
     test "#{surface} terminal Flow with unfinished cleanup retains its Binding" do
@@ -221,7 +207,15 @@ class SignUpFlowAdmissionOwnershipTest < ActiveSupport::TestCase
       flow = flow_class.create!(attributes)
 
       assert_equal own.fetch(:binding).id, flow.auth_admission_binding_id
+      raw_duplicate = flow.attributes.except("id").merge("public_id" => PublicId.generate)
       assert_raises(ActiveRecord::RecordNotUnique) do
+        flow_class.transaction(requires_new: true) { flow_class.insert_all!([raw_duplicate]) }
+      end
+      duplicate = flow_class.new(attributes)
+
+      assert_not duplicate.valid?
+      assert duplicate.errors.of_kind?(:auth_admission_binding_id, :taken)
+      assert_raises(ActiveRecord::RecordInvalid) do
         flow_class.transaction(requires_new: true) { flow_class.create!(attributes) }
       end
       assert_raises(ActiveRecord::ReadonlyAttributeError) do
@@ -229,7 +223,7 @@ class SignUpFlowAdmissionOwnershipTest < ActiveSupport::TestCase
       end
       assert_equal own.fetch(:binding).id, flow.reload.auth_admission_binding_id
 
-      SignUpTermination.call(cycle: flow, event: :cancel)
+      flow.cancel_sign_up!
       replacement = flow_class.create!(attributes)
 
       assert_not_equal flow.id, replacement.id

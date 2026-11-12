@@ -25,7 +25,6 @@ JitSecurityJwtRegistry.configure!
 Rails.application.config.after_initialize do
   OidcClientRegistry.validate_private_key_jwt_configuration!
   AuthenticationJwtConfiguration.validate!
-  PreferenceJwtConfiguration.validate!
 end
 
 module JwtConfig

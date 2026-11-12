@@ -40,7 +40,7 @@ scope(module: :auth, as: :auth) do
       resource(
         :ceremony_binding,
         only: :show, path: "ceremony_bindings",
-        controller: :ceremony_bindings, as: :ceremony_bindings,
+        controller: "/auth/app/unavailable_ceremonies", as: :ceremony_bindings,
       )
 
       namespace :apple do
@@ -49,17 +49,17 @@ scope(module: :auth, as: :auth) do
 
       # Canonical ceremony entrypoints and authed-out confirmation/cleanup.
       namespace :sign do
-        resource :registration, only: :show, path: "up", controller: :ups, as: :up
-        resource :session, only: :show, path: "in", controller: :ins, as: :in
-        resource :oidc_handoff, only: :show, path: "oidc/handoff", controller: :oidc_handoffs
+        resource :registration, only: :show, path: "up", controller: "/auth/app/unavailable_ceremonies", as: :up
+        resource :session, only: :show, path: "in", controller: "/auth/app/unavailable_ceremonies", as: :in
+        resource :oidc_handoff, only: :show, path: "oidc/handoff", controller: "/auth/app/unavailable_ceremonies"
         # First-page cancellation and sign-in/sign-up switching.
-        resource :cancellation, only: :create
-        resource :switch, only: :create
+        resource :cancellation, only: :create, controller: "/auth/app/unavailable_ceremonies"
+        resource :switch, only: :create, controller: "/auth/app/unavailable_ceremonies"
         namespace :in do
-          resource :sentry, only: :show
+          resource :sentry, only: :show, controller: "/auth/app/unavailable_ceremonies"
         end
         namespace :up do
-          resource :sentry, only: :show
+          resource :sentry, only: :show, controller: "/auth/app/unavailable_ceremonies"
         end
       end
 
@@ -68,23 +68,8 @@ scope(module: :auth, as: :auth) do
         namespace :v0 do
           namespace :in do
             namespace :email do
-              resource :otp, only: :create
+              resource :otp, only: :create, controller: "/auth/app/unavailable_ceremonies"
             end
-          end
-        end
-      end
-
-      # Browser preference API for this host's own chrome controls (theme and cookie consent).
-      # GET + PATCH only:
-      # `resource ... only: :update` would also map PUT (adr/api-route-vocabulary-consolidation.md,
-      # 2026-10-02 amendment).
-      namespace :api do
-        namespace :v0 do
-          namespace :preferences do
-            get :cookie, to: "cookies#show"
-            patch :cookie, to: "cookies#update"
-            get :theme, to: "themes#show"
-            patch :theme, to: "themes#update"
           end
         end
       end
@@ -93,138 +78,135 @@ scope(module: :auth, as: :auth) do
       namespace :sign do
         # Auth-up ceremony.
         namespace(:up) do
-          resource(:email, only: %i(new create))
-          resource(:telephone, only: %i(new create))
+          resource(:email, only: %i(new create), controller: "/auth/app/unavailable_ceremonies")
+          resource(:telephone, only: %i(new create), controller: "/auth/app/unavailable_ceremonies")
 
           namespace(:guard) do
-            resource(:apple, only: :show)
-            resource(:google, only: :show)
-            resource(:email, only: :show)
-            resource(:telephone, only: :show)
+            resource(:apple, only: :show, controller: "/auth/app/unavailable_ceremonies")
+            resource(:google, only: :show, controller: "/auth/app/unavailable_ceremonies")
+            resource(:email, only: :show, controller: "/auth/app/unavailable_ceremonies")
+            resource(:telephone, only: :show, controller: "/auth/app/unavailable_ceremonies")
           end
 
           namespace(:check) do
             namespace(:apple) do
-              resource(:confirmation, only: %i(show update destroy))
-              resource(:birthdate, only: %i(show update destroy))
+              resource(:confirmation, only: %i(show update destroy), controller: "/auth/app/unavailable_ceremonies")
+              resource(:birthdate, only: %i(show update destroy), controller: "/auth/app/unavailable_ceremonies")
             end
 
             namespace(:google) do
-              resource(:confirmation, only: %i(show update destroy))
-              resource(:birthdate, only: %i(show update destroy))
+              resource(:confirmation, only: %i(show update destroy), controller: "/auth/app/unavailable_ceremonies")
+              resource(:birthdate, only: %i(show update destroy), controller: "/auth/app/unavailable_ceremonies")
             end
 
             namespace(:email) do
-              resource(:otp, only: %i(show create update destroy))
-              resource(:birthdate, only: %i(show update destroy))
+              resource(:otp, only: %i(show create update destroy), controller: "/auth/app/unavailable_ceremonies")
+              resource(:birthdate, only: %i(show update destroy), controller: "/auth/app/unavailable_ceremonies")
             end
 
             namespace(:telephone) do
-              resource(:otp, only: %i(show create update destroy))
-              resource(:passkey, only: %i(show create update destroy))
-              resource(:secret, only: %i(show create update destroy)) do
+              resource(:otp, only: %i(show create update destroy), controller: "/auth/app/unavailable_ceremonies")
+              resource(:passkey, only: %i(show create update destroy), controller: "/auth/app/unavailable_ceremonies")
+              resource(:secret, only: %i(show create update destroy), controller: "/auth/app/unavailable_ceremonies") do
                 post :reattempt
               end
-              resource(:birthdate, only: %i(show update destroy))
+              resource(:birthdate, only: %i(show update destroy), controller: "/auth/app/unavailable_ceremonies")
             end
           end
         end
 
         # Sign-in ceremony.
         namespace :in do
-          resource :email, only: %i(new create edit update destroy)
+          resource :email, only: %i(new create edit update destroy), controller: "/auth/app/unavailable_ceremonies"
 
-          resource :passkey, only: :new
-          resource :secret, only: %i(new create)
+          resource :passkey, only: :new, controller: "/auth/app/unavailable_ceremonies"
+          resource :secret, only: %i(new create), controller: "/auth/app/unavailable_ceremonies"
           namespace :passkey do
-            resource :options, only: :create
-            resource :verification, only: :create
+            resource :options, only: :create, controller: "/auth/app/unavailable_ceremonies"
+            resource :verification, only: :create, controller: "/auth/app/unavailable_ceremonies"
           end
 
-          resource :check, only: :show
+          resource :check, only: :show, controller: "/auth/app/unavailable_ceremonies"
 
           # `destroy` cancels the pending second-factor ceremony.
-          resource :challenge, only: %i(show destroy)
+          resource :challenge, only: %i(show destroy), controller: "/auth/app/unavailable_ceremonies"
           namespace :challenge do
-            resource :passkey, only: %i(new create)
+            resource :passkey, only: %i(new create), controller: "/auth/app/unavailable_ceremonies"
           end
         end
       end
 
       namespace(:social) do
-        resource :link_completion, only: :create
-        # Non-resourceful exception: OmniAuth middleware owns these fixed provider callback paths.
+        resource :google, only: :create, controller: "/auth/app/unavailable_ceremonies"
+        resource :apple, only: :create, controller: "/auth/app/unavailable_ceremonies"
+        resource :link_completion, only: :create, controller: "/auth/app/unavailable_ceremonies"
+        # Existing provider callback paths refuse ceremonies without Governance.
         get(
           "google/callback",
-          to: "/auth/app/omniauth/omniauth_callbacks#omniauth",
+          to: "/auth/app/unavailable_ceremonies#show",
           as: :google_callback,
           defaults: { provider: "google" },
         )
 
         get(
           "apple/callback",
-          to: "/auth/app/omniauth/omniauth_callbacks#omniauth",
+          to: "/auth/app/unavailable_ceremonies#show",
           as: :apple_callback,
           defaults: { provider: "apple" },
         )
 
         get(
           "failure",
-          to: "/auth/app/omniauth/omniauth_callbacks#failure",
+          to: "/auth/app/unavailable_ceremonies#show",
           as: :failure,
         )
 
-        # Ceremony start. session = sign-in intent, registration = sign-up
-        # entry; the provider is carried by route defaults.
-        #
-        # POST only, and deliberately so: the press of an in-application button
-        # supplies the CSRF token the OmniAuth request phase requires, and the
-        # ceremony hands that same POST on with a 307. There is no GET entry, so
-        # a link cannot start an authentication ceremony. People choose their
-        # provider on the sign-in or sign-up page.
+        # Existing provider entry paths refuse ceremonies without Governance.
         scope :google, as: :google, defaults: { provider: "google", intent: "login" } do
-          resource :session, only: :create, controller: :sessions
-          resource :registration, only: :create, controller: :registrations, defaults: { entry: "auth_up" }
+          resource :session, only: :create, controller: "/auth/app/unavailable_ceremonies"
+          resource :registration, only: :create, controller: "/auth/app/unavailable_ceremonies",
+                                  defaults: { entry: "auth_up" }
         end
 
         scope :apple, as: :apple, defaults: { provider: "apple", intent: "login" } do
-          resource :session, only: :create, controller: :sessions
-          resource :registration, only: :create, controller: :registrations, defaults: { entry: "auth_up" }
+          resource :session, only: :create, controller: "/auth/app/unavailable_ceremonies"
+          resource :registration, only: :create, controller: "/auth/app/unavailable_ceremonies",
+                                  defaults: { entry: "auth_up" }
         end
       end
 
       # Step-up verification.
-      resource :verification, only: :show
+      resource :verification, only: :show, controller: "/auth/app/unavailable_ceremonies"
       namespace :verification do
-        resource :cancellation, only: :create
+        resource :cancellation, only: :create, controller: "/auth/app/unavailable_ceremonies"
       end
       namespace :verification do
-        resource :setup, only: :new
-        resource :handoff, only: %i(show create)
-        post "passkey/options", to: "passkeys#options", as: :passkey_options
-        resource :passkey, only: %i(new create)
-        resource :totp, only: %i(new create)
+        resource :setup, only: :new, controller: "/auth/app/unavailable_ceremonies"
+        resource :handoff, only: %i(show create), controller: "/auth/app/unavailable_ceremonies"
+        post "passkey/options", to: "/auth/app/unavailable_ceremonies#create", as: :passkey_options
+        resource :passkey, only: %i(new create), controller: "/auth/app/unavailable_ceremonies"
+        resource :totp, only: %i(new create), controller: "/auth/app/unavailable_ceremonies"
 
         namespace :registration do
-          post "passkey/options", to: "passkeys#options", as: :passkey_options
-          resource :passkey, only: %i(new create)
-          resource :handoff, only: %i(show create)
+          post "passkey/options", to: "/auth/app/unavailable_ceremonies#create", as: :passkey_options
+          resource :passkey, only: %i(new create), controller: "/auth/app/unavailable_ceremonies"
+          resource :handoff, only: %i(show create), controller: "/auth/app/unavailable_ceremonies"
         end
 
-        resources :emails, only: %i(new create edit update) do
-          resource :redelivery, only: :create
+        resources :emails, only: %i(new create edit update), controller: "/auth/app/unavailable_ceremonies" do
+          resource :redelivery, only: :create, controller: "/auth/app/unavailable_ceremonies"
         end
       end
 
-      # Auth-owned identity and credential setup routes are used by active authentication flows.
+      # Credential setup is unavailable until the Governance credential API is implemented.
       namespace :settings do
         namespace :totps do
-          resource :enrollment, only: %i(create destroy)
-          resource :handoff, only: %i(show create)
+          resource :enrollment, only: %i(create destroy), controller: "/auth/app/unavailable_ceremonies"
+          resource :handoff, only: %i(show create), controller: "/auth/app/unavailable_ceremonies"
         end
-        resources :totps, only: %i(new create)
-        resource :apple, only: %i(show edit create destroy)
-        resource :google, only: %i(show edit create destroy)
+        resources :totps, only: %i(new create), controller: "/auth/app/unavailable_ceremonies"
+        resource :apple, only: %i(show edit create destroy), controller: "/auth/app/unavailable_ceremonies"
+        resource :google, only: %i(show edit create destroy), controller: "/auth/app/unavailable_ceremonies"
       end
     end
   end
@@ -265,38 +247,23 @@ scope(module: :auth, as: :auth) do
       resource(
         :ceremony_binding,
         only: :show, path: "ceremony_bindings",
-        controller: :ceremony_bindings, as: :ceremony_bindings,
+        controller: "/auth/org/unavailable_ceremonies", as: :ceremony_bindings,
       )
 
       # Staff management areas.
 
       # Canonical ceremony entrypoints and authed-out confirmation.
       namespace :sign do
-        resource :registration, only: :show, path: "up", controller: :ups, as: :up
-        resource :session, only: :show, path: "in", controller: :ins, as: :in
-        resource :oidc_handoff, only: :show, path: "oidc/handoff", controller: :oidc_handoffs
+        resource :registration, only: :show, path: "up", controller: "/auth/org/unavailable_ceremonies", as: :up
+        resource :session, only: :show, path: "in", controller: "/auth/org/unavailable_ceremonies", as: :in
+        resource :oidc_handoff, only: :show, path: "oidc/handoff", controller: "/auth/org/unavailable_ceremonies"
         # First-page cancellation. Org has no public sign-up, so it has no switch action.
-        resource :cancellation, only: :create
+        resource :cancellation, only: :create, controller: "/auth/org/unavailable_ceremonies"
         namespace :in do
-          resource :sentry, only: :show
+          resource :sentry, only: :show, controller: "/auth/org/unavailable_ceremonies"
         end
         namespace :up do
-          resource :sentry, only: :show
-        end
-      end
-
-      # Browser preference API for this host's own chrome controls (theme and cookie consent).
-      # GET + PATCH only:
-      # `resource ... only: :update` would also map PUT (adr/api-route-vocabulary-consolidation.md,
-      # 2026-10-02 amendment).
-      namespace :api do
-        namespace :v0 do
-          namespace :preferences do
-            get :cookie, to: "cookies#show"
-            patch :cookie, to: "cookies#update"
-            get :theme, to: "themes#show"
-            patch :theme, to: "themes#update"
-          end
+          resource :sentry, only: :show, controller: "/auth/org/unavailable_ceremonies"
         end
       end
 
@@ -304,11 +271,11 @@ scope(module: :auth, as: :auth) do
       namespace :sign do
         # Sign-in ceremony.
         namespace :in do
-          resource :passkey, only: :new
+          resource :passkey, only: :new, controller: "/auth/org/unavailable_ceremonies"
 
           namespace :passkey do
-            resource :options, only: :create
-            resource :verification, only: :create
+            resource :options, only: :create, controller: "/auth/org/unavailable_ceremonies"
+            resource :verification, only: :create, controller: "/auth/org/unavailable_ceremonies"
           end
 
           # Emergency Access (Restricted Mode). Org only, Passkey only, and no
@@ -320,15 +287,15 @@ scope(module: :auth, as: :auth) do
           # sign-out -- both modes terminate through Visa's OIDC logout surface.
           # See docs/security/org-emergency-access.md.
           namespace :emergency do
-            resource :passkey, only: :new
+            resource :passkey, only: :new, controller: "/auth/org/unavailable_ceremonies"
 
             namespace :passkey do
-              resource :options, only: :create
-              resource :verification, only: :create
+              resource :options, only: :create, controller: "/auth/org/unavailable_ceremonies"
+              resource :verification, only: :create, controller: "/auth/org/unavailable_ceremonies"
             end
           end
 
-          resource :check, only: :show
+          resource :check, only: :show, controller: "/auth/org/unavailable_ceremonies"
           # No second-factor challenge: every org sign-in completes as a passkey sign-in, which
           # bypasses MFA, so no org state reaches MFA_PENDING.
         end
@@ -337,42 +304,41 @@ scope(module: :auth, as: :auth) do
       # OmniAuth-based Entra ID (Microsoft) sign-in.
       # See adr/org-entra-omniauth-strategy-migration.md.
       namespace(:social) do
+        resource :entra, only: :create, controller: "/auth/org/unavailable_ceremonies"
         scope :entra, as: :entra, defaults: { provider: "entra" } do
-          resource :session, only: %i(new create), controller: :sessions
+          resource :session, only: %i(new create), controller: "/auth/org/unavailable_ceremonies"
         end
 
-        # Non-resourceful exception: OmniAuth middleware owns these fixed
-        # provider paths (see config/routes/auth.rb:146-160 for the app-side
-        # equivalent, and config/initializers/omniauth.rb for the strategy).
+        # Existing Entra callback paths refuse ceremonies without Governance.
         get(
           "entra/callback",
-          to: "/auth/org/omniauth/omniauth_callbacks#omniauth",
+          to: "/auth/org/unavailable_ceremonies#show",
           as: :entra_callback,
           defaults: { provider: "entra" },
         )
 
         get(
           "entra/failure",
-          to: "/auth/org/omniauth/omniauth_callbacks#failure",
+          to: "/auth/org/unavailable_ceremonies#show",
           as: :entra_failure,
         )
       end
 
       # Step-up verification.
-      resource :verification, only: :show
+      resource :verification, only: :show, controller: "/auth/org/unavailable_ceremonies"
       namespace :verification do
-        resource :cancellation, only: :create
+        resource :cancellation, only: :create, controller: "/auth/org/unavailable_ceremonies"
       end
       namespace :verification do
-        resource :setup, only: :new
-        resource :handoff, only: %i(show create)
-        post "passkey/options", to: "passkeys#options", as: :passkey_options
-        resource :passkey, only: %i(new create)
+        resource :setup, only: :new, controller: "/auth/org/unavailable_ceremonies"
+        resource :handoff, only: %i(show create), controller: "/auth/org/unavailable_ceremonies"
+        post "passkey/options", to: "/auth/org/unavailable_ceremonies#create", as: :passkey_options
+        resource :passkey, only: %i(new create), controller: "/auth/org/unavailable_ceremonies"
 
         namespace :registration do
-          post "passkey/options", to: "passkeys#options", as: :passkey_options
-          resource :passkey, only: %i(new create)
-          resource :handoff, only: %i(show create)
+          post "passkey/options", to: "/auth/org/unavailable_ceremonies#create", as: :passkey_options
+          resource :passkey, only: %i(new create), controller: "/auth/org/unavailable_ceremonies"
+          resource :handoff, only: %i(show create), controller: "/auth/org/unavailable_ceremonies"
         end
       end
     end

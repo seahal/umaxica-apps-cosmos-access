@@ -1,4 +1,4 @@
-// The persistent layout every Auth and Visa Inertia page renders inside.
+// The persistent layout every Visa Inertia page renders inside.
 //
 // It replaces the header and footer that the surface ERB layouts used to build, and it is
 // persistent in the Inertia sense: a visit swaps the page below it without remounting the chrome,
@@ -30,11 +30,6 @@ export default function SurfaceLayout({ children }: { children: ReactNode }) {
     }
   }, [clearHistory]);
 
-  const informationLabel =
-    typeof document === "undefined"
-      ? undefined
-      : document.querySelector<HTMLMetaElement>('meta[name="ui-information"]')?.content;
-
   return (
     <DocumentLocale>
       <div className="flex min-h-screen flex-col">
@@ -63,20 +58,6 @@ export default function SurfaceLayout({ children }: { children: ReactNode }) {
                 >
                   {chrome.restricted_mode.sign_out.label}
                 </a>
-              </div>
-            </section>
-          ) : null}
-
-          {chrome.banner ? (
-            <section
-              aria-label={chrome.banner.title ?? informationLabel}
-              className="border-b border-line bg-surface-muted"
-            >
-              <div className={`${SHELL} flex flex-col gap-0.5 py-2.5 text-sm text-fg`}>
-                {chrome.banner.title ? (
-                  <h2 className="font-semibold">{chrome.banner.title}</h2>
-                ) : null}
-                <p className="text-fg-muted">{chrome.banner.body}</p>
               </div>
             </section>
           ) : null}

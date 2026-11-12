@@ -4,12 +4,12 @@
 require "test_helper"
 
 class RefreshTokenReuseActivityRecorderTest < ActiveSupport::TestCase
-  fixtures :clients, :client_statuses, :client_token_kinds, :client_token_statuses,
-           :client_token_binding_methods, :client_token_dbsc_statuses,
-           :operators, :operator_statuses, :operator_token_kinds, :operator_token_statuses,
-           :operator_token_binding_methods, :operator_token_dbsc_statuses,
-           :client_chronicle_events, :client_chronicle_levels,
-           :operator_chronicle_events, :operator_chronicle_levels
+  self.fixture_table_names = %w(
+    client_tokens client_device_sessions client_token_kinds client_token_statuses
+    client_token_binding_methods client_token_dbsc_statuses operator_tokens operator_device_sessions
+    operator_token_kinds operator_token_statuses operator_token_binding_methods operator_token_dbsc_statuses
+    client_chronicle_events client_chronicle_levels operator_chronicle_events operator_chronicle_levels
+  )
 
   %i(app org).each do |surface|
     test "#{surface} refresh reuse writes only non-secret family metadata" do
@@ -44,19 +44,9 @@ class RefreshTokenReuseActivityRecorderTest < ActiveSupport::TestCase
   def create_token(surface)
     case surface
     when :app
-      client = clients(:one)
-      client.update!(status_id: ClientStatus::ACTIVE)
-      ClientToken.create!(
-        authentication_epoch: 0,
-        user: client, user_token_kind_id: ClientTokenKind::BROWSER_WEB,
-        user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 1.day.from_now,
-      )
+      ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
     when :org
-      OperatorToken.create!(
-        authentication_epoch: 0,
-        staff: operators(:one), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
-        staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 1.day.from_now,
-      )
+      OperatorToken.find(ActiveRecord::FixtureSet.identify(:one))
     end
   end
 

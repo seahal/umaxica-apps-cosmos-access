@@ -26,6 +26,7 @@ class OpAuthorityStopCommitter
   REALMS = {
     "app" => {
       stop: OpAppAuthorityStop,
+      public_id_constraint: "index_op_app_authority_stops_on_public_id",
       root_target: OpAppAuthorityStopRootTarget,
       grant_target: OpAppAuthorityStopGrantTarget,
       epoch_cutoff: OpAppAuthorityStopEpochCutoff,
@@ -39,6 +40,7 @@ class OpAuthorityStopCommitter
     },
     "org" => {
       stop: OpOrgAuthorityStop,
+      public_id_constraint: "index_op_org_authority_stops_on_public_id",
       root_target: OpOrgAuthorityStopRootTarget,
       grant_target: OpOrgAuthorityStopGrantTarget,
       epoch_cutoff: OpOrgAuthorityStopEpochCutoff,
@@ -249,16 +251,48 @@ class OpAuthorityStopCommitter
   end
 
   def persist_stop!(now:, revoked_roots:, revoked_grants:)
-    stop = stop_class.create!(
-      public_id: PublicId.generate, realm:, cause_id: OpAuthorityStopReference.cause_id(cause),
-      scope_id: OpAuthorityStopReference.scope_id(scope), principal_public_id:,
-      authority_evidence_ref:, idempotency_digest:, occurred_at: now,
-    )
+    stop = create_stop_record!(now: now)
     revoked_roots.each { |root| model(:RootTarget).create!(stop:, root:) }
     revoked_grants.each { |live| model(:GrantTarget).create!(stop:, grant: live) }
     model(:EpochCutoff).create!(stop:, cutoff_epoch:) if scope == "all_roots_of_principal"
     revoked_grants.each { |live| record_participant!(stop, live, now) }
     Result.new(stop:, replayed: false)
+  end
+
+  def create_stop_record!(now:)
+    retries = 0
+    begin
+      stop_class.transaction(requires_new: true) do
+        stop_class.create!(
+          public_id: PublicId.generate, realm:, cause_id: OpAuthorityStopReference.cause_id(cause),
+          scope_id: OpAuthorityStopReference.scope_id(scope), principal_public_id:,
+          authority_evidence_ref:, idempotency_digest:, occurred_at: now,
+        )
+      end
+    rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
+      raise unless generated_public_id_collision?(e)
+
+      retries += 1
+      raise if retries > PublicId::MAX_COLLISION_RETRIES
+
+      retry
+    end
+  end
+
+  def generated_public_id_collision?(error)
+    case error
+    when ActiveRecord::RecordInvalid
+      errors = error.record.errors
+      error.record.class == stop_class && errors.attribute_names == [:public_id] &&
+        errors.details.fetch(:public_id).all? { |detail| detail.fetch(:error) == :taken }
+    when ActiveRecord::RecordNotUnique
+      native_error = error.cause
+      return false unless native_error.is_a?(PG::UniqueViolation) && native_error.result
+
+      native_error.result.error_field(PG::Result::PG_DIAG_CONSTRAINT_NAME) == config.fetch(:public_id_constraint)
+    else
+      false
+    end
   end
 
   # Device Session -> root -> grants (id order); the order of RpSession#with_parent_and_self_lock.
@@ -281,21 +315,14 @@ class OpAuthorityStopCommitter
   end
 
   def lock_grant_chain(target)
-    config.fetch(:device).lock.find(target.device_session_id)
-    root_id = grant_root_id(target)
-    raise ActiveRecord::RecordNotFound, "authority-stop grant has no root" unless root_id
+    device = config.fetch(:device).lock.find(target.device_session_id)
+    root = config.fetch(:root).where(device_session_id: device.id).lock.find_by(id: device.current_refresh_token_id)
+    raise ActiveRecord::RecordNotFound, "authority-stop grant has no current root" unless root
 
-    config.fetch(:root).lock.find(root_id)
     locked = config.fetch(:grant).lock.find(target.id)
-    locked.revoked_at.nil? ? locked : nil
-  end
+    raise Refused, "authority-stop grant device changed" unless locked.device_session_id == device.id
 
-  def grant_root_id(target)
-    case target
-    when OpAppGrant then target.client_token_id
-    when OpOrgGrant then target.operator_token_id
-    else raise ArgumentError, "unsupported authority-stop grant #{target.class}"
-    end
+    locked.revoked_at.nil? ? locked : nil
   end
 
   def record_participant!(stop, live, now)

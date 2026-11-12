@@ -234,6 +234,15 @@ verification results.
   local Access surfaces. External RP owners retain responsibility for their own root, callback, and
   session behavior.
 
+- AUTH-43: Retained APP/ORG token and ceremony evidence distinguishes `ABSENT` from `RECORDED`,
+  including a recorded false verification result. Missing or unknown evidence state never grants
+  authority. Verification records state and proof together; ceremony cancellation, expiry and
+  revocation preserve recorded history. Token evidence consumption or revocation clears state and
+  flags atomically without changing the root token's status or deadline. Existing binding,
+  freshness, current-policy and one-shot checks still apply, and registration proof grants no
+  ordinary step-up freshness. See the
+  [approved evidence-state amendment](../../adr/step-up-authentication-redesign.md#explicit-retained-evidence-state-2026-11-12).
+
 Sources:
 [authentication contract](../../.agents/harnesses/rules/generic/authentication-boundaries.mdc),
 [Auth/Visa authority](../architecture/base-auth-seven-rp-boundary.md). Broader scenarios:

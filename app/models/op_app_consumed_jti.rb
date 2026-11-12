@@ -26,6 +26,11 @@ class OpAppConsumedJti < OpBaseAppRecord
       true
     rescue ActiveRecord::RecordNotUnique
       false
+    rescue ActiveRecord::RecordInvalid => e
+      raise unless e.record.errors.attribute_names == [:jti_digest] &&
+        e.record.errors.of_kind?(:jti_digest, :taken)
+
+      false
     end
 
     def digest_jti(jti)
@@ -38,4 +43,5 @@ class OpAppConsumedJti < OpBaseAppRecord
   validates :realm, length: { maximum: 3 }
   validates :client_id, :jti_digest, :purpose, length: { maximum: 64 }
   validates :issuer, length: { maximum: 255 }
+  validates :jti_digest, uniqueness: { scope: %i(purpose issuer realm client_id) }
 end

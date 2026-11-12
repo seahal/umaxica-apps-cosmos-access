@@ -9,12 +9,11 @@
 # configuration mistake into an authentication outage discovered by a user.
 # Development and test return nil when the set is absent so processes that never
 # exercise Entra/OIDC (CMS and other non-Entra suites) can boot without an IdP
-# credential; the org Entra preflight and ProviderRegistry still raise when the
-# provider is actually used.
+# credential; ProviderRegistry still raises when the provider is actually used.
 #
 # Shape only: presence plus UUID format for the two identifiers. No semantic
 # validation (issuer metadata, tenant reachability) happens here, because boot
-# must not depend on reaching Microsoft. That remains in OrgEntraSignInPreflight.
+# must not depend on reaching Microsoft.
 #
 # No credential value ever appears in an error message.
 module EntraOmniauthBootCredentials

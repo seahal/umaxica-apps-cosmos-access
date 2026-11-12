@@ -89,9 +89,12 @@ module Outbound
         ["com", "sign_up", "flow", SecureRandom.uuid, generation],
         ["com", "credential_registration", SecureRandom.uuid, "contact", generation],
       ].each do |binding|
-        payload = OutboundSensitivePayload.encrypt_sms_delivery(
-          to: "+819012345678", title: "Verification code", body: "Your verification code: 123456",
-          otp_binding: binding, otp_code: "123456",
+        payload = OutboundSensitivePayload.encrypt(
+          JSON.generate(
+            version: (binding[1] == "sign_up") ? 3 : 4, to: "+819012345678", title: "Verification code",
+            body: "Your verification code: 123456", otp_binding: binding, otp_code: "123456",
+          ),
+          purpose: OutboundSensitivePayload::SMS_DELIVERY_PURPOSE,
         )
         reported = []
         OutboundSms.stub(:deliver_now, ->(**) { flunk("must not deliver") }) do

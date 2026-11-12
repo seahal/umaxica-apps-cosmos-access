@@ -24,18 +24,16 @@
 class ClientOidcConnection < OpBaseAppRecord
   include OidcConnectionRecord
 
-  belongs_to :user, class_name: "Client"
   has_many :user_tokens,
            class_name: "ClientToken",
            foreign_key: :oidc_connection_id,
            dependent: :nullify,
            inverse_of: :oidc_connection
 
+  validates :user_id, presence: true
   validates :client_id, uniqueness: { scope: :user_id }
 
   def self.actor_foreign_key = :user_id
-
-  def actor = user
 
   def active_tokens
     user_tokens.session_inventory

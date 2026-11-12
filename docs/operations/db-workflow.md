@@ -302,8 +302,14 @@ enabling schema-drift enforcement:
 ```
 
 The check fails when the branch's committed schema dumps differ from applying migrations to clean
-databases. The retired `database_consistency` gem is not a runtime or CI dependency; historical
-documents that describe its earlier findings remain historical records.
+databases. `database_consistency` is currently a development/test dependency supplied by the local
+editable fork. Run `RAILS_ENV=test bundle exec database_consistency` without exclusion configuration;
+it supplements direct PostgreSQL constraint and concurrency tests. The Access-only disposition and
+open acceptance are in [the current specification](../../specs/access-database-consistency/spec.md).
+KEEP findings, PENDING database findings and excluded Solid Queue findings must be reported
+separately. The local fork's explicit-RESTRICT correction is delivered with its PostgreSQL
+regression specification in [the dependency patch](../../patches/README.md); copying only this outer
+repository's tracked source does not automatically apply it.
 
 ## Verified targeted database safeguards
 

@@ -4,9 +4,11 @@
 require "test_helper"
 
 class AuthVisaAuthorityBoundaryTest < ActiveSupport::TestCase
-  AUTH_APPLICATION_CONTROLLERS = [
-    Auth::App::ApplicationController,
-    Auth::Org::ApplicationController,
+  self.fixture_table_names = []
+
+  AUTH_UNAVAILABLE_CONTROLLERS = [
+    Auth::App::UnavailableCeremoniesController,
+    Auth::Org::UnavailableCeremoniesController,
   ].freeze
 
   VISA_AUTHORITY_CONTROLLERS = [
@@ -14,8 +16,8 @@ class AuthVisaAuthorityBoundaryTest < ActiveSupport::TestCase
     Visa::Org::AuthorityController,
   ].freeze
 
-  test "Auth application controllers do not inherit browser RP lifecycle" do
-    AUTH_APPLICATION_CONTROLLERS.each do |controller|
+  test "Auth unavailable controllers do not inherit browser RP lifecycle" do
+    AUTH_UNAVAILABLE_CONTROLLERS.each do |controller|
       assert_not controller.private_method_defined?(:oidc_client_id), controller.name
     end
   end
@@ -23,10 +25,11 @@ class AuthVisaAuthorityBoundaryTest < ActiveSupport::TestCase
   test "Visa Authority controllers own the root session lifecycle independently" do
     VISA_AUTHORITY_CONTROLLERS.each do |controller|
       assert_equal ApplicationController, controller.superclass, controller.name
-      assert_includes controller.ancestors, AuthenticationBase, controller.name
+      assert_includes controller.ancestors, OpBrowserSessionRequest, controller.name
       assert_includes controller.ancestors, FqdnAvailabilityGate, controller.name
       assert_includes controller.ancestors, DefaultNoStore, controller.name
-      assert_includes controller.ancestors, ActorSupport, controller.name
+      assert_not_includes controller.ancestors, ActorSupport, controller.name
+      assert_equal :deny_all, controller.const_get(:AUTHENTICATION_MODE)
     end
 
     assert_equal "visa/app/application", Visa::App::AuthorityController._layout
@@ -46,8 +49,9 @@ class AuthVisaAuthorityBoundaryTest < ActiveSupport::TestCase
 
       assert_includes callbacks, :require_authenticity_token_for_unsafe_request!, controller.name
       assert_includes callbacks, :apply_default_no_store, controller.name
-      assert_includes callbacks, :enforce_verification_if_required, controller.name
-      assert_includes callbacks, :enforce_access_policy!, controller.name
+      assert_includes callbacks, :enforce_op_boundary_mode!, controller.name
+      assert_not_includes callbacks, :enforce_verification_if_required, controller.name
+      assert_not_includes callbacks, :enforce_access_policy!, controller.name
     end
 
     assert_not_includes callback_filters.call(Visa::Org::AuthorityController), :enforce_second_passkey_gate!

@@ -2,62 +2,54 @@
 
 require "test_helper"
 
-class SignupOtpDeliveryPayloadTest < ActiveSupport::TestCase
-  include ActiveJob::TestHelper
+class SignupOtpDeliveryPayloadTest < ActiveJob::TestCase
+  self.fixture_table_names = []
 
-  %i(email telephone).each do |channel|
-    test "app #{channel} signup retains binding and encrypted code" do
-      owner = Client.create!(security_mode_id: SecurityModeConfigurable::NORMAL)
-      contact_class, owner_key =
-        case channel
-        when :email then [ClientEmail, :user_id]
-        when :telephone then [ClientTelephone, :user_id]
-        end
-      destination = (channel == :email) ? "payload-#{SecureRandom.hex(8)}@example.test" : "+819012345670"
-      contact = contact_class.create!(
-        owner_key => owner.id, :confirm_policy => "1",
-        ((channel == :email) ? :address : :number) => destination,
-      )
-      transaction_ref = SecureRandom.uuid
-      generation = SecureRandom.uuid
-      delivery_binding =
-        if channel == :email
-          { sign_up_email_transaction_ref: transaction_ref, sign_up_email_otp_generation: generation }
-        else
-          { sign_up_telephone_transaction_ref: transaction_ref,
-            sign_up_telephone_otp_generation: generation, }
-        end
-      clear_enqueued_jobs
-      OtpAdapter.for(surface: :app, channel: channel).deliver(
-        record: contact, otp_code: "001234", purpose: :sign_up, public_id: contact.public_id,
-        sign_up_flow_ref: "flow_ref", **delivery_binding,
-      )
+  test "queued email retains binding and encrypts its OTP" do
+    transaction = SecureRandom.uuid
+    generation = SecureRandom.uuid
+    encrypted = OutboundSensitivePayload.encrypt_email_otp("001234")
+    clear_enqueued_jobs
+    Email::App::OtpMailer.with(
+      encrypted_hotp_token: encrypted, email_address: "recipient@example.test", public_id: "candidate",
+      purpose: "sign_up", sign_up_flow_ref: "flow_ref", sign_up_email_transaction_ref: transaction,
+      sign_up_email_otp_generation: generation,
+    ).create.deliver_later
 
-      assert_equal 1, enqueued_jobs.length
-      arguments = enqueued_jobs.first.fetch(:args)
-      if channel == :email
-        assert_not enqueued_jobs.first.fetch(:job).log_arguments,
-                   "OTP delivery job arguments must not expose original flow references in logs"
-        params = arguments.last.fetch("params")
+    assert_equal 1, enqueued_jobs.length
+    job = enqueued_jobs.first
+    arguments = job.fetch(:args)
+    params = arguments.last.fetch("params")
 
-        assert_equal "flow_ref", params.fetch("sign_up_flow_ref")
-        assert_equal transaction_ref, params.fetch("sign_up_email_transaction_ref")
-        assert_equal generation, params.fetch("sign_up_email_otp_generation")
-        assert_equal contact.public_id, params.fetch("public_id")
-        plaintext_matches =
-          OutboundSensitivePayload.decrypt_email_otp(params.fetch("encrypted_hotp_token")) == "001234"
+    assert_not job.fetch(:job).log_arguments
+    assert_equal "flow_ref", params.fetch("sign_up_flow_ref")
+    assert_equal transaction, params.fetch("sign_up_email_transaction_ref")
+    assert_equal generation, params.fetch("sign_up_email_otp_generation")
+    assert_equal "candidate", params.fetch("public_id")
+    assert_equal "001234", OutboundSensitivePayload.decrypt_email_otp(params.fetch("encrypted_hotp_token"))
+    assert_not_includes arguments.to_s, "001234"
+  end
 
-        assert plaintext_matches, "the encrypted email code must retain the issued value"
-      else
-        payload = OutboundSensitivePayload.decrypt_sms_delivery(arguments.first.fetch("encrypted_payload"))
+  test "queued signup SMS retains binding and encrypts destination and OTP" do
+    transaction = SecureRandom.uuid
+    generation = SecureRandom.uuid
+    binding = ["app", "sign_up", "flow_ref", transaction, generation]
+    encrypted = OutboundSensitivePayload.encrypt_sms_delivery(
+      to: "+819012345670", title: "Verification code", body: "Your verification code: 001234",
+      otp_binding: binding, otp_code: "001234",
+    )
+    clear_enqueued_jobs
+    Outbound::SmsDeliveryJob.perform_later(encrypted_payload: encrypted)
 
-        assert_equal 3, payload.fetch(:version)
-        assert_equal ["app", "sign_up", "flow_ref", transaction_ref, generation],
-                     payload.fetch(:otp_binding)
-        assert_equal destination, payload.fetch(:to)
-      end
+    assert_equal 1, enqueued_jobs.length
+    arguments = enqueued_jobs.first.fetch(:args)
+    payload = OutboundSensitivePayload.decrypt_sms_delivery(arguments.first.fetch("encrypted_payload"))
 
-      assert_not arguments.to_s.include?("001234"), "queued credentials must not contain the plaintext code"
-    end
+    assert_equal 3, payload.fetch(:version)
+    assert_equal binding, payload.fetch(:otp_binding)
+    assert_equal "+819012345670", payload.fetch(:to)
+    assert_equal "001234", payload.fetch(:otp_code)
+    assert_not_includes arguments.to_s, "001234"
+    assert_not_includes arguments.to_s, "+819012345670"
   end
 end

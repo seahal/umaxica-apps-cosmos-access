@@ -198,6 +198,15 @@ class EmailVerificationChallengeableTest < ActiveSupport::TestCase
       second.transaction.record_evp_rejected!(token: "replayed-token", failure_reason: "replay_detected")
     end
     assert_equal "pending", second.transaction.reload.evp_outcome
+
+    error =
+      assert_raises(ActiveRecord::RecordInvalid) do
+        second.transaction.record_evp_rejected!(token: "replayed-token", failure_reason: "unsupported-reason")
+      end
+
+    assert error.record.errors.of_kind?(:evp_token_digest, :taken)
+    assert_includes error.record.errors.attribute_names, :evp_failure_reason
+    assert_equal "pending", second.transaction.reload.evp_outcome
   end
 
   test "invalid outcome metadata is rejected" do

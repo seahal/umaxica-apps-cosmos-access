@@ -14,14 +14,14 @@ class Visa::App::Edge::V0::Token::ChecksController < Visa::App::AuthorityControl
   def show
     response.set_header("Cache-Control", "no-store")
 
-    authenticated = logged_in? && current_resource.active?
+    authenticated = logged_in?
     issue_dbsc_registration_header_for(current_session) if authenticated
     body =
       if authenticated
         {
           authenticated: true,
           type: resource_type,
-          id: current_resource.id,
+          id: root_owner_id(current_session),
           sid: current_session_public_id,
           dbsc: dbsc_payload_for(current_session),
         }

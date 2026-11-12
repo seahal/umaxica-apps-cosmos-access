@@ -10,18 +10,26 @@ definitions unless revision-scoped evidence explicitly records an actual catalog
 
 Classify by meaning and format authority before changing generation, constraints or consumers. Use
 the ADR's eight roles; column suffixes and existing UUID generation are discovery hints, not a
-verdict. Standard self-controlled non-secret issuance is NanoID-21 with varchar capacity 25.
+verdict. The accepted 2026-10-20 amendment fixes standard self-controlled non-secret issuance and
+storage to NanoID-21, including an exact-length database CHECK and model validation.
 Preserve issued references and independently validate accepted compatibility. Never
 shorten/case-convert values or invent additional mapping/public-ID layers solely to match spelling.
 
 `PublicId.generate` owns standard generation with size 21 and the installed library's safe
-alphabet/CSPRNG path, explicitly non_secure=false. The shared concern validates a maximum storage
-capacity of 25 independently from the 21-character issuer, so existing values up to that capacity
-remain compatible. Preference, TOTP, RP-session and ORG Telephone backfill writers call that
+alphabet/CSPRNG path, explicitly non_secure=false. The shared concern still validates a legacy
+maximum capacity of 25; that is an implementation gap against the amended ADR, not permission to
+extend that capacity to new identifiers. Preference, TOTP, RP-session and ORG Telephone backfill writers call that
 mechanism without sharing their distinct lifecycle policies. Existing resource values and callback
 timing are preserved. Ownership-ID DB protection and bulk/collision handling must satisfy ID-4/ID-5
 and the explicit authority map. Model callbacks do not establish DB immutability. New same-row
 identifier triggers and shared-role changes are not authorized by this document.
+
+APP/ORG `client_step_up_contexts.public_id` and `operator_step_up_contexts.public_id` are owned
+non-secret context identities issued by `OidcStepUpAuthorizationIssuer` through `PublicId.generate`.
+Their `varchar(21)` columns have exact-length CHECK constraints and matching model validation.
+Existing unique indexes retain their identity scope. `StepUpContextIdentifierTest` exercises
+20/21/22-character model and direct PostgreSQL paths. This length verification does not establish
+database immutability or complete the remaining identifier inventory.
 
 The public generation contract is tested in `test/lib/public_id_generation_test.rb`. The existing
 invariant suite's `test/security/invariants/identifier_generation_invariant_test.rb` parses Ruby

@@ -5,37 +5,24 @@ require "test_helper"
 # Boolean snapshots keep keyed digests and original Root references out of failure output.
 class CredentialRegistrationOtpProofDatabaseTest < ActiveSupport::TestCase
   [
-    [Client, ClientToken, ClientEmail, :user_id, :app, :email],
-    [Client, ClientToken, ClientTelephone, :user_id, :app, :telephone],
-    [Operator, OperatorToken, OperatorEmail, :staff_id, :org, :email],
-    [Operator, OperatorToken, OperatorTelephone, :staff_id, :org, :telephone],
-  ].each do |owner_model, root_model, contact_model, owner_key, surface, channel|
+    [ClientEmailCeremonyTransaction, :app, :email],
+    [ClientTelephoneCeremonyTransaction, :app, :telephone],
+    [OperatorEmailCeremonyTransaction, :org, :email],
+    [OperatorTelephoneCeremonyTransaction, :org, :telephone],
+  ].each do |model, surface, channel|
     test "#{surface} #{channel} registration proof rejects malformed direct writes and protects verified facts" do
-      owner = owner_model.create!(security_mode_id: SecurityModeTestDefault.id_for(owner_model))
-      root = root_model.create!(:authentication_epoch => 0, owner_key => owner.id, :discard_at => 1.day.from_now)
-      root.rotate_refresh_token!
-      contact = contact_model.create!(
-        owner_key => owner.id,
-        :confirm_policy => "1",
-        **if channel == :email
-            { raw_address: "proof-#{SecureRandom.hex(8)}@example.test" }
-          else
-            { raw_number: "+8190#{SecureRandom.random_number(10**8).to_s.rjust(8, "0")}", confirm_using_mfa: "1" }
-          end,
+      candidate_key = (channel == :email) ? :email_candidate_ref : :telephone_candidate_ref
+      digest_key = (channel == :email) ? :normalized_email_digest : :normalized_number_digest
+      flow = model.create_transaction!(
+        :actor_ref => "original-actor", :session_ref => "original-browser", :operation => "registration",
+        candidate_key => "original-candidate", digest_key => "a" * 64,
       )
-      nonce = SecureRandom.urlsafe_base64(32)
-      issued =
+      code =
         if channel == :email
-          EmailCredentialRegistrationOtpIssuer.call(actor: owner, token: root, email: contact, browser_nonce: nonce)
+          flow.issue_email_otp!(purpose: "credential_registration")
         else
-          TelephoneCredentialRegistrationOtpIssuer.call(
-            actor: owner, token: root, telephone: contact,
-            browser_nonce: nonce,
-          )
+          flow.issue_telephone_otp!(purpose: "credential_registration")
         end
-
-      assert_predicate issued, :success?
-      flow = issued.transaction
       original = flow.reload.attributes
       digest_field = (channel == :email) ? :normalized_email_digest : :normalized_number_digest
       candidate_field = (channel == :email) ? :email_candidate_ref : :telephone_candidate_ref
@@ -91,18 +78,22 @@ class CredentialRegistrationOtpProofDatabaseTest < ActiveSupport::TestCase
         assert_withheld("Rolled-back bounds must not manufacture a result") { original == flow.reload.attributes }
       end
 
+      binding = {
+        code: code,
+        purpose: "credential_registration",
+        actor_ref: "original-actor",
+        session_ref: "original-browser",
+        operation: "registration",
+        candidate_ref: "original-candidate",
+      }
       verified =
         if channel == :email
-          EmailCredentialRegistrationOtpVerificationCommitter.call(
-            actor: owner, token: root, email: contact, transaction: flow, browser_nonce: nonce, code: issued.code,
-          )
+          flow.verify_email_otp!(**binding)
         else
-          TelephoneCredentialRegistrationOtpVerificationCommitter.call(
-            actor: owner, token: root, telephone: contact, transaction: flow, browser_nonce: nonce, code: issued.code,
-          )
+          flow.verify_telephone_otp!(**binding)
         end
 
-      assert_equal :verified, verified.status
+      assert verified
       committed = flow.reload.attributes
       [
         { otp_consumed_at: nil, otp_receipt_verifier: nil, otp_result_expires_at: nil },

@@ -79,30 +79,31 @@ require "test_helper"
 
 class OperatorTokenTest < ActiveSupport::TestCase
   def setup
-    @staff = Operator.create!(security_mode_id: SecurityModeConfigurable::ADVANCED, staff_status: OperatorStatus.find(OperatorStatus::NOTHING))
-
-    @token = OperatorToken.create!(authentication_epoch: 0, staff: @staff, staff_token_status_id: OperatorTokenStatus::ACTIVE)
+    @staff = 9_000_000_001
+    device = OperatorDeviceSession.create!(staff_id: @staff, principal_public_id: "operator-#{@staff}")
+    @token = OperatorToken.create!(
+      authentication_epoch: 0, staff_id: @staff, device_session: device,
+      staff_token_status_id: OperatorTokenStatus::ACTIVE,
+    )
   end
 
   test "inherits from OpBaseOrgRecord" do
     assert_operator OperatorToken, :<, OpBaseOrgRecord
   end
 
-  test "belongs to staff" do
-    association = OperatorToken.reflect_on_association(:staff)
-
-    assert_not_nil association
-    assert_equal :belongs_to, association.macro
-  end
-
-  test "can be created with staff" do
+  test "persists the historical staff identifier" do
     assert_not_nil @token
-    assert_equal @staff.id, @token.staff_id
+    assert_equal @staff, @token.staff_id
   end
 
   test "token cannot bind a device session belonging to another Operator" do
-    other = Operator.create!(security_mode_id: SecurityModeConfigurable::ADVANCED)
-    other_token = OperatorToken.create!(authentication_epoch: 0, staff: other)
+    other = 9_000_000_002
+    other_token = OperatorToken.create!(
+      authentication_epoch: 0, staff_id: other,
+      device_session: OperatorDeviceSession.create!(
+        staff_id: other, principal_public_id: "operator-#{other}",
+      ),
+    )
     original_device_id = @token.device_session_id
 
     error =
@@ -118,7 +119,13 @@ class OperatorTokenTest < ActiveSupport::TestCase
   end
 
   test "device session rejects a current token owned by another session" do
-    other_token = OperatorToken.create!(authentication_epoch: 0, staff: @staff, staff_token_kind_id: OperatorTokenKind::BROWSER_WEB)
+    other_token = OperatorToken.create!(
+      authentication_epoch: 0, staff_id: @staff,
+      device_session: OperatorDeviceSession.create!(
+        staff_id: @staff, principal_public_id: "operator-#{@staff}",
+      ),
+      staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
+    )
     session = @token.device_session
 
     error =
@@ -160,11 +167,14 @@ class OperatorTokenTest < ActiveSupport::TestCase
   end
 
   test "token device session must belong to the same staff" do
-    other_staff = Operator.create!(
-      security_mode_id: SecurityModeConfigurable::ADVANCED,
-      staff_status: OperatorStatus.find(OperatorStatus::NOTHING),
+    other_staff = 9_000_000_002
+    other_token = OperatorToken.create!(
+      authentication_epoch: 0, staff_id: other_staff,
+      device_session: OperatorDeviceSession.create!(
+        staff_id: other_staff, principal_public_id: "operator-#{other_staff}",
+      ),
+      staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )
-    other_token = OperatorToken.create!(authentication_epoch: 0, staff: other_staff, staff_token_kind_id: OperatorTokenKind::BROWSER_WEB)
 
     error =
       assert_raises(ActiveRecord::InvalidForeignKey) do
@@ -206,20 +216,6 @@ class OperatorTokenTest < ActiveSupport::TestCase
     assert OperatorToken.exists?(@token.id)
   end
 
-  test "destroying the operator removes tokens before its device sessions" do
-    session_id = @token.device_session_id
-
-    @staff = Operator.includes(
-      :staff_passkeys, :staff_tokens, :operator_device_sessions, :staff_secret_credentials, :oidc_connections,
-      :staff_operators, :operator_workspace_accounts, :staff_bulletins, :staff_banners, :rp_account,
-      :authority_lock, :operator_preference, :core_org_operator_bridge,
-    ).find(@staff.id)
-    @staff.destroy!
-
-    assert_not OperatorToken.exists?(@token.id)
-    assert_not OperatorDeviceSession.exists?(session_id)
-  end
-
   test "does not expose legacy session_id column" do
     assert_not_includes OperatorToken.column_names, "session_id"
   end
@@ -237,11 +233,6 @@ class OperatorTokenTest < ActiveSupport::TestCase
   test "has updated_at timestamp" do
     assert_not_nil @token.updated_at
     assert_kind_of Time, @token.updated_at
-  end
-
-  test "staff association loads staff correctly" do
-    assert_equal @staff, @token.staff
-    assert_equal @staff.id, @token.staff.id
   end
 
   test "can load one fixture" do
@@ -274,7 +265,7 @@ class OperatorTokenTest < ActiveSupport::TestCase
   end
 
   test "enforces maximum concurrent sessions per staff" do
-    staff = Operator.create!(security_mode_id: SecurityModeConfigurable::ADVANCED, staff_status: OperatorStatus.find(OperatorStatus::NOTHING))
+    staff = 9_000_000_002
     token_status = OperatorTokenStatus.find(OperatorTokenStatus::ACTIVE)
     token_kind = OperatorTokenKind.find(OperatorTokenKind::BROWSER_WEB)
     binding_method = OperatorTokenBindingMethod.find(OperatorTokenBindingMethod::NOTHING)
@@ -283,7 +274,9 @@ class OperatorTokenTest < ActiveSupport::TestCase
     OperatorToken::MAX_TOTAL_SESSIONS_PER_STAFF.times do
       OperatorToken.create!(
         authentication_epoch: 0,
-        staff: staff,
+        staff_id: staff, device_session: OperatorDeviceSession.create!(
+          staff_id: staff, principal_public_id: "operator-#{staff}",
+        ),
         staff_token_status: token_status,
         staff_token_kind: token_kind,
         staff_token_binding_method: binding_method,
@@ -293,7 +286,9 @@ class OperatorTokenTest < ActiveSupport::TestCase
 
     extra_token = OperatorToken.new(
       authentication_epoch: 0,
-      staff: staff,
+      staff_id: staff, device_session: OperatorDeviceSession.create!(
+        staff_id: staff, principal_public_id: "operator-#{staff}",
+      ),
       staff_token_status: token_status,
       staff_token_kind: token_kind,
       staff_token_binding_method: binding_method,
@@ -316,7 +311,12 @@ class OperatorTokenTest < ActiveSupport::TestCase
 
   test "active state reflects revoked and expired refresh tokens" do
     freeze_time do
-      token = OperatorToken.create!(authentication_epoch: 0, staff: @staff)
+      token = OperatorToken.create!(
+        authentication_epoch: 0, staff_id: @staff,
+        device_session: OperatorDeviceSession.create!(
+          staff_id: @staff, principal_public_id: "operator-#{@staff}",
+        ),
+      )
 
       assert_predicate token, :active?
 
@@ -357,7 +357,9 @@ class OperatorTokenTest < ActiveSupport::TestCase
     freeze_time do
       token = OperatorToken.create!(
         authentication_epoch: 0,
-        staff: @staff,
+        staff_id: @staff, device_session: OperatorDeviceSession.create!(
+          staff_id: @staff, principal_public_id: "operator-#{@staff}",
+        ),
         staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
         discard_at: 12.hours.from_now,
         purge_eligible_at: 4.days.from_now,
@@ -389,7 +391,9 @@ class OperatorTokenTest < ActiveSupport::TestCase
     purge_eligible_at = 2.days.from_now
     token = OperatorToken.create!(
       authentication_epoch: 0,
-      staff: @staff,
+      staff_id: @staff, device_session: OperatorDeviceSession.create!(
+        staff_id: @staff, principal_public_id: "operator-#{@staff}",
+      ),
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       discard_at: 1.day.from_now,
       purge_eligible_at: purge_eligible_at,
@@ -402,7 +406,9 @@ class OperatorTokenTest < ActiveSupport::TestCase
     purge_eligible_at = 4.days.from_now
     token = OperatorToken.create!(
       authentication_epoch: 0,
-      staff: @staff,
+      staff_id: @staff, device_session: OperatorDeviceSession.create!(
+        staff_id: @staff, principal_public_id: "operator-#{@staff}",
+      ),
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       discard_at: 1.day.from_now,
       purge_eligible_at: purge_eligible_at,
@@ -415,14 +421,18 @@ class OperatorTokenTest < ActiveSupport::TestCase
   end
 
   test "purgeability query returns only tokens purgeable at or before now" do
-    staff = Operator.create!(security_mode_id: SecurityModeConfigurable::ADVANCED, staff_status: OperatorStatus.find(OperatorStatus::NOTHING))
+    staff = 9_000_000_002
     past_token = OperatorToken.create!(
-      authentication_epoch: 0, staff: staff, discard_at: 20.minutes.ago,
+      authentication_epoch: 0, staff_id: staff, device_session: OperatorDeviceSession.create!(
+        staff_id: staff, principal_public_id: "operator-#{staff}",
+      ), discard_at: 20.minutes.ago,
       purge_eligible_at: 10.minutes.ago,
     )
     future_token = OperatorToken.create!(
       authentication_epoch: 0,
-      staff: staff,
+      staff_id: staff, device_session: OperatorDeviceSession.create!(
+        staff_id: staff, principal_public_id: "operator-#{staff}",
+      ),
       discard_at: 10.minutes.ago,
       purge_eligible_at: 10.minutes.from_now,
     )
@@ -444,7 +454,10 @@ class OperatorTokenTest < ActiveSupport::TestCase
   test "rotate_refresh! consumes old row and creates new generation in same family" do
     token = OperatorToken.create!(
       authentication_epoch: 0,
-      staff: @staff, staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
+      staff_id: @staff, device_session: OperatorDeviceSession.create!(
+        staff_id: @staff, principal_public_id: "operator-#{@staff}",
+      ),
+      staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )
     raw = token.rotate_refresh_token!
     _, verifier = OperatorToken.parse_refresh_token(raw)
@@ -468,7 +481,10 @@ class OperatorTokenTest < ActiveSupport::TestCase
   test "rotate_refresh! classifies second attempt as replay" do
     token = OperatorToken.create!(
       authentication_epoch: 0,
-      staff: @staff, staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
+      staff_id: @staff, device_session: OperatorDeviceSession.create!(
+        staff_id: @staff, principal_public_id: "operator-#{@staff}",
+      ),
+      staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )
     raw = token.rotate_refresh_token!
     _, verifier = OperatorToken.parse_refresh_token(raw)
@@ -491,30 +507,29 @@ class OperatorTokenTest < ActiveSupport::TestCase
   end
 
   test "rotate_refresh! rejects revoked compromised and expired tokens" do
-    revoked_staff = Operator.create!(
-      security_mode_id: SecurityModeConfigurable::ADVANCED,
-      staff_status: OperatorStatus.find(OperatorStatus::NOTHING),
-    )
-    compromised_staff = Operator.create!(
-      security_mode_id: SecurityModeConfigurable::ADVANCED,
-      staff_status: OperatorStatus.find(OperatorStatus::NOTHING),
-    )
-    expired_staff = Operator.create!(
-      security_mode_id: SecurityModeConfigurable::ADVANCED,
-      staff_status: OperatorStatus.find(OperatorStatus::NOTHING),
-    )
+    revoked_staff = 9_000_000_003
+    compromised_staff = 9_000_000_004
+    expired_staff = 9_000_000_005
     revoked = OperatorToken.create!(
       authentication_epoch: 0,
-      staff: revoked_staff, staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
+      staff_id: revoked_staff, device_session: OperatorDeviceSession.create!(
+        staff_id: revoked_staff, principal_public_id: "operator-#{revoked_staff}",
+      ),
+      staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )
     compromised = OperatorToken.create!(
       authentication_epoch: 0,
-      staff: compromised_staff,
+      staff_id: compromised_staff, device_session: OperatorDeviceSession.create!(
+        staff_id: compromised_staff, principal_public_id: "operator-#{compromised_staff}",
+      ),
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )
     expired = OperatorToken.create!(
       authentication_epoch: 0,
-      staff: expired_staff, staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
+      staff_id: expired_staff, device_session: OperatorDeviceSession.create!(
+        staff_id: expired_staff, principal_public_id: "operator-#{expired_staff}",
+      ),
+      staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )
     revoked_raw = revoked.rotate_refresh_token!
     compromised_raw = compromised.rotate_refresh_token!
@@ -547,7 +562,13 @@ class OperatorTokenTest < ActiveSupport::TestCase
   end
 
   test "find_from_signed_ref resolves token when verifier payload has string keys" do
-    token = OperatorToken.create!(authentication_epoch: 0, staff: @staff, staff_token_kind_id: OperatorTokenKind::BROWSER_WEB)
+    token = OperatorToken.create!(
+      authentication_epoch: 0, staff_id: @staff,
+      device_session: OperatorDeviceSession.create!(
+        staff_id: @staff, principal_public_id: "operator-#{@staff}",
+      ),
+      staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
+    )
     signed_ref = Rails.application.message_verifier(:session_ref).generate(
       { "id" => token.id, "pid" => token.public_id },
       expires_in: 1.hour,

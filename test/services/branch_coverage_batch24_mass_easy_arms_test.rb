@@ -53,20 +53,6 @@ class BranchCoverageBatch24MassEasyArmsTest < ActiveSupport::TestCase
     assert_equal ["ticket is not usable"], expired.errors
   end
 
-  test "AuthenticationBulletinGate treats blank bulletin state as expired" do
-    helper = Class.new(ApplicationController) do
-      include AuthenticationBulletinGate
-      include AuthenticationBase
-    end.new
-    helper.set_request!(ActionDispatch::TestRequest.create)
-    helper.set_response!(ActionDispatch::TestResponse.new)
-    helper.define_singleton_method(:session) { @__session ||= {} }
-
-    assert_predicate helper, :bulletin_expired?
-    assert_nil helper.send(:refresh_bulletin_dimension!)
-    assert_nil helper.current_bulletin
-  end
-
   test "RedirectsExternalTargetResolver refuses blank origins" do
     resolver = RedirectsExternalTargetResolver.new(:rp_app, path: "/", query: {}, source: :explicit_external)
     resolver.define_singleton_method(:origin_for) { |_| "" }

@@ -2,9 +2,6 @@
 # frozen_string_literal: true
 
 module ApplicationHelper
-  # Authentication helpers are provided by AuthenticationClient and AuthenticationOperator concerns
-  # No need to define them here - they're already available via helper_method
-
   def page_title(title = nil)
     if title.present?
       content_for(:page_title, title)
@@ -34,11 +31,5 @@ module ApplicationHelper
     classes = ["theme-#{theme}"]
     classes << "dark" if theme == "dark"
     classes.join(" ")
-  end
-
-  # Delegates to the query object so the layout partial and the Inertia shared props read the
-  # banner through one implementation.
-  def current_banner_for(tld:, region:, domain:)
-    CurrentBannerQuery.call(tld: tld, region: region, domain: domain)
   end
 end

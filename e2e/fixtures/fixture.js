@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import { UiGallery } from "../../src/features/ui_gallery/UiGallery";
 
-import "../../src/styles/surfaces/auth_app.css";
+import "../../src/styles/surfaces/visa_app.css";
 
 const root = document.querySelector("#fixture");
 if (!root) {

@@ -15,8 +15,7 @@ class RefreshTokenReuseActivityRecorder
   end
 
   def call
-    audit_class, event_id, actor, surface = audit_target
-    return false unless actor
+    audit_class, event_id, actor_type, actor_id, surface = audit_target
 
     context = {
       token_family_id: @token.refresh_token_family_id,
@@ -24,7 +23,11 @@ class RefreshTokenReuseActivityRecorder
       surface: surface,
       result: @result,
     }.compact
-    AuthenticationAuditWriter.write(audit_class, event_id, resource: actor, actor: actor, context: context)
+    AuthenticationAuditWriter.write_reference(
+      audit_class, event_id,
+      subject_type: actor_type, subject_id: actor_id.to_s,
+      actor_type: actor_type, actor_id: actor_id.to_s, context: context,
+    )
   end
 
   private
@@ -35,14 +38,16 @@ class RefreshTokenReuseActivityRecorder
       [
         ClientChronicle,
         ClientChronicleEvent::REFRESH_TOKEN_REUSE_DETECTED,
-        @token.association(:user).tap { |owner| owner.reset_scope }.scope.take!,
+        "Client",
+        @token.user_id,
         "app",
       ]
     when OperatorToken
       [
         OperatorChronicle,
         OperatorChronicleEvent::REFRESH_TOKEN_REUSE_DETECTED,
-        @token.association(:staff).tap { |owner| owner.reset_scope }.scope.take!,
+        "Operator",
+        @token.staff_id,
         "org",
       ]
     else

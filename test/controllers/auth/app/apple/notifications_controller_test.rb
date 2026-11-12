@@ -1,105 +1,105 @@
+# typed: false
 # frozen_string_literal: true
 
 require "test_helper"
 
 class Auth::App::Apple::NotificationsControllerTest < ActionDispatch::IntegrationTest
-  # Rate-limit counters are a NullStore by default in test so unrelated tests
-  # cannot accumulate them; this file asserts real limiting behavior, so it
-  # opts into a deterministic MemoryStore.
+  self.fixture_table_names = []
+
   rate_limit_counters!
 
   setup do
-    host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL", "auth.app.localhost")
+    host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+    https!
   end
 
-  test "accepts a bounded JSON notification without a browser CSRF token" do
-    result = ExternalAuthenticationAppleNotificationIngress::Result.new(status: :accepted, event: nil)
+  test "signed provider notifications report unavailable and invalid signatures remain unauthorized" do
+    key = OpenSSL::PKey::RSA.generate(2048)
+    attacker_key = OpenSSL::PKey::RSA.generate(2048)
+    now = Time.current
+    claims = {
+      iss: "https://appleid.apple.com",
+      aud: "apple-app",
+      iat: now.to_i,
+      jti: "apple-halt-jti",
+      events: { type: "consent-revoked", sub: "apple-subject", event_time: now.to_i },
+    }
+    loader = ->(_) { { keys: [JWT::JWK.new(key.public_key, kid: "apple-key").export] } }
+    factory =
+      lambda do |jws:|
+        ExternalAuthentication::AppleNotificationVerifier.new(
+          jws: jws, audience: "apple-app", jwks_loader: loader, clock: -> { now },
+        )
+      end
+    [[key, 503], [attacker_key, 401]].each do |signing_key, status|
+      token = JWT.encode(claims, signing_key, "RS256", { kid: "apple-key" })
+      ExternalAuthentication::AppleNotificationVerifier.stub(:from_credentials, factory) do
+        post auth_app_apple_notifications_path, params: { payload: token }.to_json,
+                                                headers: { "CONTENT_TYPE" => "application/json" }
+      end
 
-    ExternalAuthenticationAppleNotificationIngress.stub(:call, ->(**) { result }) do
-      post auth_app_apple_notifications_path,
-           params: { payload: "signed-payload" }.to_json,
-           headers: { "CONTENT_TYPE" => "application/json" }
+      assert_equal status, response.status
+      assert_includes response.headers.fetch("Cache-Control"), "no-store"
+      assert_nil response.headers["Location"]
     end
-
-    assert_response :ok
-    assert_equal "no-store", response.headers["Cache-Control"]
   end
 
-  test "rejects an oversized body before invoking notification ingress" do
+  test "bounded JSON parsing rejects malformed missing and oversized payloads before verification" do
     called = false
+    factory =
+      lambda do |**|
+        called = true
+        raise ExternalAuthentication::AppleNotificationVerifier::VerificationError.new(:signature_or_claims_invalid)
+      end
+    ExternalAuthentication::AppleNotificationVerifier.stub(:from_credentials, factory) do
+      ["{", "[]", "{}", '{"payload":null}', '{"payload":""}'].each do |body|
+        post auth_app_apple_notifications_path, params: body, headers: { "CONTENT_TYPE" => "application/json" }
 
-    ExternalAuthenticationAppleNotificationIngress.stub(:call, ->(**) { called = true }) do
-      post auth_app_apple_notifications_path,
-           params: "",
-           headers: {
-             "CONTENT_TYPE" => "application/json",
-             "CONTENT_LENGTH" => (Auth::App::Apple::NotificationsController::MAXIMUM_BODY_BYTES + 1).to_s,
-           }
+        assert_response :bad_request
+        assert_not called
+      end
+      [32.kilobytes - 1, 32.kilobytes, 32.kilobytes + 1].each do |size|
+        called = false
+        body = { payload: "x" * (size - 14) }.to_json
+
+        assert_equal size, body.bytesize
+        post auth_app_apple_notifications_path, params: body, headers: { "CONTENT_TYPE" => "application/json" }
+
+        assert_equal (size > 32.kilobytes) ? 413 : 401, response.status
+        assert_equal size <= 32.kilobytes, called
+      end
     end
+    post auth_app_apple_notifications_path, params: "payload"
 
-    assert_response :payload_too_large
-    assert_not called
+    assert_response :unsupported_media_type
   end
 
-  test "rejects an invalid signature without creating an inbox event" do
-    error = ExternalAuthentication::AppleNotificationVerifier::VerificationError.new(:signature_or_claims_invalid)
-
-    ExternalAuthenticationAppleNotificationIngress.stub(:call, ->(**) { raise error }) do
-      post auth_app_apple_notifications_path,
-           params: { payload: "invalid" }.to_json,
-           headers: { "CONTENT_TYPE" => "application/json" }
-    end
-
-    assert_response :unauthorized
-    assert_equal 0, ClientAppleNotificationEvent.count
-  end
-
-  test "reports verifier configuration failure as unavailable" do
-    error = ExternalAuthentication::AppleNotificationVerifier::ConfigurationError.new("configuration invalid")
-
-    ExternalAuthenticationAppleNotificationIngress.stub(:call, ->(**) { raise error }) do
-      post auth_app_apple_notifications_path,
-           params: { payload: "signed" }.to_json,
-           headers: { "CONTENT_TYPE" => "application/json" }
+  test "provider verification configuration failures remain unavailable" do
+    factory =
+      lambda do |**|
+        raise ExternalAuthentication::AppleNotificationVerifier::ConfigurationError, "configuration unavailable"
+      end
+    ExternalAuthentication::AppleNotificationVerifier.stub(:from_credentials, factory) do
+      post auth_app_apple_notifications_path, params: { payload: "signed" }.to_json,
+                                              headers: { "CONTENT_TYPE" => "application/json" }
     end
 
     assert_response :service_unavailable
   end
 
-  test "rejects malformed JSON without invoking notification ingress" do
-    called = false
-
-    ExternalAuthenticationAppleNotificationIngress.stub(:call, ->(**) { called = true }) do
-      post auth_app_apple_notifications_path,
-           params: "{",
-           headers: { "CONTENT_TYPE" => "application/json" }
-    end
-
-    assert_response :bad_request
-    assert_not called
-  end
-
-  test "rate limits notification requests by source IP" do
-    result = ExternalAuthenticationAppleNotificationIngress::Result.new(status: :accepted, event: nil)
-
-    ExternalAuthenticationAppleNotificationIngress.stub(:call, ->(**) { result }) do
-      60.times do
-        post(
-          auth_app_apple_notifications_path,
-          params: { payload: "signed-payload" }.to_json,
-          headers: { "CONTENT_TYPE" => "application/json", "REMOTE_ADDR" => "198.51.100.42" },
-        )
-
-        assert_response :ok
+  test "provider requests retain the sixty per minute source IP limit" do
+    factory =
+      lambda do |**|
+        raise ExternalAuthentication::AppleNotificationVerifier::ConfigurationError, "configuration unavailable"
       end
+    ExternalAuthentication::AppleNotificationVerifier.stub(:from_credentials, factory) do
+      61.times do |index|
+        post auth_app_apple_notifications_path, params: { payload: "signed" }.to_json,
+                                                headers: { "CONTENT_TYPE" => "application/json",
+                                                           "REMOTE_ADDR" => "198.51.100.42", }
 
-      post(
-        auth_app_apple_notifications_path,
-        params: { payload: "signed-payload" }.to_json,
-        headers: { "CONTENT_TYPE" => "application/json", "REMOTE_ADDR" => "198.51.100.42" },
-      )
+        assert_equal (index < 60) ? 503 : 429, response.status
+      end
     end
-
-    assert_response :too_many_requests
   end
 end

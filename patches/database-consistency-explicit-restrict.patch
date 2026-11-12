@@ -1,0 +1,669 @@
+diff --git a/lib/database_consistency/checkers/association_checkers/missing_dependent_destroy_checker.rb b/lib/database_consistency/checkers/association_checkers/missing_dependent_destroy_checker.rb
+index 7903fc1..2d11843 100644
+--- a/lib/database_consistency/checkers/association_checkers/missing_dependent_destroy_checker.rb
++++ b/lib/database_consistency/checkers/association_checkers/missing_dependent_destroy_checker.rb
+@@ -19,7 +19,7 @@ module DatabaseConsistency
+       end
+ 
+       def check
+-        if dependent_destroy_exists? || cascade?
++        if dependent_destroy_exists? || database_delete_action?
+           report_template(:ok)
+         else
+           report_template(:fail, error_slug: :missing_dependent_destroy)
+@@ -34,8 +34,8 @@ module DatabaseConsistency
+         end
+       end
+ 
+-      def cascade?
+-        %i[cascade nullify].include? foreign_key.options[:on_delete]
++      def database_delete_action?
++        %i[cascade nullify restrict].include? foreign_key.options[:on_delete]
+       end
+ 
+       def report_template(status, error_slug: nil)
+diff --git a/lib/database_consistency/checkers/index_checkers/unique_index_checker.rb b/lib/database_consistency/checkers/index_checkers/unique_index_checker.rb
+index 45979c6..8b73475 100644
+--- a/lib/database_consistency/checkers/index_checkers/unique_index_checker.rb
++++ b/lib/database_consistency/checkers/index_checkers/unique_index_checker.rb
+@@ -27,21 +27,17 @@ module DatabaseConsistency
+       end
+ 
+       def valid?
+-        uniqueness_validators = model.validators.select { |validator| validator.kind == :uniqueness }
++        uniqueness_validators = model.validators.select { |validator| Helper.uniqueness_validator?(validator) }
+ 
+         uniqueness_validators.any? { |validator| validator_matches?(validator) }
+       end
+ 
+       def validator_matches?(validator)
+         validator.attributes.any? do |attribute|
+-          sorted_index_columns == Helper.sorted_uniqueness_validator_columns(attribute, validator, model) &&
++          Helper.uniqueness_index_columns_match?(index, attribute, validator, model) &&
+             Helper.conditions_match_index?(model, attribute, validator, index.where)
+         end
+       end
+-
+-      def sorted_index_columns
+-        @sorted_index_columns ||= Helper.extract_index_columns(index.columns).sort
+-      end
+     end
+   end
+ end
+diff --git a/lib/database_consistency/checkers/validator_checkers/missing_unique_index_checker.rb b/lib/database_consistency/checkers/validator_checkers/missing_unique_index_checker.rb
+index 0fe7c76..d27e96f 100644
+--- a/lib/database_consistency/checkers/validator_checkers/missing_unique_index_checker.rb
++++ b/lib/database_consistency/checkers/validator_checkers/missing_unique_index_checker.rb
+@@ -19,7 +19,7 @@ module DatabaseConsistency
+       # We skip check when:
+       #  - validator is not a uniqueness validator
+       def preconditions
+-        validator.kind == :uniqueness
++        Helper.uniqueness_validator?(validator)
+       end
+ 
+       # Table of possible statuses
+@@ -53,11 +53,13 @@ module DatabaseConsistency
+ 
+       def index_matches?(index)
+         index.unique &&
+-          Helper.extract_index_columns(index.columns).sort == sorted_uniqueness_validator_columns &&
++          Helper.uniqueness_index_columns_match?(index, attribute, validator, model) &&
+           Helper.conditions_match_index?(model, attribute, validator, index.where)
+       end
+ 
+       def primary_key_covers_validation?
++        return false if Helper.jsonb_keys_validator?(validator)
++
+         primary_key = model.connection_pool.with_connection { |conn| conn.primary_key(model.table_name) }
+ 
+         return false if primary_key.blank?
+diff --git a/lib/database_consistency/checkers/validators_fraction_checkers/column_presence_checker.rb b/lib/database_consistency/checkers/validators_fraction_checkers/column_presence_checker.rb
+index 48bacab..00f8f24 100644
+--- a/lib/database_consistency/checkers/validators_fraction_checkers/column_presence_checker.rb
++++ b/lib/database_consistency/checkers/validators_fraction_checkers/column_presence_checker.rb
+@@ -35,16 +35,22 @@ module DatabaseConsistency
+         )
+       end
+ 
+-      def weak_option?
+-        validators.all? do |validator|
++      def weak_option?(column_name)
++        (validators + column_presence_validators(column_name)).all? do |validator|
+           result = validator.options.slice(*WEAK_OPTIONS).any?
+ 
+-          result = false if required_with_if?(validator)
++          result = false if validators.include?(validator) && required_with_if?(validator)
+ 
+           result
+         end
+       end
+ 
++      def column_presence_validators(column_name)
++        return [] unless association
++
++        model._validators.fetch(column_name.to_sym, []).select { |validator| filter(validator) }
++      end
++
+       def belongs_to_required_validates_foreign_key_disabled?
+         ActiveRecord.version >= Gem::Version.new('7.1.0') &&
+           !ActiveRecord.belongs_to_required_validates_foreign_key
+@@ -77,7 +83,7 @@ module DatabaseConsistency
+         return if field.nil?
+ 
+         can_be_null = field.null
+-        has_weak_option = weak_option?
++        has_weak_option = weak_option?(column_name)
+ 
+         return report_template(:ok, column_name: column_name) if can_be_null == has_weak_option
+         return report_template(:fail, error_slug: :possible_null, column_name: column_name) unless can_be_null
+diff --git a/lib/database_consistency/helper.rb b/lib/database_consistency/helper.rb
+index ac7fa94..78aeb5a 100644
+--- a/lib/database_consistency/helper.rb
++++ b/lib/database_consistency/helper.rb
+@@ -98,12 +98,75 @@ module DatabaseConsistency
+                    .map { |str| str.gsub(/'([^)]+)'::\w+/, '\1') }
+     end
+ 
++    def uniqueness_validator?(validator)
++      %i[uniqueness jsonb_keys_uniqueness].include?(validator.kind)
++    end
++
++    def jsonb_keys_validator?(validator)
++      validator.kind == :jsonb_keys_uniqueness
++    end
++
++    def valid_jsonb_keys?(validator)
++      keys = validator.options[:keys]
++      keys.is_a?(Array) && !keys.empty? && keys.uniq == keys &&
++        keys.all? { |key| key.is_a?(String) && !key.empty? } &&
++        validator.options[:case_sensitive] != false
++    end
++
++    def uniqueness_index_columns_match?(index, attribute, validator, model)
++      unless jsonb_keys_validator?(validator)
++        return extract_index_columns(index.columns).sort ==
++               sorted_uniqueness_validator_columns(attribute, validator, model)
++      end
++      return false unless valid_jsonb_keys?(validator)
++
++      jsonb_index_columns(index.columns) == jsonb_validator_columns(attribute, validator, model)
++    end
++
++    def jsonb_validator_columns(attribute, validator, model)
++      columns = validator.options[:keys].map { |key| ['jsonb', attribute.to_s, key] }
++      columns.concat(scope_columns(validator, model).map { |column| ['column', column.to_s] }).sort
++    end
++
++    # Only complete text-extraction expressions and plain scope columns match.
++    # Mask literals before splitting so commas and parentheses inside keys keep
++    # their exact meaning. Unsupported SQL expressions fail closed.
++    def jsonb_index_columns(columns)
++      return nil unless columns.is_a?(String)
++
++      masked, literals = mask_condition_literals(columns)
++      parsed = masked.split(',').map do |column|
++        jsonb_index_column(Parentheses.strip_outer(column), literals)
++      end
++      parsed.sort unless parsed.include?(nil)
++    end
++
++    JSONB_INDEX_IDENTIFIER = /[a-zA-Z_][a-zA-Z_0-9]*|"[a-zA-Z_][a-zA-Z_0-9]*"/.freeze
++    JSONB_INDEX_EXTRACTION = /
++      \A (#{JSONB_INDEX_IDENTIFIER}) \s* ->> \s*
++      (__DATABASE_CONSISTENCY_LITERAL<\d+>__) (?: ::text )? \z
++    /x.freeze
++
++    def jsonb_index_column(column, literals)
++      if (match = JSONB_INDEX_EXTRACTION.match(column))
++        key = unmask_condition_literals(match[2], literals)
++        ['jsonb', match[1].delete('"'), key[1..-2].gsub("''", "'")]
++      elsif column.match?(/\A(?:#{JSONB_INDEX_IDENTIFIER})\z/)
++        ['column', column.delete('"')]
++      end
++    end
++
+     def sorted_uniqueness_validator_columns(attribute, validator, model)
+       uniqueness_validator_columns(attribute, validator, model).sort
+     end
+ 
+     def uniqueness_validator_columns(attribute, validator, model)
+-      ([wrapped_attribute_name(attribute, validator, model)] + scope_columns(validator, model)).map(&:to_s)
++      attributes = if jsonb_keys_validator?(validator) && valid_jsonb_keys?(validator)
++                     validator.options[:keys].map { |key| "#{attribute} ->> '#{key.gsub("'", "''")}'" }
++                   else
++                     [wrapped_attribute_name(attribute, validator, model)]
++                   end
++      (attributes + scope_columns(validator, model)).map(&:to_s)
+     end
+ 
+     def scope_columns(validator, model)
+@@ -179,11 +242,21 @@ module DatabaseConsistency
+     def conditions_match_index?(model, attribute, validator, index_where)
+       validator_where = uniqueness_validator_where_sql(model, attribute, validator)
+       return true if validator_where.nil? && index_where.blank?
+-      return true if index_where.blank? && validator_guard_only?(model, attribute, validator)
+-      return false if validator_where.nil? || index_where.blank?
++      return validator_guard_only?(model, attribute, validator) if index_where.blank?
++      return false if validator_where.nil?
+ 
+       normalized_where = normalize_condition_sql(index_where)
+-      validator_where.casecmp?(normalized_where)
++      return true if validator_where.casecmp?(normalized_where)
++
++      null_guard_matches_index?(model, attribute, validator, validator_where, normalized_where)
++    end
++
++    def null_guard_matches_index?(model, attribute, validator, validator_where, index_where)
++      return false unless validator.options[:conditions] && validator.options[:allow_nil] &&
++                          !validator.options[:allow_blank]
++
++      guard_sql = uniqueness_validator_guard_sql(model, attribute, validator)
++      normalize_condition_sql("(#{validator_where}) AND #{guard_sql}").casecmp?(index_where)
+     end
+ 
+     # Prefix used to mask string literals while regex normalization runs, so
+diff --git a/spec/checkers/column_presence_checker_spec.rb b/spec/checkers/column_presence_checker_spec.rb
+index a2231df..df83176 100644
+--- a/spec/checkers/column_presence_checker_spec.rb
++++ b/spec/checkers/column_presence_checker_spec.rb
+@@ -150,6 +150,127 @@ RSpec.describe DatabaseConsistency::Checkers::ColumnPresenceChecker, :sqlite, :m
+     end
+   end
+ 
++  context 'when the association foreign key has no separate validator' do
++    let(:attribute) { :user }
++    let(:klass) do
++      define_class do |record|
++        record.belongs_to :user, optional: true
++        record.validates :user, presence: true, on: :create
++      end
++    end
++
++    before { define_database_with_entity { |table| table.string :user_id, null: false } }
++
++    it 'does not mutate the validators hash while the processor iterates it' do
++      keys = klass._validators.keys
++      reports = []
++      klass._validators.each do |name, entries|
++        reports << described_class.new(klass, name, entries).report
++      end
++
++      expect(klass._validators.keys).to eq(keys)
++      expect(reports.flatten).to include(have_attributes(status: :fail, error_slug: :possible_null))
++    end
++  end
++
++  context 'when a conditional association validation and its foreign key validation coexist' do
++    let(:attribute) { :user }
++
++    before do
++      define_database_with_entity { |table| table.string :user_id, null: false }
++    end
++
++    context 'when the foreign key has unconditional presence' do
++      let(:klass) do
++        define_class do |record|
++          record.belongs_to :user, optional: true
++          record.validates :user, presence: true, on: :create
++          record.validates :user_id, presence: true
++        end
++      end
++
++      it 'recognizes the unconditional foreign key validation' do
++        expect(checker.report.first).to have_attributes(status: :ok, error_slug: nil)
++      end
++    end
++
++    context 'when the conditional foreign key validator uses the required message' do
++      let(:klass) do
++        define_class do |record|
++          record.belongs_to :user, optional: true
++          record.validates :user, presence: true, on: :create
++          record.validates :user_id, presence: { message: :required }, if: -> { false }
++        end
++      end
++
++      it 'does not confuse the scalar condition with Rails required-association internals' do
++        expect(checker.report.first).to have_attributes(status: :fail, error_slug: :possible_null)
++      end
++    end
++
++    %i[if unless on allow_nil allow_blank].each do |option|
++      context "when foreign key presence has a weak #{option} option" do
++        let(:klass) do
++          define_class do |record|
++            record.belongs_to :user, optional: true
++            record.validates :user, presence: true, on: :create
++            value = case option
++                    when :on then :create
++                    when :if, :unless then -> { true }
++                    else true
++                    end
++            record.validates :user_id, presence: true, option => value
++          end
++        end
++
++        it 'keeps reporting the nullable validation path' do
++          expect(checker.report.first).to have_attributes(status: :fail, error_slug: :possible_null)
++        end
++      end
++    end
++  end
++
++  context 'when strong foreign key presence has no database null constraint' do
++    let(:attribute) { :user }
++    let(:klass) do
++      define_class do |record|
++        record.belongs_to :user, optional: true
++        record.validates :user, presence: true, on: :create
++        record.validates :user_id, presence: true
++      end
++    end
++
++    before { define_database_with_entity { |table| table.string :user_id } }
++
++    it 'still reports the missing database null constraint' do
++      expect(checker.report.first).to have_attributes(status: :fail, error_slug: :association_missing_null_constraint)
++    end
++  end
++
++  context 'with polymorphic belongs_to and presence only on its foreign key' do
++    let(:attribute) { :subject }
++    let(:klass) do
++      define_class do |record|
++        record.belongs_to :subject, polymorphic: true, optional: true
++        record.validates :subject, presence: true, on: :create
++        record.validates :subject_id, presence: true
++      end
++    end
++
++    before do
++      define_database_with_entity do |table|
++        table.integer :subject_id, null: false
++        table.string :subject_type, null: false
++      end
++    end
++
++    it 'recognizes the key but still flags the independently unvalidated type' do
++      expect(checker.report.first).to have_attributes(status: :ok, column_name: 'subject_id')
++      expect(checker.report.last).to have_attributes(status: :fail, error_slug: :possible_null,
++                                                     column_name: 'subject_type')
++    end
++  end
++
+   context 'with polymorphic belongs_to association' do
+     before do
+       define_database_with_entity do |table|
+diff --git a/spec/checkers/missing_dependent_destroy_checker_spec.rb b/spec/checkers/missing_dependent_destroy_checker_spec.rb
+index 25bc176..51f0ce9 100644
+--- a/spec/checkers/missing_dependent_destroy_checker_spec.rb
++++ b/spec/checkers/missing_dependent_destroy_checker_spec.rb
+@@ -158,3 +158,70 @@ RSpec.describe DatabaseConsistency::Checkers::MissingDependentDestroyChecker, :s
+     end
+   end
+ end
++
++RSpec.describe DatabaseConsistency::Checkers::MissingDependentDestroyChecker, :postgresql do
++  subject(:report) { described_class.new(entity_class, entity_class.reflect_on_association(:thing)).report }
++
++  let!(:thing_class) { define_class('Thing', 'things') }
++  let!(:entity_class) do
++    define_class do |klass|
++      klass.belongs_to :thing
++    end
++  end
++
++  before do
++    action = delete_action
++    define_database do
++      create_table :things
++      create_table :entities do |table|
++        table.integer :thing_id
++        table.foreign_key :things, on_delete: action
++      end
++    end
++  end
++
++  context 'when the foreign key explicitly restricts deletion without a reverse association' do
++    let(:delete_action) { :restrict }
++
++    it 'recognizes the database deletion protection' do
++      expect(report).to have_attributes(status: :ok, error_slug: nil)
++    end
++  end
++
++  context 'when the foreign key has no explicit delete action or reverse association' do
++    let(:delete_action) { nil }
++
++    it 'still reports the missing deletion contract' do
++      expect(report).to have_attributes(status: :fail, error_slug: :missing_dependent_destroy)
++    end
++  end
++
++  context 'when the foreign key cascades deletion without a reverse association' do
++    let(:delete_action) { :cascade }
++
++    it 'retains recognition of cascading deletion' do
++      expect(report).to have_attributes(status: :ok, error_slug: nil)
++    end
++  end
++
++  context 'when the foreign key nullifies references without a reverse association' do
++    let(:delete_action) { :nullify }
++
++    it 'retains recognition of reference nullification' do
++      expect(report).to have_attributes(status: :ok, error_slug: nil)
++    end
++  end
++
++  context 'when only the reverse association explicitly restricts deletion' do
++    let(:delete_action) { nil }
++    let!(:thing_class) do
++      define_class 'Thing', 'things' do |klass|
++        klass.has_many :entities, dependent: :restrict_with_exception
++      end
++    end
++
++    it 'retains recognition of the model deletion protection' do
++      expect(report).to have_attributes(status: :ok, error_slug: nil)
++    end
++  end
++end
+diff --git a/spec/checkers/jsonb_keys_uniqueness_spec.rb b/spec/checkers/jsonb_keys_uniqueness_spec.rb
+new file mode 100644
+index 0000000..17fd40c
+--- /dev/null
++++ b/spec/checkers/jsonb_keys_uniqueness_spec.rb
+@@ -0,0 +1,156 @@
++# frozen_string_literal: true
++
++RSpec.describe 'JSONB key uniqueness index matching', :postgresql do
++  let(:keys) { %w[transaction_public_id halt_generation] }
++  let(:options) { { keys: keys, conditions: -> { where(event_id: 18) } } }
++  let(:validator) do
++    double('JSONB key validator', kind: :jsonb_keys_uniqueness, attributes: [:context], options: options)
++  end
++  let(:model) { define_class }
++  let(:expression) { "(context ->> 'transaction_public_id'), (context ->> 'halt_generation')" }
++  let(:predicate) { 'event_id = 18' }
++  let(:unique) { true }
++
++  before do
++    define_database_with_entity do |table|
++      table.jsonb :context
++      table.jsonb :other_context
++      table.integer :event_id
++      table.integer :account_id
++      table.index expression, unique: unique, name: 'jsonb_keys_index', where: predicate
++    end
++    allow(model).to receive(:validators).and_return([validator])
++  end
++
++  let(:index) { model.connection_pool.with_connection { |connection| connection.indexes(model.table_name).first } }
++  let(:index_report) { DatabaseConsistency::Checkers::UniqueIndexChecker.new(model, index).report }
++  let(:validator_report) do
++    DatabaseConsistency::Checkers::MissingUniqueIndexChecker.new(model, :context, validator).report
++  end
++
++  it 'matches the real PostgreSQL expression index in both directions' do
++    expect(index.columns).to include('::text')
++    expect(index_report.status).to eq(:ok)
++    expect(validator_report.status).to eq(:ok)
++  end
++
++  context 'with keys in reversed order' do
++    let(:keys) { %w[halt_generation transaction_public_id] }
++
++    it 'matches in both directions' do
++      expect(index_report.status).to eq(:ok)
++      expect(validator_report.status).to eq(:ok)
++    end
++  end
++
++  context 'with an ordinary scope' do
++    let(:options) { super().merge(scope: :account_id) }
++    let(:expression) { "#{super()}, account_id" }
++
++    it 'matches the scope as well as the exact JSON keys' do
++      expect(index_report.status).to eq(:ok)
++      expect(validator_report.status).to eq(:ok)
++    end
++  end
++
++  context 'with punctuation, quotes and case in keys' do
++    let(:keys) { ["A,b' (x)", 'lower(Key)'] }
++    let(:expression) { "(context ->> 'A,b'' (x)'), (context ->> 'lower(Key)')" }
++
++    it 'preserves literal key contents' do
++      expect(index_report.status).to eq(:ok)
++      expect(validator_report.status).to eq(:ok)
++    end
++  end
++
++  {
++    'a wrong key' => %w[transaction_public_id wrong],
++    'a missing key' => %w[transaction_public_id],
++    'an extra key' => %w[transaction_public_id halt_generation extra],
++    'a differently cased key' => %w[Transaction_public_id halt_generation],
++    'duplicate metadata' => %w[transaction_public_id transaction_public_id],
++    'empty metadata' => [],
++    'missing metadata' => nil,
++    'non-string metadata' => %i[transaction_public_id halt_generation],
++    'an empty key' => ['', 'halt_generation']
++  }.each do |description, declared_keys|
++    context "with #{description}" do
++      let(:keys) { declared_keys }
++
++      it 'fails both directions' do
++        expect(index_report.status).to eq(:fail)
++        expect(validator_report.status).to eq(:fail)
++      end
++    end
++  end
++
++  {
++    'a different JSON column' => "(other_context ->> 'transaction_public_id'), (context ->> 'halt_generation')",
++    'the JSON rather than text operator' => "(context -> 'transaction_public_id'), (context -> 'halt_generation')",
++    'an additional expression' => "(context ->> 'transaction_public_id'), (context ->> 'halt_generation'), account_id",
++    'a wrapped function' => "lower(context ->> 'transaction_public_id'), (context ->> 'halt_generation')"
++  }.each do |description, index_expression|
++    context "with #{description}" do
++      let(:expression) { index_expression }
++
++      it 'fails both directions' do
++        expect(index_report.status).to eq(:fail)
++        expect(validator_report.status).to eq(:fail)
++      end
++    end
++  end
++
++  context 'with a different partial predicate' do
++    let(:predicate) { 'event_id = 19' }
++
++    it 'fails both directions' do
++      expect(index_report.status).to eq(:fail)
++      expect(validator_report.status).to eq(:fail)
++    end
++  end
++
++  context 'with no partial predicate' do
++    let(:predicate) { nil }
++
++    it 'fails both directions' do
++      expect(index_report.status).to eq(:fail)
++      expect(validator_report.status).to eq(:fail)
++    end
++  end
++
++  context 'with a missing scope column' do
++    let(:options) { super().merge(scope: :account_id) }
++
++    it 'fails both directions' do
++      expect(index_report.status).to eq(:fail)
++      expect(validator_report.status).to eq(:fail)
++    end
++  end
++
++  context 'with distinct literal whitespace' do
++    let(:keys) { ['transaction public_id', 'halt_generation'] }
++    let(:expression) { "(context ->> 'transaction  public_id'), (context ->> 'halt_generation')" }
++
++    it 'does not normalize distinct JSON keys together' do
++      expect(index_report.status).to eq(:fail)
++      expect(validator_report.status).to eq(:fail)
++    end
++  end
++
++  context 'with unsupported case-insensitive extraction' do
++    let(:options) { super().merge(case_sensitive: false) }
++
++    it 'fails both directions' do
++      expect(index_report.status).to eq(:fail)
++      expect(validator_report.status).to eq(:fail)
++    end
++  end
++
++  context 'with no unique constraint' do
++    let(:unique) { false }
++
++    it 'reports the missing unique index' do
++      expect(validator_report.status).to eq(:fail)
++    end
++  end
++end
+diff --git a/spec/checkers/partial_null_guard_uniqueness_spec.rb b/spec/checkers/partial_null_guard_uniqueness_spec.rb
+new file mode 100644
+index 0000000..c500931
+--- /dev/null
++++ b/spec/checkers/partial_null_guard_uniqueness_spec.rb
+@@ -0,0 +1,69 @@
++# frozen_string_literal: true
++
++RSpec.describe 'Partial uniqueness with a null-skipping validator', :postgresql do
++  let(:klass) do
++    define_class do |model|
++      model.validates :owner_id, uniqueness: { scope: :purpose, conditions: -> { where(status_id: [10, 20, 30]) } },
++                                 allow_nil: allow_nil
++    end
++  end
++  let(:allow_nil) { true }
++  let(:predicate) { 'owner_id IS NOT NULL AND status_id IN (10, 20, 30)' }
++  let(:validator) { klass.validators.find { |item| item.kind == :uniqueness } }
++  let(:index) { klass.connection_pool.with_connection { |connection| connection.indexes(klass.table_name).first } }
++  let(:index_report) { DatabaseConsistency::Checkers::UniqueIndexChecker.new(klass, index).report }
++  let(:validator_report) do
++    DatabaseConsistency::Checkers::MissingUniqueIndexChecker.new(klass, :owner_id, validator).report
++  end
++
++  before do
++    define_database_with_entity do |table|
++      table.integer :owner_id
++      table.string :purpose
++      table.integer :status_id
++      table.integer :other_id
++      table.index %i[owner_id purpose], unique: true, name: 'partial_guard_index', where: predicate
++    end
++  end
++
++  it 'matches the equivalent PostgreSQL index in both directions' do
++    expect(index_report.status).to eq(:ok)
++    expect(validator_report.status).to eq(:ok)
++  end
++
++  context 'when nil is validated rather than skipped' do
++    let(:allow_nil) { false }
++
++    it 'does not equate a null-excluding index with a validator that checks nil' do
++      expect(index_report.status).to eq(:fail)
++      expect(validator_report.status).to eq(:fail)
++    end
++  end
++
++  context 'when the guard excludes a different column' do
++    let(:predicate) { 'other_id IS NOT NULL AND status_id IN (10, 20, 30)' }
++
++    it 'reports the mismatch in both directions' do
++      expect(index_report.status).to eq(:fail)
++      expect(validator_report.status).to eq(:fail)
++    end
++  end
++
++  context 'when the guarded status set differs' do
++    let(:predicate) { 'owner_id IS NOT NULL AND status_id IN (10, 20)' }
++
++    it 'reports the mismatch in both directions' do
++      expect(index_report.status).to eq(:fail)
++      expect(validator_report.status).to eq(:fail)
++    end
++  end
++
++  context 'when null guard is an alternative rather than a conjunction' do
++    let(:predicate) { 'owner_id IS NOT NULL OR status_id IN (10, 20, 30)' }
++
++    it 'reports the mismatch in both directions' do
++      expect(index_report.status).to eq(:fail)
++      expect(validator_report.status).to eq(:fail)
++    end
++  end
++end

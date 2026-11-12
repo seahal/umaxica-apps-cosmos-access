@@ -15,25 +15,25 @@ vi.mock("@inertiajs/react", () => ({
 const layout = () => null;
 
 describe("surface page resolver", () => {
-  test("resolves a page from its Auth surface glob and attaches the layout", () => {
+  test("resolves a page from its Visa surface glob and attaches the layout", () => {
     const resolve = surfacePageResolver(
-      { "../../pages/auth/app/sign_ins/new.tsx": { default: () => null } },
-      "auth/app",
+      { "../../pages/visa/app/oidc/logouts/show.tsx": { default: () => null } },
+      "visa/app",
       layout,
     );
 
-    expect(resolve("auth/app/sign_ins/new").default.layout).toEqual([layout]);
+    expect(resolve("visa/app/oidc/logouts/show").default.layout).toEqual([layout]);
   });
 
   test("rejects another surface's page", () => {
     const resolve = surfacePageResolver(
-      { "../../pages/auth/app/sign_ins/new.tsx": { default: () => null } },
-      "auth/app",
+      { "../../pages/visa/app/oidc/logouts/show.tsx": { default: () => null } },
+      "visa/app",
       layout,
     );
 
-    expect(() => resolve("visa/app/oidc/logouts/show")).toThrow(
-      /does not belong to the "auth\/app" surface/u,
+    expect(() => resolve("visa/org/oidc/logouts/show")).toThrow(
+      /does not belong to the "visa\/app" surface/u,
     );
   });
 
@@ -98,7 +98,7 @@ describe("bootSurfaceInertiaApp", () => {
   test("applies the Auth theme cookie on boot and when it changes", async () => {
     document.cookie = "ct=dr; path=/";
 
-    await bootSurfaceInertiaApp({}, "auth/app");
+    await bootSurfaceInertiaApp({}, "visa/app");
     await vi.waitFor(() => expect(document.documentElement.dataset["theme"]).toBe("dark"));
 
     await cookieStore.set({ name: "ct", value: "li" });

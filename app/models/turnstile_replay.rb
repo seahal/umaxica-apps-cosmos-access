@@ -24,6 +24,7 @@
 #
 class TurnstileReplay < OpBaseAppRecord
   validates :ceremony_id, :token_digest, :expires_at, presence: true
+  validates :token_digest, uniqueness: true
 
   def self.digest_token(token)
     Digest::SHA256.hexdigest(token.to_s)

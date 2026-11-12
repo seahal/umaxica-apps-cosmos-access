@@ -83,8 +83,11 @@ class RuntimeRoleRouteOwnershipTest < ActiveSupport::TestCase
   end
 
   test "domain owner APIs belong to their domain authority" do
-    assert_equal "domain-avatar", RuntimeRole.route_owner("base/app/api/v0/avatar/avatars")
-    assert_equal "domain-publishing", RuntimeRole.route_owner("base/org/api/v0/publishing/entries")
+    assert_raises(RuntimeRole::UnownedRoute) { RuntimeRole.route_owner("base/app/api/v0/avatar/avatars") }
+    assert_raises(RuntimeRole::UnownedRoute) { RuntimeRole.route_owner("base/org/api/v0/publishing/entries") }
+    assert_raises(RuntimeRole::UnownedRoute) { RuntimeRole.route_owner("docs/app/roots") }
+    assert_not_includes RuntimeRole::ALL, "domain-avatar"
+    assert_not_includes RuntimeRole::ALL, "domain-publishing"
     assert_equal "domain-org", RuntimeRole.route_owner("base/org/api/v0/support/accounts")
   end
 

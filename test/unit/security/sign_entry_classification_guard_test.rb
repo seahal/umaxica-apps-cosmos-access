@@ -35,18 +35,18 @@ module Security
                    "Reachable Auth actions must declare a Sign Entry classification:\n#{missing.join("\n")}"
     end
 
-    test "the Auth application controllers carry no default classification" do
-      # A default on the application controller would turn every future undeclared entry
-      # controller into an implicit exclusion.
-      assert_nil Auth::App::ApplicationController.sign_entry_classification_value
-      assert_nil Auth::Org::ApplicationController.sign_entry_classification_value
+    test "unavailable ceremonies have an explicit exclusion and no standby bypass" do
+      [Auth::App::UnavailableCeremoniesController, Auth::Org::UnavailableCeremoniesController].each do |controller|
+        assert_equal :excluded, controller.sign_entry_classification_value
+        assert_match(/unavailable/, controller.sign_entry_classification_reason)
+        assert_not_predicate controller, :sign_entry_standby_only?
+      end
+      assert_empty SignEntryClassification::STANDBY_ONLY_CONTROLLERS
     end
 
     test "every Auth controller declares one of the closed classifications" do
       invalid =
         auth_controller_classes.filter_map do |controller_class|
-          next if unreserved_application_controller?(controller_class)
-
           value = controller_class.sign_entry_classification_value
           next "#{controller_class.name}: undeclared" if value.nil?
 
@@ -78,6 +78,8 @@ module Security
       mismatched =
         auth_controller_classes.filter_map do |controller_class|
           value = controller_class.sign_entry_classification_value
+          next unless %i(sign_in sign_up).include?(value)
+
           expected =
             case value
             when :sign_in
@@ -93,20 +95,6 @@ module Security
       assert_empty mismatched,
                    "Sign In and Sign Up controllers must not carry the other flow's classification:\n" \
                    "#{mismatched.join("\n")}"
-    end
-
-    test "standby-only Emergency entry is an explicit exemption from the normal Sign In stop" do
-      standby_classes = [
-        Auth::Org::Sign::In::Emergency::PasskeysController,
-        Auth::Org::Sign::In::Emergency::Passkey::OptionsController,
-        Auth::Org::Sign::In::Emergency::Passkey::VerificationsController,
-      ]
-
-      standby_classes.each do |controller_class|
-        assert_equal :sign_in, controller_class.sign_entry_classification_value, controller_class.name
-        assert_predicate controller_class, :sign_entry_standby_only?, controller_class.name
-        assert_match(/standby/i, controller_class.sign_entry_classification_reason, controller_class.name)
-      end
     end
 
     test "parent_intent resolves its flow from the verified parent, never request parameters" do
@@ -209,10 +197,6 @@ module Security
         relative = path.relative_path_from(Rails.root.join("app/controllers")).to_s.delete_suffix(".rb")
         "#{relative.camelize}Controller".safe_constantize
       end.uniq
-    end
-
-    def unreserved_application_controller?(controller_class)
-      [Auth::App::ApplicationController, Auth::Org::ApplicationController].include?(controller_class)
     end
   end
 end

@@ -5,6 +5,8 @@ require "test_helper"
 # require "helpers/global_test_support"
 
 class ApplicationPolicyActorContextTest < ActiveSupport::TestCase
+  self.fixture_table_names = []
+
   class ActorFirstPolicy < ApplicationPolicy
     def show?
       actor.is_a?(Actor::Context) && user.equal?(record)
@@ -20,7 +22,7 @@ class ApplicationPolicyActorContextTest < ActiveSupport::TestCase
   end
 
   test "application policy receives actor context as primary context" do
-    client = clients(:one)
+    client = Object.new
     context = Actor.context.with(subject: client, actor_type: :client)
     policy = ActorFirstPolicy.new(client, actor: context)
 
@@ -30,7 +32,7 @@ class ApplicationPolicyActorContextTest < ActiveSupport::TestCase
   end
 
   test "legacy user context remains compatible" do
-    client = clients(:one)
+    client = Object.new
     policy = ActorFirstPolicy.new(client, user: client)
 
     assert_nil policy.actor

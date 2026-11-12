@@ -18,6 +18,10 @@ module Visa
           def create
             confirm_oidc_end_session_logout
           end
+
+          private
+
+          def allow_expired_session_access? = true
         end
       end
     end

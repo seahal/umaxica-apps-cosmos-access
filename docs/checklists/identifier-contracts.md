@@ -36,14 +36,14 @@ criterion.
 - Basis: I03/I06/I07. Scope: self-controlled non-secret opaque IDs, regardless of column name.
 - Given an ordinary new resource, create it through normal, validation-disabled and bulk writers.
   New IDs use the one approved CSPRNG-backed NanoID mechanism, length 21 and the library alphabet;
-  standard string/varchar capacity is 25. The shared `PublicId` model boundary enforces that storage
-  maximum separately from the 21-character generator. Ordinary clients cannot supply their own
+  standard string/varchar storage is 21 with an exact-length CHECK and model validation, under the
+  accepted 2026-10-20 ADR amendment. The shared `PublicId` model boundary's remaining maximum-25
+  implementation is a gap, not the storage contract. Ordinary clients cannot supply their own
   resource identity. Explicit authorized imports have a separate contract. Read/update does not
   regenerate a missing ID.
 - Empty/whitespace/NULL/oversized values are refused as applicable to the classified role. Test new
-  issuance length independently of storage at 24/25/26; explicitly supported legacy forms remain
-  valid. Storage capacity is neither permission to issue arbitrary 1–25 lengths nor an unconditional
-  length=21 CHECK. No truncation, case conversion, business meaning, binary/char conversion or
+  issuance and storage at 20/21/22; separately classified references and protocol values retain
+  their explicit contracts. No truncation, case conversion, business meaning, binary/char conversion or
   test-only bypass.
 - Check: [PublicId tests](../../test/models/concerns/public_id_test.rb), current generator source,
   model/reference validations, API schemas, forms, fixtures/seeds and direct PostgreSQL writes.

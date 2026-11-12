@@ -3,29 +3,42 @@
 require "test_helper"
 
 class OidcLogoutEnqueueFailureTest < ActionDispatch::IntegrationTest
-  include AuthorityStopCleanup
-
   self.use_transactional_tests = false
-  fixtures :clients
+  self.fixture_table_names = []
 
   setup do
-    @actor = clients(:one)
-    @root = ClientToken.create!(authentication_epoch: 0, user: @actor, user_token_kind_id: ClientTokenKind::BROWSER_WEB)
+    @root = ClientToken.create!(
+      authentication_epoch: 0, user_id: 1001,
+      device_session: ClientDeviceSession.create!(
+        user_id: 1001, principal_public_id: PublicId.generate,
+      ),
+      user_token_kind_id: ClientTokenKind::BROWSER_WEB,
+    )
     @grant = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: @root, oidc_client_id: "core-app-jp", oidc_scope: "openid",
+      authentication_epoch: 0, client_token_id: @root.id, device_session_id: @root.device_session_id,
+      oidc_client_id: "core-app-jp", oidc_scope: "openid",
       oidc_jti: SecureRandom.uuid, last_used_at: Time.current, refresh_token_expires_at: 1.day.from_now,
     )
-    @visa_host = visa_host_for_test_surface(:app)
-    @visa_token = AuthenticationToken.encode(
-      @actor, host: @visa_host, resource_type: "client", session_public_id: @root.device_session.public_id,
-              oidc_sid: @root.device_session.public_id, oidc_jti: @root.oidc_jti,
-              jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type("client"),
-              authentication_context: @root.authentication_context_value.to_s,
+    @visa_host = OidcIssuer.host_for_resource_type("client")
+    payload = AuthorizationTokenClaims.build(
+      resource: nil, subject: @root.user_id.to_s, resource_type: "client", issued_at: Time.current,
+      access_token_ttl: 60.seconds, session_public_id: @root.device_session.public_id,
+      oidc_jti: @root.oidc_jti, authentication_context: AuthenticationContextValue::NORMAL_KEY,
+    )
+    @visa_token = JitSecurityJwtKeyring.encode(
+      payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+               issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type("client"),
     )
   end
 
   teardown do
-    delete_authority_stops_for!(realm: "app", root_ids: [@root&.id], grant_ids: [@grant&.id])
+    stop_config = OpAuthorityStopCommitter::REALMS.fetch("app")
+    stop_ids = stop_config.fetch(:root_target).where(root_id: [@root&.id].compact).pluck(:stop_id) +
+      stop_config.fetch(:grant_target).where(grant_id: [@grant&.id].compact).pluck(:stop_id)
+    %i(participant epoch_cutoff grant_target root_target).each do |child|
+      stop_config.fetch(child).where(stop_id: stop_ids).delete_all
+    end
+    stop_config.fetch(:stop).where(id: stop_ids).delete_all
     device_id = @root&.device_session_id
     OpAppGrant.where(id: @grant&.id).delete_all
     ClientToken.where(id: @root&.id).delete_all
@@ -40,7 +53,7 @@ class OidcLogoutEnqueueFailureTest < ActionDispatch::IntegrationTest
       browser.host!(@visa_host)
       browser.https!
       browser.cookies << Rack::Test::Cookie.new(
-        "#{AuthenticationBase::ACCESS_COOKIE_KEY}=#{Rack::Utils.escape(@visa_token)}",
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(@visa_token)}",
         URI.parse("https://#{@visa_host}/"),
       )
       browser.post("/oidc/logout", params: { ri: "jp", lx: "en" })
@@ -67,7 +80,7 @@ class OidcLogoutEnqueueFailureTest < ActionDispatch::IntegrationTest
     browser.host!(@visa_host)
     browser.https!
     browser.cookies << Rack::Test::Cookie.new(
-      "#{AuthenticationBase::ACCESS_COOKIE_KEY}=#{Rack::Utils.escape(@visa_token)}", URI.parse("https://#{@visa_host}/"),
+      "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(@visa_token)}", URI.parse("https://#{@visa_host}/"),
     )
     browser.post("/oidc/logout", params: { ri: "jp", lx: "en" })
 

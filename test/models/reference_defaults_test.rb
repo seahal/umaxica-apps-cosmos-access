@@ -11,14 +11,8 @@ class ReferenceDefaultsTest < ActiveSupport::TestCase
     EmailOccurrenceStatus,
     IpOccurrenceStatus,
     JwtOccurrenceStatus,
-    OperatorPreferenceRegionOption,
     TelephoneOccurrenceStatus,
     ClientOccurrenceStatus,
-    ClientEmailStatus,
-
-    ClientPreferenceLanguageOption,
-    ClientPreferenceRegionOption,
-    ClientStatus,
     ZipOccurrenceStatus,
   ].freeze
 

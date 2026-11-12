@@ -15,7 +15,6 @@ module JitSecurityJwtAnomalyReporter
     "act" => "MISSING_ACT",
     "jti" => "MISSING_JTI",
     "public_id" => "MISSING_PUBLIC_ID",
-    "preference_type" => "MISSING_PREFERENCE_TYPE",
   }.freeze
   EXTRA_KEYS = [].freeze
   MAX_DIAGNOSTIC_TEXT_LENGTH = 255
@@ -34,33 +33,11 @@ module JitSecurityJwtAnomalyReporter
     )
   end
 
-  def report_preference(host:, header: {}, payload: {}, reason:, error: nil, extra: {})
-    context = preference_context(host)
-    report(
-      context: context,
-      host: host,
-      header: header,
-      payload: payload,
-      reason: reason,
-      error: error,
-      extra: extra,
-    )
-  end
-
   def auth_context(resource_type)
     case resource_type.to_s
     when "client" then "AUTH_CLIENT"
     when "operator", "staff" then "AUTH_OPERATOR"
     end
-  end
-
-  def preference_context(host)
-    host_value = host.to_s.downcase
-    return "APP_PREFERENCE" if host_value.include?(".app.") || host_value.start_with?("app.")
-    return "COM_PREFERENCE" if host_value.include?(".com.") || host_value.start_with?("com.")
-    return "ORG_PREFERENCE" if host_value.include?(".org.") || host_value.start_with?("org.")
-
-    nil
   end
 
   def reason_for_missing_claim(error_message)
@@ -99,7 +76,7 @@ module JitSecurityJwtAnomalyReporter
     nil
   end
 
-  private_class_method :auth_context, :preference_context, :report
+  private_class_method :auth_context, :report
 
   def bounded_text(value)
     return unless value.is_a?(String)

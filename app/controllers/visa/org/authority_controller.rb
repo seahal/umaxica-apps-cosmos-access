@@ -9,18 +9,10 @@ module Visa
       include ::RateLimit
       include ::DefaultNoStore
       include ::JumpRtReturnVerification
-      include ::Session
-      include ::PreferenceGlobal
-      include ::BaseAdmissionBrowserBinding
-      include ::AuthenticationOperator
+      include ::AuthenticationBase
+      include ::OpBrowserSessionRequest
+      include ::VisaBrowserRequestContext
       include ::SignErrorResponses
-      include ::SessionLimitGate
-      include ::AuthorizationAudit
-      include ::AuthorizationOperator
-      include ::VerificationOperator
-      include ActionPolicy::Controller
-      include ::ActorSupport
-      include ::Finisher
 
       AUTHENTICATION_MODE = :deny_all
 
@@ -32,14 +24,9 @@ module Visa
 
       layout "visa/org/application"
 
-      authorize :user, through: :current_policy_user
-      authorize :actor, through: :current_actor
-      rescue_from AuthenticationBase::LoginCooldownError, with: :render_login_cooldown
       rescue_from ApplicationError, with: :handle_application_error
       rescue_from ActionController::InvalidCrossOriginRequest, with: :handle_csrf_failure
-      rescue_from ActionPolicy::Unauthorized, with: :handle_authorization_error
-      helper_method :current_actor, :current_account, :current_session_public_id,
-                    :signed_pt_param, :current_operator, :logged_in?, :active_operator?, :logged_in_operator?
+      helper_method :current_session_public_id, :logged_in?
 
       allow_browser versions: :modern
 
@@ -53,29 +40,39 @@ module Visa
         store: rate_limit_store,
         with: -> { render_rate_limited(retry_after: 60) },
       )
-      before_action :set_current_context
-      before_action :reset_flash
-      before_action :set_preferences_cookie
-      before_action :resolve_param_context
-      before_action :set_region
-      before_action :transparent_refresh_access_token, unless: -> { request.format.json? }
-      before_action :set_current_actor
-      before_action :apply_localization_preferences
-      before_action :set_locale
-      before_action :set_timezone
-      before_action :set_color_theme
-      before_action :enforce_verification_if_required
-      before_action :enforce_access_policy!
-      before_action :set_current_observability
-      prepend_around_action :with_actor_lifecycle
+      before_action :normalize_visa_browser_region!
+      around_action :with_visa_request_locale
+      before_action :enforce_op_boundary_mode!
 
       # Rails validates Origin and Fetch Metadata first; require its session-bound token before surface callbacks.
       prepend_before_action :require_authenticity_token_for_unsafe_request!
       protect_from_forgery using: :header_or_legacy_token, with: :exception, prepend: true
       ensure_fqdn_gate_first!
       prepend_before_action :apply_default_no_store
+      prepend_around_action :with_request_actor_lifecycle
 
       private
+
+      def resource_type = "operator"
+
+      def token_class = OperatorToken
+
+      def root_owner_id(root) = root.staff_id
+
+      def browser_risk_payload(root) = { staff_id: root.staff_id, user_token_id: root.public_id }
+
+      def write_browser_refresh_audit(root)
+        AuthenticationAuditWriter.write_reference(
+          OperatorChronicle, OperatorChronicleEvent::TOKEN_REFRESHED,
+          subject_type: "Operator", subject_id: root.staff_id.to_s,
+          actor_type: "Operator", actor_id: root.staff_id.to_s,
+          context: { session_public_id: root.device_session_record.public_id },
+        )
+      end
+
+      def token_dbsc_path = dbsc_canonical_url(visa_org_edge_v0_token_dbsc_path)
+
+      def token_dbsc_url = dbsc_canonical_url(visa_org_edge_v0_token_dbsc_url)
 
       def require_authenticity_token_for_unsafe_request!
         return unless protect_against_forgery?

@@ -10,28 +10,19 @@ module Security
       self.fixture_table_names = []
 
       RETAINED_AUTHORITY_CONTROLLERS = [
-        Auth::App::ApplicationController,
-        Auth::Org::ApplicationController,
         Visa::App::AuthorityController,
         Visa::Org::AuthorityController,
       ].freeze
 
       REQUIRED_ORDER = %i(
-        set_current_context
-        reset_flash
-        set_preferences_cookie
-        resolve_param_context
-        set_region
-        transparent_refresh_access_token
-        set_current_actor
-        apply_localization_preferences
-        set_color_theme
-        enforce_verification_if_required
-        enforce_access_policy!
-        set_current_observability
+        apply_default_no_store
+        enforce_fqdn_availability!
+        require_authenticity_token_for_unsafe_request!
+        verify_jump_return_rt!
+        enforce_op_boundary_mode!
       ).freeze
 
-      test "retained Auth and Visa authority controllers keep reviewed lifecycle order" do
+      test "Visa authorities enforce cache host CSRF and OP boundary in reviewed order" do
         violations =
           RETAINED_AUTHORITY_CONTROLLERS.filter_map do |controller|
             filters = before_filters_for(controller)
@@ -46,19 +37,19 @@ module Security
         assert_empty violations, "Authentication lifecycle callback order drifted:\n#{violations.join("\n")}"
       end
 
-      test "retained Auth and Visa authority controllers always clear Actor in around action" do
+      test "Visa authorities clear request actor state around each request" do
         violations =
           RETAINED_AUTHORITY_CONTROLLERS.filter_map do |controller|
             around_filters =
               controller._process_action_callbacks.filter_map do |callback|
                 callback.filter if callback.kind == :around
               end
-            next if around_filters.include?(:with_actor_lifecycle)
+            next if around_filters.include?(:with_request_actor_lifecycle)
 
             "#{controller.name}: around filters=#{around_filters.inspect}"
           end
 
-        assert_empty violations, "Actor lifecycle cleanup is required:\n#{violations.join("\n")}"
+        assert_empty violations, "Request actor cleanup is required:\n#{violations.join("\n")}"
       end
 
       private

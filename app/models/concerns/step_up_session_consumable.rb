@@ -6,6 +6,8 @@ module StepUpSessionConsumable
 
   class ChallengeError < StandardError; end
 
+  class ChallengeReferenceCollision < ChallengeError; end
+
   public
 
   VERIFICATION_PURPOSES = %w(step_up reauthentication).freeze
@@ -96,11 +98,19 @@ module StepUpSessionConsumable
           )
         end
         return reference
+      rescue ActiveRecord::RecordInvalid => e
+        raise unless e.record.equal?(self) && e.record.errors.size == 1 &&
+          e.record.errors.of_kind?(:passkey_challenge_ref, :taken) && passkey_challenge_ref == reference
+
+        retries += 1
+        raise ChallengeReferenceCollision, "passkey challenge reference collision limit reached" if
+          retries > MAX_CHALLENGE_REF_COLLISION_RETRIES
       rescue ActiveRecord::RecordNotUnique => e
         raise unless passkey_challenge_ref_constraint_names.include?(postgres_constraint_name(e))
 
         retries += 1
-        raise if retries > MAX_CHALLENGE_REF_COLLISION_RETRIES
+        raise ChallengeReferenceCollision, "passkey challenge reference collision limit reached" if
+          retries > MAX_CHALLENGE_REF_COLLISION_RETRIES
       end
     end
   end

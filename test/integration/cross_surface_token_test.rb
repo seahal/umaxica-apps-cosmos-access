@@ -12,17 +12,13 @@ require "test_helper"
 # boundary symmetrically: each token is proven valid on its own surface
 # (control) and rejected on the foreign surface.
 class CrossSurfaceTokenTest < ActionDispatch::IntegrationTest
-  fixtures :clients, :operators
+  self.fixture_table_names = %w(client_tokens operator_tokens client_device_sessions operator_device_sessions)
 
   CHECK_PATH = "/edge/v0/token/check"
 
   setup do
     @app_host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
     @org_host = ENV.fetch("PUBLIC_VISA_STAFF_URL")
-    @user = clients(:one)
-    @staff = operators(:one)
-    ClientToken.where(user: @user).delete_all
-    OperatorToken.where(staff: @staff).delete_all
   end
 
   test "app client access token authenticates on the app surface (control)" do
@@ -65,42 +61,6 @@ class CrossSurfaceTokenTest < ActionDispatch::IntegrationTest
                "org-issued token must not authenticate on the app surface"
   end
 
-  test "app preference token is ignored by the org cookie endpoint" do
-    host = ENV.fetch("PUBLIC_AUTH_STAFF_URL")
-    token = preference_token_for(
-      host: ENV.fetch("PUBLIC_AUTH_SERVICE_URL"),
-      preference_type: "AppPreference",
-      public_id: "app-pref-public-id",
-      preferences: { "consented" => true },
-    )
-    cookies[PreferenceCookieName.anonymous_jwt] = token
-
-    with_preference_realm_issuers do
-      get "/api/v0/preferences/cookie", headers: { "Host" => host, "Accept" => "application/json" }, as: :json
-    end
-
-    assert_response :ok
-    assert response.parsed_body["show_banner"], "app preference token must not suppress the org banner"
-  end
-
-  test "org preference token is ignored by the app cookie endpoint" do
-    host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
-    token = preference_token_for(
-      host: ENV.fetch("PUBLIC_AUTH_STAFF_URL"),
-      preference_type: "OrgPreference",
-      public_id: "org-pref-public-id",
-      preferences: { "consented" => true },
-    )
-    cookies[PreferenceCookieName.anonymous_jwt] = token
-
-    with_preference_realm_issuers do
-      get "/api/v0/preferences/cookie", headers: { "Host" => host, "Accept" => "application/json" }, as: :json
-    end
-
-    assert_response :ok
-    assert response.parsed_body["show_banner"], "org preference token must not suppress the app banner"
-  end
-
   private
 
   def json_headers(host, bearer_token)
@@ -112,40 +72,35 @@ class CrossSurfaceTokenTest < ActionDispatch::IntegrationTest
   end
 
   def bearer_for_client
-    record = ClientToken.create!(authentication_epoch: 0, user: @user)
-    record.rotate_refresh_token!
-    jwt_access_token_for(
-      @user,
+    bearer_for_root(
+      ClientToken.includes(:device_session).find(ActiveRecord::FixtureSet.identify(:one)),
       host: @app_host,
-      session_public_id: record.public_id,
       resource_type: "client",
     )
   end
 
   def bearer_for_operator
-    record = OperatorToken.create!(authentication_epoch: 0, staff: @staff)
-    record.rotate_refresh_token!
-    jwt_access_token_for(
-      @staff,
-      host: @org_host,
-      session_public_id: record.public_id,
-      resource_type: "operator",
-    )
+    root = OperatorToken.includes(:device_session).find(ActiveRecord::FixtureSet.identify(:one))
+    root.update!(authentication_context: "normal")
+    bearer_for_root(root, host: @org_host, resource_type: "operator")
   end
 
-  def preference_token_for(host:, preference_type:, public_id:, preferences:)
-    token = nil
-    with_preference_realm_issuers do
-      token = PreferenceToken.encode(
-        preferences,
-        host: host,
-        preference_type: preference_type,
-        public_id: public_id,
-        jti: "test-jti-#{SecureRandom.uuid}",
-        issued_at: Time.current,
-      )
-    end
-    token
+  def bearer_for_root(root, host:, resource_type:)
+    payload = AuthorizationTokenClaims.build(
+      resource: nil,
+      subject: root.public_send(resource_type == "client" ? :user_id : :staff_id).to_s,
+      resource_type: resource_type,
+      issued_at: Time.current,
+      access_token_ttl: 60.seconds,
+      session_public_id: root.device_session.public_id,
+      oidc_jti: root.oidc_jti,
+      authentication_context: "normal",
+    )
+    JitSecurityJwtKeyring.encode(
+      payload,
+      typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+      issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+    )
   end
 end
 

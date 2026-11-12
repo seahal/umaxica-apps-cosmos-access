@@ -156,6 +156,11 @@ module EmailVerificationChallengeable
       )
     end
     reload
+  rescue ActiveRecord::RecordInvalid => e
+    raise unless e.record.equal?(self) && e.record.errors.size == 1 &&
+      e.record.errors.of_kind?(:evp_token_digest, :taken)
+
+    raise ReplayError, "EVP token has already been consumed", cause: e
   rescue ActiveRecord::RecordNotUnique => e
     raise ReplayError, "EVP token has already been consumed", cause: e
   end

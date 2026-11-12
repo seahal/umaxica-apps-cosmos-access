@@ -2,85 +2,37 @@
 # frozen_string_literal: true
 
 require "test_helper"
-require_relative "../support/avatar_test_factory"
 # require "helpers/global_test_support"
 
 class RetentionPurgeJobTest < ActiveJob::TestCase
-  setup do
-    ENV["APP_SECRET_PURGE_DELAY_SECONDS"] = "86400"
-    ENV["APP_SECRET_OUTBOX_RETENTION_SECONDS"] = "604800"
-  end
+  self.fixture_table_names = []
 
   teardown { Flipper.disable(RetentionPurgeJob::FEATURE_NAME) }
 
-  test "generic retention preserves com preferences and their audit history" do
-    preference = com_preferences(:one)
-    audit = com_preference_chronicles(:one)
-    preference.update!(last_issued_at: 433.days.ago, last_issued_expires_at: 33.days.ago)
-    audit.update!(created_at: 3.days.ago, discard_at: 2.days.ago, purge_eligible_at: 1.day.ago)
+  test "generic retention preserves com preference audit history" do
+    ComPreferenceChronicleEvent.ensure_defaults!
+    ComPreferenceChronicleLevel.ensure_defaults!
+    result = ComPreferenceChronicle.insert_all!(
+      [{ subject_type: "ComPreference",
+         subject_id: 987_654,
+         actor_type: "",
+         actor_id: 0,
+         event_id: ComPreferenceChronicleEvent::CREATE_NEW_PREFERENCE_TOKEN,
+         level_id: ComPreferenceChronicleLevel::INFO,
+         occurred_at: 3.days.ago,
+         created_at: 3.days.ago,
+         context: {},
+         discard_at: 2.days.ago,
+         purge_eligible_at: 1.day.ago, }],
+      returning: %w(id),
+    )
+    audit = ComPreferenceChronicle.find(result.rows.first.first)
+    snapshot = audit.attributes
 
     RetentionPurgeJob.perform_now
 
-    assert_predicate ComPreference.where(id: preference.id), :exists?
     assert_predicate ComPreferenceChronicle.where(id: audit.id), :exists?
-  end
-
-  test "Avatar purge deferral preserves encrypted moniker history" do
-    handle = Handle.create!(
-      handle: "purge-avatar-#{SecureRandom.hex(4)}",
-      cooldown_until: Time.current,
-      is_system: false,
-    )
-    avatar = AvatarTestFactory.create!(
-      moniker: "Purge",
-      capability: AvatarCapability.find(AvatarCapability::NORMAL),
-      active_handle: handle,
-    )
-    former_moniker = avatar.avatar_monikers.create!(
-      moniker: "Former",
-      valid_from: Time.utc(2024, 1, 1),
-      valid_to: Time.utc(2025, 1, 1),
-    )
-    current_moniker = AvatarMoniker.current.find_by!(avatar_id: avatar.id)
-    avatar.update_columns(purge_eligible_at: 1.hour.ago)
-
-    assert_no_difference -> { Avatar.count } do
-      assert_no_difference -> { AvatarMoniker.count } do
-        RetentionPurgeJob.perform_now
-      end
-    end
-
-    assert Avatar.exists?(avatar.id)
-    assert AvatarMoniker.exists?(former_moniker.id)
-    assert AvatarMoniker.exists?(current_moniker.id)
-    assert AvatarPurgeDeferral.exists?(avatar_id: avatar.id, reason_code: "ownership_history")
-  end
-
-  test "purges an eligible client passkey after recording its audit event" do
-    client = clients(:one)
-    passkey = ClientPasskey.create!(
-      user: client,
-      webauthn_id: "retention-passkey-#{SecureRandom.hex(8)}",
-      public_key: "retention-public-key",
-      sign_count: 0,
-      description: "Retention test passkey",
-    )
-    passkey.update_columns(
-      created_at: 3.hours.ago,
-      discard_at: 2.hours.ago,
-      purge_eligible_at: 1.hour.ago,
-    )
-
-    RetentionPurgeJob.perform_now(batch_size: 10)
-
-    assert_not ClientPasskey.exists?(passkey.id)
-    audit = ClientPasskeyAuditOutbox.find_by!(external_id: passkey.external_id)
-
-    assert_equal "passkey.purged", audit.event_type
-    assert_equal "app", audit.surface
-    assert_nil audit.actor_ref
-    assert_equal "retention:ClientPasskey:#{passkey.public_id}", audit.operation_ref
-    assert_equal({ "reason" => "retention_purge" }, audit.metadata)
+    assert_equal snapshot, audit.reload.attributes
   end
 
   test "rejects a retention batch size outside the bounded execution range" do
@@ -136,261 +88,23 @@ class RetentionPurgeJobTest < ActiveJob::TestCase
     failure = ActiveRecord::RecordNotDestroyed.new("retention target failed")
     job = RetentionPurgeJob.new
 
-    SignUpArtifactCleanup.stub(:cleanup_pending!, nil) do
-      ClientSecretIssuance.stub(:exists?, false) do
-        ClientSecretCredential.stub(:exists?, false) do
-          ClientSecretAuditOutbox.stub(:exists?, false) do
-            job.stub(
-              :purge_retained_model,
-              lambda { |klass, batch_size:|
-                processed << [klass, batch_size]
-                raise failure if klass == first_model
-              },
-            ) do
-              Rails.error.stub(:report, lambda { |error, **context| reported << [error, context] }) do
-                assert_raises(ActiveRecord::RecordNotDestroyed) { job.perform(batch_size: 1) }
-              end
-            end
-          end
-        end
+    # Retain the existing orchestration spy to prove every independent owner is attempted;
+    # the separate PostgreSQL boundary tests exercise actual deletion and refusal behavior.
+    job.stub(
+      :purge_retained_model,
+      lambda { |klass, batch_size:|
+        processed << [klass, batch_size]
+        raise failure if klass == first_model
+      },
+    ) do
+      Rails.error.stub(:report, lambda { |error, **context| reported << [error, context] }) do
+        assert_raises(ActiveRecord::RecordNotDestroyed) { job.perform(batch_size: 1) }
       end
     end
 
     assert_equal RetentionPurgeJob::RETAINABLE_MODELS.length, processed.length
     assert_equal failure, reported.fetch(0).fetch(0)
     assert_equal first_model.name, reported.fetch(0).fetch(1).fetch(:context).fetch(:retained_model)
-  end
-
-  test "reports orphan registration ids once without contact data and changes no registration state" do
-    address = "stuck-report-#{SecureRandom.hex(6)}@example.com"
-    client = Client.create!(
-      public_id: PublicId.generate,
-      security_mode_id: SecurityModeConfigurable::NORMAL,
-      status_id: ClientStatus::UNVERIFIED_WITH_SIGN_UP,
-    )
-    email = ClientEmail.create!(
-      user_id: client.id,
-      address:,
-      user_email_status_id: ClientEmailStatus::UNVERIFIED_WITH_SIGN_UP,
-    )
-    client_status_before = client.status_id
-    email_status_before = email.user_email_status_id
-    logged = []
-
-    FeatureFlags.stub(:enabled?, true) do
-      Rails.logger.stub(:warn, ->(_message) { }) do
-        Rails.logger.stub(:info, ->(message) { logged << message }) do
-          RetentionPurgeJob.perform_now
-        end
-      end
-    end
-
-    report_events =
-      logged.filter_map do |message|
-        event = JSON.parse(message.to_s)
-        event if event["event"] == "sign_up.stuck_registrations.reported"
-      rescue JSON::ParserError
-        nil
-      end
-
-    assert_equal 1, report_events.length
-
-    event = report_events.fetch(0)
-
-    assert_equal "sign_up.stuck_registrations.reported", event.fetch("event")
-    assert_equal 1, event.dig("data", "total_count")
-
-    report = event.dig("data", "groups").fetch(0)
-
-    assert_equal "app", report.fetch("surface")
-    assert_equal "flow_missing", report.fetch("case")
-    assert_equal 1, report.fetch("count")
-    assert_equal client.public_id, report.dig("registrations", 0, "principal_public_id")
-    assert_equal email.public_id, report.dig("registrations", 0, "contact_public_id")
-    assert_not_includes report_events.fetch(0).to_json, address
-    assert Client.exists?(client.id)
-    assert_equal client_status_before, client.reload.status_id
-    assert_equal email_status_before, email.reload.user_email_status_id
-  end
-
-  test "reports exhausted cleanup flow ids and attempt count in the structured event" do
-    logged = []
-    app_rows = [
-      {
-        surface: "app",
-        case: "cleanup_attempts_exhausted",
-        principal_public_id: "principal-public-id",
-        contact_public_id: "contact-public-id",
-        flow_public_id: "flow-public-id",
-        cleanup_attempts_count: SignUpArtifactCleanup::MAX_CLEANUP_ATTEMPTS,
-      },
-    ]
-
-    FeatureFlags.stub(:enabled?, true) do
-      Rails.logger.stub(:warn, ->(_message) { }) do
-        Rails.logger.stub(:info, ->(message) { logged << message }) do
-          SignUpStuckRegistrationReportQuery.stub(
-            :call,
-            ->(surface:) { (surface == :app) ? app_rows : [] },
-          ) do
-            RetentionPurgeJob.perform_now
-          end
-        end
-      end
-    end
-
-    report_event = logged.filter_map do |message|
-      event = JSON.parse(message.to_s)
-      event if event["event"] == "sign_up.stuck_registrations.reported"
-    rescue JSON::ParserError
-      nil
-    end.fetch(0)
-    report = report_event.dig("data", "groups").fetch(0)
-
-    assert_equal 1, report.fetch("count")
-
-    registration = report.fetch("registrations").fetch(0)
-
-    assert_equal "principal-public-id", registration.fetch("principal_public_id")
-    assert_equal "contact-public-id", registration.fetch("contact_public_id")
-    assert_equal "flow-public-id", registration.fetch("flow_public_id")
-    assert_equal SignUpArtifactCleanup::MAX_CLEANUP_ATTEMPTS, registration.fetch("cleanup_attempts_count")
-  end
-
-  test "logs query failures after cleanup and continues the retention job work" do
-    events = []
-    logged = []
-    cleanup_completed = false
-    job = RetentionPurgeJob.new
-
-    SignUpArtifactCleanup.stub(
-      :cleanup_pending!,
-      lambda { |batch_size:|
-        events << :cleanup
-        cleanup_completed = batch_size == 1
-      },
-    ) do
-      ClientSecretIssuance.stub(:exists?, false) do
-        ClientSecretCredential.stub(:exists?, false) do
-          ClientSecretAuditOutbox.stub(:exists?, false) do
-            job.stub(
-              :purge_retained_model,
-              lambda { |klass, batch_size:|
-                events << [:purge, klass, batch_size]
-              },
-            ) do
-              SignUpStuckRegistrationReportQuery.stub(
-                :call,
-                lambda { |surface:|
-                  events << [:query, surface]
-                  raise ActiveRecord::QueryCanceled, "test query failure"
-                },
-              ) do
-                Rails.logger.stub(:error, ->(message) { logged << message }) do
-                  assert_nothing_raised { job.perform(batch_size: 1) }
-                end
-              end
-            end
-          end
-        end
-      end
-    end
-
-    assert cleanup_completed
-    assert_equal RetentionPurgeJob::RETAINABLE_MODELS.length, events.count { |event| event.is_a?(Array) && event.first == :purge }
-    last_purge = events.rindex { |event| event.is_a?(Array) && event.first == :purge }
-
-    assert_operator events.index([:query, :app]), :>, last_purge
-    assert_equal 1, logged.length
-    event = JSON.parse(logged.fetch(0))
-
-    assert_equal "sign_up.stuck_registrations.report_failed", event.fetch("event")
-    assert_equal ["app"], event.dig("data", "failures").map { |failure| failure.fetch("surface") }
-    assert event.dig("data", "failures").all? { |failure| failure.fetch("error_class") == "ActiveRecord::QueryCanceled" }
-  end
-
-  test "anonymizes account records where purge_eligible_at is in the past" do
-    user_to_purge = Client.create!(
-      security_mode_id: SecurityModeConfigurable::NORMAL,
-      public_id: PublicId.generate, status_id: ClientStatus::ACTIVE,
-      created_at: 2.hours.ago,
-    )
-    user_to_keep = Client.create!(
-      security_mode_id: SecurityModeConfigurable::NORMAL, public_id: PublicId.generate,
-      status_id: ClientStatus::ACTIVE,
-    )
-
-    user_to_purge.update_columns(discard_at: 1.hour.ago, purge_eligible_at: 1.hour.ago)
-    user_to_keep.update_columns(discard_at: Retainable::SENTINEL, purge_eligible_at: Retainable::SENTINEL)
-
-    assert_no_difference -> { Client.count } do
-      RetentionPurgeJob.perform_now
-    end
-
-    assert_predicate user_to_purge.reload, :terminated?
-    assert Client.exists?(user_to_keep.id)
-    assert_nil user_to_keep.reload.terminated_at
-  end
-
-  # Staff (Operator) lifecycle and User (Client) withdrawal must NOT be
-  # conflated by the purge worker. Clients are anonymized *in place*
-  # (`terminated_at` set, row retained for referential history), while Operators
-  # are *physically removed* via the set-based `purge_operators` path (no
-  # `terminated_at` marker -- Staff has no withdrawal lifecycle). A regression
-  # that routed Operators through `anonymize_accounts` (or Clients through
-  # `purge_operators`) would silently corrupt one actor type's lifecycle.
-  test "purge physically removes due operators but anonymizes due users in place" do
-    user = Client.create!(
-      security_mode_id: SecurityModeConfigurable::NORMAL,
-      public_id: PublicId.generate, status_id: ClientStatus::ACTIVE,
-      created_at: 2.hours.ago,
-    )
-    operator_due = Operator.create!(security_mode_id: SecurityModeConfigurable::ADVANCED)
-    operator_pending = Operator.create!(security_mode_id: SecurityModeConfigurable::ADVANCED)
-
-    user.update_columns(discard_at: 1.hour.ago, purge_eligible_at: 1.hour.ago)
-    operator_due.update_columns(discard_at: 1.hour.ago, purge_eligible_at: 1.hour.ago)
-    operator_pending.update_columns(discard_at: Retainable::SENTINEL, purge_eligible_at: Retainable::SENTINEL)
-
-    assert_difference -> { Operator.count }, -1 do
-      assert_no_difference -> { Client.count } do
-        RetentionPurgeJob.perform_now
-      end
-    end
-
-    # User: retained but anonymized/terminated (User withdrawal lifecycle).
-    assert Client.exists?(user.id)
-    assert_predicate user.reload, :terminated?
-
-    # Operator: physically deleted, never marked terminated (Staff lifecycle).
-    assert_not Operator.exists?(operator_due.id)
-
-    # Operator not yet due (purge_eligible_at = Infinity sentinel) must be untouched.
-    assert Operator.exists?(operator_pending.id)
-  end
-
-  # Re-running the worker must be safe: already-anonymized users are skipped via
-  # `where(terminated_at: nil)` and already-deleted operators are simply absent.
-  test "purge is idempotent across repeated runs" do
-    user = Client.create!(
-      security_mode_id: SecurityModeConfigurable::NORMAL,
-      public_id: PublicId.generate, status_id: ClientStatus::ACTIVE,
-      created_at: 2.hours.ago,
-    )
-    operator = Operator.create!(security_mode_id: SecurityModeConfigurable::ADVANCED)
-    user.update_columns(discard_at: 1.hour.ago, purge_eligible_at: 1.hour.ago)
-    operator.update_columns(discard_at: 1.hour.ago, purge_eligible_at: 1.hour.ago)
-
-    RetentionPurgeJob.perform_now
-    terminated_at_after_first = user.reload.terminated_at
-
-    assert_nothing_raised { RetentionPurgeJob.perform_now }
-
-    assert Client.exists?(user.id)
-    assert_predicate user.reload, :terminated?
-    assert_equal terminated_at_after_first, user.reload.terminated_at,
-                 "terminated_at must not be rewritten on subsequent runs"
-    assert_not Operator.exists?(operator.id)
   end
 
   test "purges visitor occurrences where purge_eligible_at is in the past" do
@@ -409,97 +123,6 @@ class RetentionPurgeJobTest < ActiveJob::TestCase
     assert VisitorOccurrence.exists?(occurrence_to_keep.id)
   end
 
-  test "runs sign up artifact cleanup before purging signup cycles" do
-    ClientSignUpFlowStatus::DEFAULTS.each do |id|
-      ClientSignUpFlowStatus.find_or_create_by!(id: id)
-    end
-    ClientSignUpFlowCleanupStatus::DEFAULTS.each do |id|
-      ClientSignUpFlowCleanupStatus.find_or_create_by!(id: id)
-    end
-    user = Client.create!(security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::UNVERIFIED_WITH_SIGN_UP)
-    email = ClientEmail.create!(
-      user: user,
-      raw_address: "retention-cleanup-#{SecureRandom.hex(6)}@example.com",
-      confirm_policy: true,
-      user_email_status_id: ClientEmailStatus::UNVERIFIED_WITH_SIGN_UP,
-    )
-    cycle = ClientSignUpFlow.create!(
-      auth_admission_binding: SignUpAdmissionTestFactory.binding_for!(ClientSignUpFlow),
-      principal_id: user.id,
-      status_id: ClientSignUpFlowStatus::CANCELLED,
-      step: "cancelled",
-      nonce_digest: ClientSignUpFlow.digest_nonce("nonce"),
-      issued_at: 20.minutes.ago,
-      expires_at: 5.minutes.ago,
-      entry_method: "email",
-      pending_contact_type: "email",
-      pending_contact_id: email.id,
-      cleanup_status_id: ClientSignUpFlowCleanupStatus::PENDING,
-    )
-    cycle.update_columns(discard_at: cycle.created_at, purge_eligible_at: cycle.created_at)
-
-    RetentionPurgeJob.perform_now
-
-    assert_not ClientSignUpFlow.exists?(cycle.id)
-    assert_equal ClientEmailStatus::DELETED, email.reload.user_email_status_id
-    assert_operator email.discard_at, :<=, Time.current
-  end
-
-  test "retains APP capped sign-up Flows and reports them before cleanup completes" do
-    ClientSignUpFlowStatus.ensure_defaults!
-    ClientSignUpFlowCleanupStatus.ensure_defaults!
-    app_client = Client.create!(
-      security_mode_id: SecurityModeConfigurable::NORMAL,
-      status_id: ClientStatus::UNVERIFIED_WITH_SIGN_UP,
-    )
-    app_email = ClientEmail.create!(
-      user: app_client,
-      raw_address: "retention-cap-app-#{SecureRandom.hex(6)}@example.com",
-      confirm_policy: true,
-      user_email_status_id: ClientEmailStatus::UNVERIFIED_WITH_SIGN_UP,
-    )
-    app_flow = ClientSignUpFlow.create!(
-      auth_admission_binding: SignUpAdmissionTestFactory.binding_for!(ClientSignUpFlow),
-      principal_id: app_client.id,
-      pending_contact_type: "email",
-      pending_contact_id: app_email.id,
-      entry_method: "email",
-      status_id: ClientSignUpFlowStatus::CANCELLED,
-      step: "cancelled",
-      nonce_digest: ClientSignUpFlow.digest_nonce("retention-cap-app"),
-      issued_at: 2.hours.ago,
-      expires_at: 90.minutes.ago,
-      cleanup_status_id: ClientSignUpFlowCleanupStatus::FAILED,
-      cleanup_attempts_count: SignUpArtifactCleanup::MAX_CLEANUP_ATTEMPTS,
-    )
-    [app_flow].each do |flow|
-      flow.update_columns(discard_at: 2.hours.ago, purge_eligible_at: 1.hour.ago)
-    end
-    logged = []
-
-    Rails.logger.stub(:info, ->(message) { logged << message }) do
-      RetentionPurgeJob.perform_now
-    end
-
-    assert ClientSignUpFlow.exists?(app_flow.id)
-    assert_equal ClientStatus::UNVERIFIED_WITH_SIGN_UP, app_client.reload.status_id
-    assert_equal ClientEmailStatus::UNVERIFIED_WITH_SIGN_UP, app_email.reload.user_email_status_id
-    assert_equal SignUpArtifactCleanup::MAX_CLEANUP_ATTEMPTS, app_flow.reload.cleanup_attempts_count
-
-    report_event = logged.filter_map do |message|
-      event = JSON.parse(message.to_s)
-      event if event["event"] == "sign_up.stuck_registrations.reported"
-    rescue JSON::ParserError
-      nil
-    end.fetch(0)
-    groups = report_event.dig("data", "groups").index_by { |group| group.fetch("surface") }
-
-    assert_equal ["app"], groups.keys.sort
-    assert_equal "cleanup_attempts_exhausted", groups.fetch("app").fetch("case")
-    assert_equal app_flow.public_id, groups.dig("app", "registrations", 0, "flow_public_id")
-    assert_not_includes report_event.to_json, app_email.address
-  end
-
   test "retention purge registers client sign-up flows and tokens independently" do
     models = RetentionPurgeJob::RETAINABLE_MODELS
 
@@ -516,7 +139,7 @@ class RetentionPurgeJobTest < ActiveJob::TestCase
     Rails.application.eager_load!
 
     # Com preference history needs lifecycle-specific audit and hold checks before deletion.
-    specialized_models = [ComPreference, ComPreferenceChronicle]
+    specialized_models = [ComPreferenceChronicle]
     missing =
       (Retainable.registry - RetentionPurgeJob::RETAINABLE_MODELS - specialized_models).reject do |model|
         model.name.to_s.match?(/\A(?:CycleBaseTest|RetainableTest|SecretCredentialConcernTest)::/) ||
@@ -528,109 +151,8 @@ class RetentionPurgeJobTest < ActiveJob::TestCase
                  "rows in these tables will never be physically purged: #{missing.map(&:name).sort.join(", ")}"
   end
 
-  test "purge skips a client blocked by an in-force principal_hard_delete_blocked Principal Effect" do
-    client = Client.create!(
-      security_mode_id: SecurityModeConfigurable::NORMAL, public_id: PublicId.generate,
-      status_id: ClientStatus::ACTIVE,
-    )
-    operator = operators(:one)
-    client.update_columns(discard_at: 1.hour.ago, purge_eligible_at: 1.hour.ago)
-
-    the_case = AppEnforcementCase.new(
-      kind: "permanent_ban",
-      duration_mode: "permanent",
-      visibility: "visible",
-      release_mode: "break_glass_only",
-      effective_at: Time.current,
-      reason_code: "abuse",
-      principal_public_id: client.public_id,
-      applied_by_operator_public_id: operator.public_id,
-    )
-    the_case.build_principal_effect(
-      principal_public_id: client.public_id,
-      principal_hard_delete_blocked: true,
-      effective_at: Time.current,
-    )
-    EnforcementCaseApplyOperation.call(
-      enforcement_case: the_case,
-      actor_operator_public_id: the_case.applied_by_operator_public_id,
-    )
-
-    assert_no_difference -> { Client.count } do
-      RetentionPurgeJob.perform_now
-    end
-
-    assert Client.exists?(client.id)
-    assert_nil client.reload.terminated_at
-  end
-
-  test "purge excludes an operator blocked by an in-force withdrawal_purge_blocked Principal Effect from the " \
-       "batch delete" do
-    blocked_operator = Operator.create!(security_mode_id: SecurityModeConfigurable::ADVANCED)
-    applying_operator = operators(:one)
-    blocked_operator.update_columns(discard_at: 1.hour.ago, purge_eligible_at: 1.hour.ago)
-
-    the_case = OrgEnforcementCase.new(
-      kind: "permanent_ban",
-      duration_mode: "permanent",
-      visibility: "visible",
-      release_mode: "break_glass_only",
-      effective_at: Time.current,
-      reason_code: "abuse",
-      principal_public_id: blocked_operator.public_id,
-      applied_by_operator_public_id: applying_operator.public_id,
-      approved_by_operator_public_id: operators(:two).public_id,
-    )
-    the_case.build_principal_effect(
-      principal_public_id: blocked_operator.public_id,
-      withdrawal_purge_blocked: true,
-      effective_at: Time.current,
-    )
-    EnforcementCaseApplyOperation.call(
-      enforcement_case: the_case,
-      actor_operator_public_id: the_case.applied_by_operator_public_id,
-    )
-
-    assert_no_difference -> { Operator.count } do
-      RetentionPurgeJob.perform_now
-    end
-
-    assert Operator.exists?(blocked_operator.id)
-  end
-
   # The kill switch is operational, not a retention rule: a suspended run must
   # leave every due row exactly as it found it, finish without raising (a raise
   # would requeue deliberately paused work), and stay catch-up safe so the next
   # unsuspended run completes the deletion.
-  test "a suspended purge deletes nothing and is not an error" do
-    Flipper.enable(RetentionPurgeJob::FEATURE_NAME)
-    user = Client.create!(security_mode_id: SecurityModeConfigurable::NORMAL, public_id: PublicId.generate, status_id: ClientStatus::ACTIVE)
-    operator_due = Operator.create!(security_mode_id: SecurityModeConfigurable::ADVANCED)
-    user.update_columns(discard_at: 1.hour.ago, purge_eligible_at: 1.hour.ago)
-    operator_due.update_columns(discard_at: 1.hour.ago, purge_eligible_at: 1.hour.ago)
-
-    assert_nothing_raised do
-      assert_no_difference -> { Operator.count } do
-        RetentionPurgeJob.perform_now
-      end
-    end
-
-    assert Operator.exists?(operator_due.id)
-    assert_nil user.reload.terminated_at
-  end
-
-  test "the next unsuspended run catches up on work skipped while suspended" do
-    operator_due = Operator.create!(security_mode_id: SecurityModeConfigurable::ADVANCED)
-    operator_due.update_columns(discard_at: 1.hour.ago, purge_eligible_at: 1.hour.ago)
-
-    Flipper.enable(RetentionPurgeJob::FEATURE_NAME)
-    RetentionPurgeJob.perform_now
-
-    assert Operator.exists?(operator_due.id)
-
-    Flipper.disable(RetentionPurgeJob::FEATURE_NAME)
-    RetentionPurgeJob.perform_now
-
-    assert_not Operator.exists?(operator_due.id)
-  end
 end

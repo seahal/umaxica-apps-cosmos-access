@@ -32,7 +32,7 @@ class ResultShapeAndHostComparisonTest < ActiveSupport::TestCase
   # travels on into a token payload.
   test "a refresh result answers by key and refuses a key that resolved to nothing" do
     result = AuthRefreshTokenIssuer::Result.new(
-      success: true, token: :token, refresh_token: "raw", previous_token: nil, reason: nil,
+      success: true, token: :token, refresh_token: "raw", previous_token: nil, reason: nil, response: nil,
     )
 
     assert_predicate result, :success?

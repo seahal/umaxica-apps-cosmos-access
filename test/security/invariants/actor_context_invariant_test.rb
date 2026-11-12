@@ -66,9 +66,7 @@ module Security
       end
 
       test "request id is never used as an OpenTelemetry trace id" do
-        paths = [
-          Rails.root.join("app/controllers/concerns/actor_support.rb"),
-        ]
+        paths = Rails.root.glob("app/**/*.rb")
 
         offenders =
           paths.flat_map do |path|

@@ -247,11 +247,7 @@ class OidcAuthorizeRequestResolver < ApplicationService
   def resource_type
     return OidcSubject.normalize_resource_type(given_resource_type) unless given_resource_type.nil?
 
-    case resource
-    when ::Operator then "operator"
-    when ::Client then "client"
-    else raise ArgumentError, "unsupported OIDC resource"
-    end
+    raise GovernanceLookupUnavailableError, "Governance actor lookup is unavailable for realm inference"
   end
 
   def client_id

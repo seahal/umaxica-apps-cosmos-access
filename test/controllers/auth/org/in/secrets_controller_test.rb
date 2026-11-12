@@ -3,9 +3,9 @@
 
 require "test_helper"
 
-class Auth::Org::Sign::In::SecretsControllerTest < ActionDispatch::IntegrationTest
+class AuthOrgSecretsControllerTest < ActionDispatch::IntegrationTest
   test "legacy secret sign-in path is unavailable" do
-    host = ENV.fetch("PUBLIC_AUTH_STAFF_URL", "auth.org.localhost")
+    host = ENV.fetch("PUBLIC_AUTH_STAFF_URL")
     host! host
 
     get "/sign/in/secret"

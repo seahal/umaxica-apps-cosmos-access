@@ -20,6 +20,8 @@ class OpOrgAuthorityStop < OpBaseOrgRecord
             presence: true
   validates :realm, inclusion: { in: [REALM] }, length: { maximum: 3 }
   validates :public_id, length: { maximum: 21 }
+  validates :public_id, uniqueness: true
+  validates :idempotency_digest, uniqueness: { scope: :realm }
   validates :authority_evidence_ref, length: { maximum: 128 }
   validates :principal_public_id, length: { maximum: 255 }
 

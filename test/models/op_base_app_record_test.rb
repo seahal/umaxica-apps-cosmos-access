@@ -4,7 +4,7 @@
 require "test_helper"
 
 class OpBaseAppRecordTest < ActiveSupport::TestCase
-  fixtures :client_tokens, :clients, :client_token_kinds, :client_token_statuses
+  self.fixture_table_names = %w(client_tokens client_device_sessions)
 
   test "should be abstract class" do
     assert_predicate OpBaseAppRecord, :abstract_class?

@@ -102,40 +102,6 @@ class ApplicationPolicy < ActionPolicy::Base
     AuthorizationTokenClaims.subject(current_token)
   end
 
-  # Check if user owns the record
-  # @return [Boolean]
-  def owner?
-    return false unless user
-    return jwt_subject.to_s == user.id.to_s if record.blank?
-    return true if same_user_record?
-
-    if user.is_a?(Client) && record.respond_to?(:user_id)
-      record.user_id == user.id
-    elsif user.is_a?(Operator) && record.respond_to?(:staff_id)
-      record.staff_id == user.id
-    else
-      false
-    end
-  end
-
-  def same_user_record?
-    return false unless record.respond_to?(:id)
-
-    same_user_record_type? && record.id == user.id
-  end
-
-  def same_user_record_type?
-    (user.is_a?(Client) && record.is_a?(Client)) ||
-      (user.is_a?(Operator) && record.is_a?(Operator))
-  end
-
-  # adr/operator-capability-authorization.md: the only grant check org administrative policies use.
-  # Callers pass a fixed OperatorCapabilityGrant constant; being an Operator is necessary, never
-  # sufficient.
-  def operator_capability?(capability)
-    user.is_a?(::Operator) && user.capability?(capability)
-  end
-
   # Role-based checks
   def operator?
     user&.has_role?("operator", organization: organization)

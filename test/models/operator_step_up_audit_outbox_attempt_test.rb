@@ -21,11 +21,19 @@ class OperatorStepUpAuditOutboxAttemptTest < ActiveSupport::TestCase
       failure_code: "none",
     )
 
+    attributes = { outbox_id: outbox.id,
+                   attempt_number: 3,
+                   attempted_at: Time.utc(2026, 11, 3, 12),
+                   outcome: "delivered",
+                   failure_code: "none", }
+    duplicate = OperatorStepUpAuditOutboxAttempt.new(attributes)
+
+    assert_not duplicate.valid?
+    assert duplicate.errors.of_kind?(:outbox_id, :taken)
     assert_raises(ActiveRecord::RecordNotUnique) do
-      OperatorStepUpAuditOutboxAttempt.create!(
-        outbox: outbox, attempt_number: 3, attempted_at: Time.utc(2026, 11, 3, 12), outcome: "delivered",
-        failure_code: "none",
-      )
+      OperatorStepUpAuditOutboxAttempt.transaction(requires_new: true) do
+        OperatorStepUpAuditOutboxAttempt.insert!(attributes)
+      end
     end
   end
 

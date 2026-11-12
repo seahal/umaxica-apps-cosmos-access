@@ -7,7 +7,6 @@ import DocumentLocale from "../../src/components/ui/DocumentLocale";
 import Select from "../../src/components/ui/Select";
 import Table from "../../src/components/ui/Table";
 import TextField from "../../src/components/ui/TextField";
-import BirthdateFieldset from "../../src/features/auth/signup/BirthdateFieldset";
 import { AdminNotices } from "../../src/features/org_admin/AdminContextPanel";
 
 const query = new URLSearchParams(location.search);
@@ -15,13 +14,13 @@ document.documentElement.lang = query.get("lang") === "ja" ? "ja" : "en";
 // Edition styles remain independently delivered, including in this isolated display fixture.
 switch (query.get("edition") ?? "app") {
   case "app":
-    await import("../../src/styles/surfaces/auth_app.css");
+    await import("../../src/styles/surfaces/visa_app.css");
     break;
   case "com":
     await import("../../src/styles/surfaces/auth_com.css");
     break;
   case "org":
-    await import("../../src/styles/surfaces/auth_org.css");
+    await import("../../src/styles/surfaces/visa_org.css");
     break;
   default:
     throw new Error("Unsupported fixture edition");
@@ -53,26 +52,6 @@ function Content() {
             label="Public name"
             description="Use the existing public name limit."
             errorMessage="Check this synthetic name."
-          />
-        </form>
-      </Card>
-      <Card>
-        <h2
-          id="birthdate"
-          className="text-xl font-semibold"
-        >
-          Birthdate
-        </h2>
-        <form aria-label="Synthetic birthdate">
-          <BirthdateFieldset
-            labelledby="birthdate"
-            format="YYYY-MM-DD"
-            separator="-"
-            parts={[
-              { part: "year", label: "Year", placeholder: "1990", value: "", min: 1900, max: 2026 },
-              { part: "month", label: "Month", placeholder: "01", value: "", min: 1, max: 12 },
-              { part: "day", label: "Day", placeholder: "01", value: "", min: 1, max: 31 },
-            ]}
           />
         </form>
       </Card>

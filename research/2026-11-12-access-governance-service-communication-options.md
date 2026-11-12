@@ -57,3 +57,79 @@ specifications before adoption.
   is used, with its exit condition.
 - Whether to adopt AuthZEN and SSF/CAEP/RISC, and how credential records are retrieved.
 - Contract details: endpoints, fields, errors, timeouts, retries, audit.
+
+## Private network option (added 2026-11-12; transport is TBC)
+
+The owner raised connecting Access and Governance over a private network (a shared VPC, VPC peering,
+or a Cloudflare private route such as the existing Workers VPC tunnel) because the exchanges are a
+lot of work. Status: **to be confirmed**; nothing is decided.
+
+- What it reduces: the APIs are not reachable from the internet, so the outer defence comes from the
+  network; lighter service authentication (mTLS, short-lived tokens) becomes adequate; an interim
+  Cloudflare service token is unnecessary.
+- What it does not reduce: caller authentication is still needed (a compromised neighbour on the same
+  network could call); the four exchanges, the data ownership split and "success only after a
+  confirmed acknowledgement" stay the same.
+- Constraints: Access's ADR decisions 8 and 12 say the two share no private network; adopting this
+  requires amending them. Feasible only if both run where a private network can join them (same
+  cloud and region set); distant regions make it harder. Development needs the two environments
+  joined on one network.
+
+## External guidance: loosely coupled two-app integration (added 2026-11-13; reference only)
+
+The owner supplied an implementation guideline from another assistant as a reference. Nothing below
+is decided; it records how each point fits the decisions above and the repository.
+
+Fits as written:
+
+- No shared database, no shared domain gem, no direct enqueue into the other app's queue, no
+  synchronous call cycles, no distributed transactions, one owner per datum (matches ADR decisions
+  17 to 19).
+- Transactional outbox on the sender; inbox table with a unique `event_id` on the receiver; fact-only
+  minimal events, never ActiveRecord dumps; tolerant reader; additive-only changes and a new
+  versioned event type for breaking changes. Access already runs outbox tables (`*_audit_outbox`,
+  `chronicle_outbox_entry`) and Solid Queue, so the relay job needs no new infrastructure.
+- Synchronous API hygiene: `/api/v1`, fixed serializers, RFC 9457 errors, paginated lists,
+  `Idempotency-Key` on creating POSTs, one client class per peer with Faraday timeouts, retries only
+  for idempotent requests, a circuit breaker, responses converted to POROs. Matches `OutboundHttp`
+  and `docs/reference/api-design-standards.md`.
+- Short-lived JWT access tokens verified locally against a cached JWKS (refetch on unknown `kid`),
+  mandatory `aud`, 401 with `WWW-Authenticate: Bearer` / 403 for missing scope, audit `sub` and
+  `jti` rather than the token, about 30 s leeway, one client per service and environment, and
+  `X-Request-ID` propagation with OpenTelemetry. The test list (no token, wrong scope, wrong `aud`,
+  expired; token reuse; single refetch after 401; duplicate delivery processed once; schema checks in
+  both CIs) is usable as an acceptance draft; cross-repository checks belong in
+  `umaxica-qa-test-integration`.
+
+Needs adapting:
+
+| Guideline point                                       | Repository position                                                                                                                                                                                               |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Broker: Kafka, SNS+SQS or RabbitMQ                    | none is present; no broker gem in either `Gemfile.lock`. Existing base is PostgreSQL + Solid Queue; outbox relay could push over HTTPS (SET push delivery, RFC 8935) without a broker. Broker choice stays open |
+| Sidekiq                                               | not used; Solid Queue                                                                                                                                                                                             |
+| Doorkeeper in one business app as the AS              | Access is already the OP, so the AS role belongs to Access; no Doorkeeper. Business apps never issue tokens to each other (agrees with the guideline's preferred option)                                           |
+| `client_secret_basic`, `private_key_jwt` later        | the OIDC/FAPI target and the 2026-11-11 secret exposure favour `private_key_jwt` (RFC 7523) from the start; no shared secrets (option E above is already "not recommended")                                       |
+| RS256                                                 | the FAPI 2.0 target uses PS256 or ES256                                                                                                                                                                           |
+| Local projection and eventual consistency everywhere  | Access is fail-closed: a ceremony needs Governance's current answer, and Access holds OP data only. A local copy of Governance permission data in Access conflicts with that; revocation must be confirmed      |
+| Access calling itself for tokens (option B above)     | when Access is the caller, it would obtain a token from itself; the guideline's model assumes a separate AS. Governance -> Access calls fit it directly                                                          |
+
+Open questions the guideline also leaves to the owner: broker or HTTPS push; event list and owners
+(the three exchanges above are the starting list); scope names and `aud` values; which exchanges
+truly need a synchronous answer (credential lookup during a ceremony does; revocation could be an
+event with a confirmed acknowledgement); and the transport question in the previous section.
+
+## Decision recorded (2026-11-13)
+
+The owner chose plain HTTPS request/response with no message broker: the work is mostly synchronous
+and not streaming, and a broker adds infrastructure without benefit for one peer and a few exchanges.
+Events are pushed over HTTPS from an outbox (Solid Queue relay) with a confirmed acknowledgement. The
+broker rows in the guideline section above are therefore closed. Still open: network path (public or
+private), service authentication, scopes and `aud` values. Recorded in Access ADR decision 18.
+
+## Decision changed (2026-11-13, later)
+
+The owner rejected server-to-server calls between Access and Governance altogether. Exchanges move
+to the front channel: signed handoff JWS carried by the browser through the Jump gateway. This
+supersedes the HTTPS decision above. See ADR decision 18 and
+`plans/2026-11-13-jump-front-channel-handoff-work-order.md`. Open: revocation without a browser,
+peer key distribution, query-string size.

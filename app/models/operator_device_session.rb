@@ -35,7 +35,8 @@
 class OperatorDeviceSession < OpBaseOrgRecord
   include DeviceSessionable
 
-  belongs_to :staff, class_name: "Operator", inverse_of: :operator_device_sessions
+  attr_readonly :principal_public_id
+
   # Nullable in the schema and legitimately blank for fallback (non-DBSC)
   # sessions and before the first refresh rotation; requiring it made `revoke!`
   # fail validation, so sign-out could not revoke such sessions.
@@ -45,6 +46,9 @@ class OperatorDeviceSession < OpBaseOrgRecord
   has_many :op_org_grants, foreign_key: :device_session_id,
                            dependent: :restrict_with_exception,
                            inverse_of: :operator_device_session
+
+  validates :staff_id, presence: true
+  validates :principal_public_id, presence: true, length: { maximum: 255 }
 
   # Unique indexes that include the primary key back composite references; checked only for an explicit id.
   validates :id, uniqueness: { scope: %i(staff_id) }, allow_nil: true, if: :will_save_change_to_id?

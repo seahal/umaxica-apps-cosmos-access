@@ -16,7 +16,7 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
 
       assert_equal 422, browser.response.status
       assert_equal "record_missing", browser.response.parsed_body.fetch("error_code")
-      assert_not browser.response.cookies.key?(AuthenticationBase::DBSC_COOKIE_KEY)
+      assert_not browser.response.cookies.key?(AuthenticationCookieName.dbsc)
     end
   end
 
@@ -25,44 +25,45 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
       {
         host: ENV.fetch("PUBLIC_VISA_SERVICE_URL"),
         resource_type: "client",
-        owner_attribute: :user,
-        actor: lambda {
-          Client.create!(
-            security_mode_id: SecurityModeConfigurable::NORMAL,
-            status_id: ClientStatus::ACTIVE,
-          )
-        },
+        owner_attribute: :user_id,
         token_class: ClientToken,
+        device_class: ClientDeviceSession,
       },
       {
         host: ENV.fetch("PUBLIC_VISA_STAFF_URL"),
         resource_type: "operator",
-        owner_attribute: :staff,
-        actor: lambda {
-          Operator.create!(
-            security_mode_id: SecurityModeConfigurable::ADVANCED,
-            status_id: OperatorStatus::ACTIVE,
-          )
-        },
+        owner_attribute: :staff_id,
         token_class: OperatorToken,
+        device_class: OperatorDeviceSession,
       },
     ].each do |configuration|
-      actor = configuration.fetch(:actor).call
-      token_attributes = { authentication_epoch: 0 }
-      token_attributes[configuration.fetch(:owner_attribute)] = actor
-      token = configuration.fetch(:token_class).create!(**token_attributes)
+      owner_id = 100_001
+      owner_attribute = configuration.fetch(:owner_attribute)
+      device = configuration.fetch(:device_class).create!(
+        owner_attribute => owner_id,
+        :principal_public_id => "device-owner",
+      )
+      token = configuration.fetch(:token_class).create!(
+        owner_attribute => owner_id, :authentication_epoch => 0, :device_session => device,
+      )
+      token.update!(authentication_context: "normal") if configuration.fetch(:resource_type) == "operator"
       token.rotate_refresh_token!
+      token.update!(dbsc_challenge: SecureRandom.urlsafe_base64(32), dbsc_challenge_issued_at: Time.current)
       host = configuration.fetch(:host)
-      access_token = jwt_access_token_for(
-        actor,
-        host: host,
-        session_public_id: token.public_id,
-        resource_type: configuration.fetch(:resource_type),
+      type = configuration.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: owner_id.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: device.public_id, oidc_jti: token.oidc_jti,
+        authentication_context: AuthenticationContextValue::NORMAL_KEY,
+      )
+      access_token = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
       )
       browser = open_session
       browser.host!(host)
       browser.https!
-      browser.cookies[AuthenticationBase::ACCESS_COOKIE_KEY] = access_token
+      browser.cookies[AuthenticationCookieName.access] = access_token
 
       browser.get("/edge/v0/token/check", headers: { "Accept" => "application/json" })
 
@@ -87,12 +88,15 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
         [-1, 0, 1].each do |offset|
           case surface
           when "app"
-            actor = Client.create!(security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE)
-            token = ClientToken.create!(authentication_epoch: 0, user: actor)
+            device = ClientDeviceSession.create!(user_id: 101_000 + offset, principal_public_id: "client-#{offset}")
+            token = ClientToken.create!(authentication_epoch: 0, user_id: device.user_id, device_session: device)
             host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
           when "org"
-            actor = Operator.create!(security_mode_id: SecurityModeConfigurable::ADVANCED, status_id: OperatorStatus::ACTIVE)
-            token = OperatorToken.create!(authentication_epoch: 0, staff: actor)
+            device = OperatorDeviceSession.create!(
+              staff_id: 102_000 + offset,
+              principal_public_id: "operator-#{offset}",
+            )
+            token = OperatorToken.create!(authentication_epoch: 0, staff_id: device.staff_id, device_session: device)
             host = ENV.fetch("PUBLIC_VISA_STAFF_URL")
           else
             raise ArgumentError, "unsupported Visa surface"
@@ -104,7 +108,7 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
           browser = open_session
           browser.host!(host)
           browser.https!
-          browser.cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+          browser.cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
           key = OpenSSL::PKey::EC.generate("prime256v1")
           jwk = JWT::JWK.new(key, use: "sig", kid: SecureRandom.uuid)
           proof = JWT.encode(
@@ -122,9 +126,9 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
           assert_equal(offset.negative? ? 422 : 201, browser.response.status, "#{surface} offset #{offset}")
           if offset.negative?
             assert_equal "challenge_expired", browser.response.parsed_body.fetch("error_code")
-            assert_not browser.response.cookies.key?(AuthenticationBase::DBSC_COOKIE_KEY)
+            assert_not browser.response.cookies.key?(AuthenticationCookieName.dbsc)
           else
-            assert_predicate browser.response.cookies[AuthenticationBase::DBSC_COOKIE_KEY], :present?
+            assert_predicate browser.response.cookies[AuthenticationCookieName.dbsc], :present?
           end
         end
       end
@@ -132,14 +136,14 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
   end
 
   test "Visa APP DBSC registration accepts a session-bound proof and rejects a wrong audience" do
-    actor = Client.create!(security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE)
-    token = ClientToken.create!(authentication_epoch: 0, user: actor)
+    device = ClientDeviceSession.create!(user_id: 103_001, principal_public_id: "client-dbsc")
+    token = ClientToken.create!(authentication_epoch: 0, user_id: device.user_id, device_session: device)
     token.update!(dbsc_challenge: SecureRandom.hex(16), dbsc_challenge_issued_at: ClientToken.database_now)
     browser = open_session
     host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
     browser.host!(host)
     browser.https!
-    browser.cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    browser.cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
     key = OpenSSL::PKey::EC.generate("prime256v1")
     jwk = JWT::JWK.new(key, use: "sig", kid: SecureRandom.uuid)
     wrong_host = ENV.fetch("PUBLIC_VISA_STAFF_URL")
@@ -156,7 +160,7 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
 
     assert_equal 422, browser.response.status
     assert_equal "audience_mismatch", browser.response.parsed_body.fetch("error_code")
-    assert_not browser.response.cookies.key?(AuthenticationBase::DBSC_COOKIE_KEY)
+    assert_not browser.response.cookies.key?(AuthenticationCookieName.dbsc)
     assert_predicate token.reload.dbsc_challenge, :present?
 
     payload["aud"] = "https://#{host}/edge/v0/token/dbsc"
@@ -171,7 +175,7 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
 
     assert_equal 422, browser.response.status
     assert_equal "invalid_proof", browser.response.parsed_body.fetch("error_code")
-    assert_not browser.response.cookies.key?(AuthenticationBase::DBSC_COOKIE_KEY)
+    assert_not browser.response.cookies.key?(AuthenticationCookieName.dbsc)
     assert_predicate token.reload.dbsc_challenge, :present?
 
     proof = JWT.encode(payload, key, "ES256", { "typ" => "dbsc+jwt", "jwk" => jwk.export })
@@ -183,7 +187,7 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
     )
 
     assert_equal 201, browser.response.status
-    assert_predicate browser.response.cookies[AuthenticationBase::DBSC_COOKIE_KEY], :present?
+    assert_predicate browser.response.cookies[AuthenticationCookieName.dbsc], :present?
     assert_equal ClientTokenDbscStatus::ACTIVE, token.reload.user_token_dbsc_status_id
     assert_nil token.dbsc_challenge
 
@@ -196,18 +200,18 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
 
     assert_equal 422, browser.response.status
     assert_equal "missing_challenge", browser.response.parsed_body.fetch("error_code")
-    assert_not browser.response.cookies.key?(AuthenticationBase::DBSC_COOKIE_KEY)
+    assert_not browser.response.cookies.key?(AuthenticationCookieName.dbsc)
   end
 
   test "Visa ORG DBSC registration accepts a session-bound proof and rejects a wrong audience" do
-    actor = Operator.create!(security_mode_id: SecurityModeConfigurable::ADVANCED, status_id: OperatorStatus::ACTIVE)
-    token = OperatorToken.create!(authentication_epoch: 0, staff: actor)
+    device = OperatorDeviceSession.create!(staff_id: 103_002, principal_public_id: "operator-dbsc")
+    token = OperatorToken.create!(authentication_epoch: 0, staff_id: device.staff_id, device_session: device)
     token.update!(dbsc_challenge: SecureRandom.hex(16), dbsc_challenge_issued_at: OperatorToken.database_now)
     browser = open_session
     host = ENV.fetch("PUBLIC_VISA_STAFF_URL")
     browser.host!(host)
     browser.https!
-    browser.cookies[AuthenticationBase::REFRESH_COOKIE_KEY] = token.rotate_refresh_token!
+    browser.cookies[AuthenticationCookieName.refresh] = token.rotate_refresh_token!
     key = OpenSSL::PKey::EC.generate("prime256v1")
     jwk = JWT::JWK.new(key, use: "sig", kid: SecureRandom.uuid)
     wrong_host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
@@ -224,7 +228,7 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
 
     assert_equal 422, browser.response.status
     assert_equal "audience_mismatch", browser.response.parsed_body.fetch("error_code")
-    assert_not browser.response.cookies.key?(AuthenticationBase::DBSC_COOKIE_KEY)
+    assert_not browser.response.cookies.key?(AuthenticationCookieName.dbsc)
     assert_predicate token.reload.dbsc_challenge, :present?
 
     payload["aud"] = "https://#{host}/edge/v0/token/dbsc"
@@ -239,7 +243,7 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
 
     assert_equal 422, browser.response.status
     assert_equal "invalid_proof", browser.response.parsed_body.fetch("error_code")
-    assert_not browser.response.cookies.key?(AuthenticationBase::DBSC_COOKIE_KEY)
+    assert_not browser.response.cookies.key?(AuthenticationCookieName.dbsc)
     assert_predicate token.reload.dbsc_challenge, :present?
 
     proof = JWT.encode(payload, key, "ES256", { "typ" => "dbsc+jwt", "jwk" => jwk.export })
@@ -251,7 +255,7 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
     )
 
     assert_equal 201, browser.response.status
-    assert_predicate browser.response.cookies[AuthenticationBase::DBSC_COOKIE_KEY], :present?
+    assert_predicate browser.response.cookies[AuthenticationCookieName.dbsc], :present?
     assert_equal OperatorTokenDbscStatus::ACTIVE, token.reload.staff_token_dbsc_status_id
     assert_nil token.dbsc_challenge
 
@@ -264,7 +268,7 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
 
     assert_equal 422, browser.response.status
     assert_equal "missing_challenge", browser.response.parsed_body.fetch("error_code")
-    assert_not browser.response.cookies.key?(AuthenticationBase::DBSC_COOKIE_KEY)
+    assert_not browser.response.cookies.key?(AuthenticationCookieName.dbsc)
   end
 
   test "the Visa hosts route nothing at the root" do

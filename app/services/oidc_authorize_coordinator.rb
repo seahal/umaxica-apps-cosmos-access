@@ -10,28 +10,13 @@ class OidcAuthorizeCoordinator < ApplicationService
   def initialize(params:, resource:, session_token:, auth_method: nil, acr: nil, authentication_event_at: nil,
                  authorization_transaction_ref: nil)
     super()
-    @params = params
-    @resource = resource
-    @session_token = session_token
-    @auth_method = auth_method
-    @acr = acr
-    @authentication_event_at = authentication_event_at
-    @authorization_transaction_ref = authorization_transaction_ref
   end
 
   def call
-    validation = validate_request!
-    code_record = issue_authorization_code!(validation)
-    build_success_redirect(code_record)
-  rescue OidcClientRegistry::ClientNotFound => e
-    failure("unauthorized_client", e.message)
-  rescue OidcAuthorizeRequestResolver::RequestError => e
-    failure(e.error, e.message)
-  rescue OidcClientRegistry::InvalidRedirectUri, ArgumentError => e
-    failure("invalid_request", e.message)
-  rescue ActiveRecord::RecordInvalid, Umaxica::Valkey::Unavailable, Umaxica::Valkey::SerializationError,
-         Umaxica::Valkey::OperationError => e
-    failure("server_error", e.message)
+    Result.new(
+      success: false, redirect_url: nil, redirect_uri: nil, error: "temporarily_unavailable",
+      error_description: "Governance authorization code authority is unavailable",
+    )
   end
 
   class << self
@@ -56,46 +41,5 @@ class OidcAuthorizeCoordinator < ApplicationService
       response_params << ["state", state] if state.present?
       rp_redirect_url(redirect_uri: redirect_uri, resource_type: resource_type, response_params: response_params)
     end
-  end
-
-  private
-
-  attr_reader :params, :resource, :session_token, :auth_method, :acr, :authentication_event_at,
-              :authorization_transaction_ref
-
-  def validate_request!
-    OidcAuthorizeRequestResolver.call(params: params, resource: resource)
-  end
-
-  def issue_authorization_code!(client)
-    OidcAuthorizationCodeIssuer.call(
-      client: client.client,
-      params: params.merge(scope: client.scope),
-      resource: resource,
-      session_token: session_token,
-      auth_method: auth_method,
-      acr: acr,
-      authentication_event_at: authentication_event_at,
-      authorization_transaction_ref: authorization_transaction_ref,
-    )
-  end
-
-  def build_success_redirect(code_record)
-    response_params = [["code", code_record.code]]
-    response_params << ["state", code_record.state] if code_record.state.present?
-
-    Result.new(
-      success: true,
-      redirect_url: self.class.rp_redirect_url(
-        redirect_uri: code_record.redirect_uri,
-        resource_type: code_record.resource_type,
-        response_params: response_params,
-      ),
-      redirect_uri: code_record.redirect_uri, error: nil, error_description: nil,
-    )
-  end
-
-  def failure(error, description)
-    Result.new(success: false, redirect_url: nil, redirect_uri: nil, error: error, error_description: description)
   end
 end

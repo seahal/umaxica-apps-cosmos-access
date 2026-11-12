@@ -22,7 +22,7 @@ class Visa::Org::Edge::V0::Token::RefreshesController < Visa::Org::AuthorityCont
       return
     end
 
-    refresh_plain = cookies[AuthenticationBase::REFRESH_COOKIE_KEY]
+    refresh_plain = cookies[AuthenticationCookieName.refresh]
 
     if refresh_plain.blank?
       render json: {

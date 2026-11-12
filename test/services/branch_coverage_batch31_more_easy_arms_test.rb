@@ -68,10 +68,6 @@ class BranchCoverageBatch31MoreEasyArmsTest < ActiveSupport::TestCase
     end
   end
 
-  test "CredentialSecurityTransition blank actor" do
-    assert_raises(ArgumentError) { CredentialSecurityTransition.new(actor: nil, event: :rotate) }
-  end
-
   test "Telephone signup issuer writes typed ceremony proof and Source send time" do
     ClientSignUpFlowStatus::DEFAULTS.each { |id| ClientSignUpFlowStatus.find_or_create_by!(id: id) }
     ClientSignUpFlowCleanupStatus::DEFAULTS.each { |id| ClientSignUpFlowCleanupStatus.find_or_create_by!(id: id) }

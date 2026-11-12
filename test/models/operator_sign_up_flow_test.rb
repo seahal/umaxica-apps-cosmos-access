@@ -40,28 +40,21 @@ class FlowSignUpTest < ActiveSupport::TestCase
     assert_not @record.sign_up_cancelable?
   end
 
-  test "advances through the real sign-up lifecycle and completes" do
-    @record.advance_sign_up_to_contact!
-
-    assert_equal [ClientSignUpFlowStatus::CONTACT_PENDING, "contact"], [@record.status_id, @record.step]
-    @record.advance_sign_up_to_credential!
-
-    assert_equal ClientSignUpFlowStatus::CREDENTIAL_PENDING, @record.status_id
-    @record.verify_sign_up_contact!
-    @record.advance_sign_up_to_guardrail!
-    @record.advance_sign_up_to_checkpoint!
-
-    assert_equal ClientSignUpFlowStatus::CHECKPOINT_PENDING, @record.status_id
-    @record.begin_sign_up_finalization!
-    @record.complete_sign_up!
-    @record.reload
-
-    assert_equal [ClientSignUpFlowStatus::COMPLETED, "completed"], [@record.status_id, @record.step]
-    assert_predicate @record, :sign_up_completed?
-    assert_not @record.sign_up_in_progress?
-    assert_not @record.sign_up_cancelable?
-    assert_predicate @record, :sign_up_terminal?
-    assert_predicate @record.completed_at, :present?
+  test "sign-up advancement refuses without Governance and preserves the existing flow" do
+    original = @record.reload.attributes
+    [
+      -> { @record.advance_sign_up_to_contact! },
+      -> { @record.advance_sign_up_to_credential! },
+      -> { @record.verify_sign_up_contact! },
+      -> { @record.start_sign_up_social_callback! },
+      -> { @record.advance_sign_up_to_guardrail! },
+      -> { @record.advance_sign_up_to_checkpoint! },
+      -> { @record.begin_sign_up_finalization! },
+      -> { @record.complete_sign_up! },
+    ].each do |advance|
+      assert_raises(GovernanceLookupUnavailableError) { advance.call }
+      assert_equal original, @record.reload.attributes
+    end
   end
 
   test "discard_sign_up preserves the retention deadline" do

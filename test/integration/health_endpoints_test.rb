@@ -241,7 +241,7 @@ class HealthEndpointsTest < ActionDispatch::IntegrationTest
   test "Auth readiness ignores Visa-only dependencies" do
     host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
 
-    assert_readiness_does_not_build(AppRpRecord)
+    assert_readiness_does_not_build(OccurrenceRecord)
   end
 
   test "new database base classes do not affect existing surfaces by default" do
@@ -325,7 +325,7 @@ class HealthEndpointsTest < ActionDispatch::IntegrationTest
     assert_equal "unavailable\n", response.body
 
     forbidden = %w(
-      AppPrincipalRecord app_principal app_principal_replica writing reading localhost
+      OpBaseAppRecord op_base_app op_base_app_replica writing reading localhost
       StandardError PG::ConnectionBad Mysql2 database failed
     )
 
@@ -465,7 +465,7 @@ class HealthEndpointsTest < ActionDispatch::IntegrationTest
     # `auth/app`, which contains that substring. Forbid path leaks with a
     # trailing separator / quoted absolute path instead of the bare root.
     forbidden = [
-      "secret_key_base", "git", "AppPrincipalRecord", "PG::",
+      "secret_key_base", "git", "OpBaseAppRecord", "PG::",
       "StandardError", "localhost", "database", "failed", "readiness loaded",
     ]
 

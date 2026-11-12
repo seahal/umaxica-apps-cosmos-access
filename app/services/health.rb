@@ -174,9 +174,7 @@ module Health
       def check_roles
         operation =
           lambda do
-            # Logical records such as AppPrincipalRecord share the connection
-            # established by their physical zenith base; role switching is only
-            # permitted on the class that called connects_to.
+            # Role switching belongs to the class that establishes the physical connection.
             connection_owner = record_class.connection_class_for_self
             ROLES.each do |role|
               connection_owner.connected_to(role: role) do
@@ -219,10 +217,7 @@ module Health
       cache_key: "visa-app",
       surface_label: "app",
       record_classes: [
-        AppRpRecord,
-        AppSettingRecord,
-        AppSignalRecord,
-        AvatarRecord,
+        OpBaseAppRecord,
         OccurrenceRecord,
       ],
     )
@@ -231,9 +226,7 @@ module Health
       cache_key: "visa-org",
       surface_label: "org",
       record_classes: [
-        OrgRpRecord,
-        OrgSettingRecord,
-        OrgSignalRecord,
+        OpBaseOrgRecord,
       ],
     )
 
@@ -241,9 +234,7 @@ module Health
       cache_key: "sign-app",
       surface_label: "sign app",
       record_classes: [
-        AppPrincipalRecord,
         OpBaseAppRecord,
-        AppSettingRecord,
       ],
     )
 
@@ -251,12 +242,9 @@ module Health
       cache_key: "sign-org",
       surface_label: "sign org",
       record_classes: [
-        OrgPrincipalRecord,
         OpBaseOrgRecord,
-        OrgSettingRecord,
       ],
     )
-
   end
 
   # Liveness probe: only confirms the Rails process can respond.

@@ -1,0 +1,28 @@
+example_id                                                                                   | status | run_time        |
+-------------------------------------------------------------------------------------------- | ------ | --------------- |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:1:1]      | passed | 0.61777 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:2:1]      | passed | 0.04265 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:2:2:1]    | passed | 0.03617 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:2:3:1]    | passed | 0.02481 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:3:1]      | passed | 0.0168 seconds  |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:3:2:1]    | passed | 0.01247 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:4:1]      | passed | 0.01534 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:5:1]      | passed | 0.01511 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:6:1:1]    | passed | 0.02232 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:6:2:1]    | passed | 0.01106 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:6:3:1]    | passed | 0.01097 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:6:4:1]    | passed | 0.01104 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:6:5:1]    | passed | 0.01102 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:6:6:1]    | passed | 0.0109 seconds  |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:6:7:1]    | passed | 0.01038 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:7:1]      | passed | 0.01053 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:8:1]      | passed | 0.01182 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:9:1]      | passed | 0.0148 seconds  |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:10:1:1:1] | passed | 0.01633 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:10:1:2]   | passed | 0.01504 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:10:2:1]   | passed | 0.01292 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:11:1:1]   | passed | 0.01052 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:11:1:2:1] | passed | 0.01053 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:11:2:1:1] | passed | 0.01066 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:11:2:2]   | passed | 0.01071 seconds |
+./vendor/fork/database_consistency/spec/checkers/column_presence_checker_spec.rb[1:12:1]     | passed | 0.01074 seconds |

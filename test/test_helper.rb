@@ -135,20 +135,6 @@ module AuthenticationHarness
     host_headers(host).merge(headers).merge("Authorization" => "Bearer #{token}")
   end
 
-  def with_preference_realm_issuers
-    %w(app org).each { |realm| JitSecurityJwtRegistry.issuer("preference_#{realm}") }
-    yield
-  end
-
-  def assert_no_preference_state_cookies
-    set_cookie = response.headers["Set-Cookie"].to_s
-
-    [PreferenceCookieName.anonymous_jwt, PreferenceCookieName.anonymous_experience,
-     PreferenceCookieName.binding, PreferenceIoKeys::Cookies::LANGUAGE,].each do |name|
-      assert_not_includes set_cookie, "#{name}=", name
-    end
-  end
-
   def submit_step_up_completion_if_present!(host: nil, headers: {})
     return unless respond_to?(:response) && response.media_type == "text/html"
     return unless response.body.include?("step-up-completion-form")
@@ -410,10 +396,6 @@ module ActiveSupport
     parallel_workers = Integer(ENV.fetch("PARALLEL_WORKERS") { Concurrent.physical_processor_count.to_s }, 10)
     raise ArgumentError, "PARALLEL_WORKERS must be positive" unless parallel_workers.positive?
 
-    # The concrete legacy organization model was renamed to OperatorOrganization while the
-    # physical table and fixture filename remain `organizations`. Without this explicit mapping,
-    # Rails infers the removed Organization constant and loads the fixture on the wrong connection.
-    set_fixture_class organizations: OperatorOrganization
     fixtures :all
     ValkeyTestIsolation.install!
     ParallelTestDatabaseCloner.install!(workers: parallel_workers)

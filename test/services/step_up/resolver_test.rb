@@ -9,6 +9,7 @@ module StepUp
     Token =
       Struct.new(
         :currently_usable,
+        :evidence_state_id,
         :public_id,
         :last_step_up_at,
         :last_step_up_scope,
@@ -37,6 +38,7 @@ module StepUp
     test "returns satisfied when token is usable, fresh, and scope matches" do
       now = Time.zone.parse("2026-05-25 00:00:00")
       token = Token.new(
+        evidence_state_id: IdentityStepUpCeremonyContract::EVIDENCE_RECORDED,
         currently_usable: true,
         public_id: "token_1",
         last_step_up_at: now - 5.minutes,
@@ -67,6 +69,20 @@ module StepUp
       assert_equal now + 10.minutes, step_up.expires_at
     end
 
+    test "only explicitly recorded evidence can authorize a fresh complete proof" do
+      now = Time.utc(2026, 10, 3, 12)
+      token = token_at(now - 1.minute, scope: "profile")
+
+      assert_predicate StepUpResolver.call(token: token, scope: "profile", now: now), :satisfied?
+
+      [nil, IdentityStepUpCeremonyContract::EVIDENCE_ABSENT, 999].each do |state|
+        token.evidence_state_id = state
+
+        assert_not StepUpResolver.call(token: token, scope: "profile", now: now).satisfied?,
+                   "evidence state #{state.inspect} must not authorize"
+      end
+    end
+
     test "phishing resistance requires recorded evidence even when method and AAL match" do
       now = Time.utc(2026, 10, 3, 12)
       requirement = StepUpRequirement.new(
@@ -77,6 +93,7 @@ module StepUp
         require_session_binding: true, actor_ref: "resolver", resource_ref: nil, tenant_ref: nil,
       )
       token = Token.new(
+        evidence_state_id: IdentityStepUpCeremonyContract::EVIDENCE_RECORDED,
         currently_usable: true, public_id: "token_1",
         last_step_up_at: now - 1.minute, last_step_up_scope: "settings_passkey",
         last_step_up_aal: "aal2", last_step_up_method: "passkey",
@@ -107,6 +124,7 @@ module StepUp
         require_session_binding: true, actor_ref: "resolver", resource_ref: nil, tenant_ref: nil,
       )
       token = Token.new(
+        evidence_state_id: IdentityStepUpCeremonyContract::EVIDENCE_RECORDED,
         currently_usable: true, public_id: "token_1", last_step_up_at: now - 1.minute,
         last_step_up_scope: "settings_passkey", last_step_up_aal: "aal2", last_step_up_method: "passkey",
         last_step_up_session_public_id: "session_1", last_step_up_purpose: "step_up",
@@ -121,6 +139,7 @@ module StepUp
     test "freshness rejects a verification time one microsecond in the future" do
       now = Time.utc(2026, 10, 3, 12)
       token = Token.new(
+        evidence_state_id: IdentityStepUpCeremonyContract::EVIDENCE_RECORDED,
         currently_usable: true, public_id: "token_1", last_step_up_scope: "profile",
         last_step_up_method: "totp", last_step_up_aal: "aal2",
         last_step_up_session_public_id: "token_1", last_step_up_user_verified: false,
@@ -140,6 +159,7 @@ module StepUp
     test "freshness rejects exactly at and one microsecond after expiry" do
       verified_at = Time.utc(2026, 10, 3, 12)
       token = Token.new(
+        evidence_state_id: IdentityStepUpCeremonyContract::EVIDENCE_RECORDED,
         currently_usable: true, public_id: "token_1", last_step_up_scope: "profile",
         last_step_up_method: "totp", last_step_up_aal: "aal2", last_step_up_at: verified_at,
         last_step_up_session_public_id: "token_1", last_step_up_user_verified: false,
@@ -314,6 +334,7 @@ module StepUp
                  public_id: "token_1", session_public_id: "token_1",
                  purpose: "step_up", audience: "step_up:resolver")
       Token.new(
+        evidence_state_id: IdentityStepUpCeremonyContract::EVIDENCE_RECORDED,
         currently_usable: currently_usable,
         public_id: public_id,
         last_step_up_at: time,

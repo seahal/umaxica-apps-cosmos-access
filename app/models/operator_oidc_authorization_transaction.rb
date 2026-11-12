@@ -48,6 +48,7 @@ class OperatorOidcAuthorizationTransaction < OpBaseOrgRecord
   include OidcAuthorizationTransactionable
 
   validates :cancellation_handoff_digest, :result_digest, length: { maximum: 64 }
+  validates :cancellation_handoff_ref, :cancellation_handoff_digest, uniqueness: true, allow_nil: true
 
   oidc_authorization_surface "org"
 

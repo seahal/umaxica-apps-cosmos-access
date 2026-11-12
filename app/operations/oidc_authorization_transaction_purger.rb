@@ -2,8 +2,8 @@
 # frozen_string_literal: true
 
 # Deletes authorization transactions whose expiry is at least RETENTION_PERIOD in the past.
-# App Secret claims and receipts still need expired authorization facts for terminal
-# reconciliation, so their dependencies remain until the corresponding proofs are collected.
+# Secret-linked APP history remains held until Governance can verify its claim-retention facts.
+# Independent OP history can still be collected; the unavailable hold is reported after that work.
 class OidcAuthorizationTransactionPurger
   MODELS = {
     "app" => ClientOidcAuthorizationTransaction,
@@ -28,66 +28,63 @@ class OidcAuthorizationTransactionPurger
   def initialize(now: Time.current, retention_period: OidcAuthorizationTransactionable::RETENTION_PERIOD)
     @now = now
     @retention_period = retention_period
+    validate_retention_period!
   end
 
   def call
-    MODELS.transform_values do |model|
-      model.connection_owner.connected_to(role: :writing) do
-        candidates = model.purgeable_at(now, retention_period: retention_period)
-        (model == ClientOidcAuthorizationTransaction) ? purge_app_transactions(candidates) : purge_transactions(
-          candidates, model,
-        )
+    counts =
+      MODELS.transform_values do |model|
+        model.connection_owner.connected_to(role: :writing) do
+          purge_transactions(model.purgeable_at(now, retention_period: retention_period), model)
+        end
       end
-    end
+    raise @governance_hold if @governance_hold
+
+    counts
   end
 
   private
 
   attr_reader :now, :retention_period
 
-  def purge_app_transactions(candidates)
+  def purge_transactions(candidates, model)
     deleted = 0
     candidates.in_batches(of: 500) do |batch|
-      ClientOidcAuthorizationTransaction.transaction do
-        rows = batch.lock.to_a
-        flow_ids = rows.filter_map(&:secret_sign_in_flow_id)
-        flows = ClientSignInFlow.where(id: flow_ids).pluck(:id, :public_id).to_h
-        claimed_refs =
-          AppZenithRecord.connected_to(role: :writing) do
-            ClientSecretCredential.where(claim_sign_in_flow_ref: flows.values).pluck(:claim_sign_in_flow_ref)
-          end
-        protected_flows = flows.filter_map { |id, reference| id if claimed_refs.include?(reference) } +
-          ClientSecretSignInReceipt.where(sign_in_flow_id: flow_ids).pluck(:sign_in_flow_id)
-        protected_ids = rows.filter_map { |row| row.id if protected_flows.include?(row.secret_sign_in_flow_id) }
-        rows.each do |row|
-          next if protected_ids.include?(row.id)
-          next unless purge_session_limit_resolutions_for!(row, ClientOidcAuthorizationTransaction)
-          next unless AuthAdmissionBindingPurger.purge_for_parent!(
-            parent: row, now:, retention_period:,
-          )
-
-          deleted += ClientOidcAuthorizationTransaction.where(id: row.id).delete_all
-        end
+      batch.pluck(:id).each do |id|
+        deleted += purge_candidate(model, id)
+      rescue GovernanceLookupUnavailableError => e
+        # This expected external-authority hold is surfaced after independent rows and realms finish.
+        @governance_hold ||= e
       end
     end
     deleted
   end
 
-  def purge_transactions(candidates, model)
-    deleted = 0
-    candidates.in_batches(of: 500) do |batch|
-      model.transaction do
-        batch.lock.to_a.each do |row|
-          next unless purge_session_limit_resolutions_for!(row, model)
-          next unless AuthAdmissionBindingPurger.purge_for_parent!(
-            parent: row, now:, retention_period:,
-          )
+  def purge_candidate(model, id)
+    model.transaction do
+      row = model.purgeable_at(now, retention_period: retention_period).lock.find_by(id: id)
+      next 0 unless row
 
-          deleted += model.where(id: row.id).delete_all
-        end
+      if model == ClientOidcAuthorizationTransaction && row.secret_sign_in_flow_id
+        # The existing optional historical link identifies Source-dependent ownership. No proof of
+        # absence can be inferred after Zenith removal, even if a local receipt is not present.
+        raise GovernanceLookupUnavailableError, "Governance credential-claim retention verification is unavailable"
       end
+      next 0 unless purge_session_limit_resolutions_for!(row, model)
+      next 0 unless AuthAdmissionBindingPurger.purge_for_parent!(parent: row, now:, retention_period:)
+
+      model.where(id: row.id).delete_all
     end
-    deleted
+  end
+
+  def validate_retention_period!
+    value =
+      case retention_period
+      when ActiveSupport::Duration then retention_period.value
+      when Numeric then retention_period
+      else raise ArgumentError, "retention period must be a duration or number"
+      end
+    raise ArgumentError, "retention period must be finite and positive" unless value.finite? && value.positive?
   end
 
   # Session-limit resolution rows are terminal audit facts, but their parent

@@ -32,62 +32,46 @@ class IdentityAuthorityInversionGuardTest < ActiveSupport::TestCase
     assert_includes visa_routes, "resource :refresh, only: :create"
     assert_source_includes auth_routes,
                            'resource :registration, only: :show, path: "up", ' \
-                           "controller: :ups, as: :up"
+                           'controller: "/auth/app/unavailable_ceremonies", as: :up'
     assert_source_includes auth_routes,
                            'resource :session, only: :show, path: "in", ' \
-                           "controller: :ins, as: :in"
-    assert_equal 2, auth_routes.scan("resource :registration, only: :create, controller: :registrations").length
-    assert_equal 2, auth_routes.scan("resource :session, only: :create, controller: :sessions").length
+                           'controller: "/auth/app/unavailable_ceremonies", as: :in'
+    assert_equal 2,
+                 auth_routes.scan(
+                   "resource :registration, only: :create, " \
+                   'controller: "/auth/app/unavailable_ceremonies"',
+                 ).length
+    assert_equal 2,
+                 auth_routes.scan(
+                   "resource :session, only: :create, " \
+                   'controller: "/auth/app/unavailable_ceremonies"',
+                 ).length
     assert_source_excludes auth_routes, 'path: "out"'
     assert_source_excludes auth_routes, "resource :termination"
     assert_includes visa_routes, "resource(:logout, only: %i(show create), controller: :logouts)"
   end
 
-  test "Auth session refresh calls the Auth-owned issuer" do
-    auth_base = file_content("app/controllers/concerns/authentication_base.rb")
+  test "browser root refresh uses the explicitly typed Auth issuer independently of RP refresh" do
+    metadata = file_content("app/controllers/concerns/authentication_base.rb")
+    boundary = file_content("app/controllers/concerns/op_browser_session_request.rb")
     issuer = file_content("app/operations/auth_refresh_token_issuer.rb")
 
-    assert_source_includes auth_base, "AuthRefreshTokenIssuer.call(refresh_token: refresh_plain)"
+    assert_source_excludes metadata, "refresh_access_token"
+    assert_source_includes boundary,
+                           "AuthRefreshTokenIssuer.call( refresh_token: secret, resource_type: resource_type,"
+    assert_source_excludes boundary, "OidcRefreshTokenIssuer.call"
     assert_source_includes issuer, "class AuthRefreshTokenIssuer"
+    assert_source_includes issuer, "def self.call(refresh_token:, resource_type:,"
   end
 
-  test "unknown social signup compatibility is explicit" do
-    concern = file_content("app/controllers/concerns/social_auth.rb")
-
-    assert_source_includes concern, "auth_social_admission_binding!"
-    assert_source_includes concern, "ExternalAuthenticationLoginUseCase.call"
-    assert_source_includes concern, "stage_social_link_completion!"
-    link = file_content("app/controllers/auth/app/social/link_completions_controller.rb")
-
-    assert_source_includes link, "ExternalAuthenticationLinkUseCase.call"
-    assert_source_includes link, "require_recent_step_up!"
-    assert_source_includes link, "token.with_lock"
-    assert_source_includes concern, "resolve_social_auth_callback_result"
-    assert_source_includes concern, "sign_up_entry: current_social_auth_entry == \"sign_up\""
-  end
-
-  test "sign email signup checkpoint uses the shared finalize boundary" do
-    controller = file_content("app/controllers/auth/app/sign/up/check/email/birthdates_controller.rb")
-
-    assert_source_includes controller, "sign_up_family = \"email\""
-    assert_no_match(/email_signup_completion/, controller)
-  end
-
-  test "social confirmation step includes turnstile before durable signup completion" do
-    # The confirmation step is an Inertia page now: the component draws the widget and the
-    # confirmation field, and the controller is what binds the visible challenge to this ceremony.
-    form = file_content("src/features/auth/signup/SocialSignUpConfirmation.tsx")
-
-    assert_source_includes form, "<TurnstileWidget {...turnstile} />"
-    assert_source_includes form, "confirm_new_social_identity"
-
-    %w(google apple).each do |provider|
-      controller = file_content(
-        "app/controllers/auth/app/sign/up/check/#{provider}/confirmations_controller.rb",
-      )
-
-      assert_source_includes controller, "turnstile: turnstile_visible_props("
-      assert_source_includes controller, "confirm_new_social_identity"
+  test "local account creation and credential callback controllers are retired" do
+    %w(
+      app/controllers/auth/app/social/link_completions_controller.rb
+      app/controllers/auth/app/sign/up/check/email/birthdates_controller.rb
+      app/controllers/auth/app/sign/up/check/google/confirmations_controller.rb
+      app/controllers/auth/app/sign/up/check/apple/confirmations_controller.rb
+    ).each do |path|
+      assert_not_predicate Rails.root.join(path), :exist?
     end
   end
 

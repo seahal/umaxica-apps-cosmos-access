@@ -38,7 +38,7 @@ class AuthenticationContextOperationInventoryTest < ActiveSupport::TestCase
               authz: Actor::Authz.new(policy_user: nil, token_claims: token_claims, surface: "org"),
             )
 
-            policy = policy_class.new(policy_record(policy_class), user: nil)
+            policy = policy_class.new(nil, user: nil)
             [name, !!policy.apply(rule)]
           end
 
@@ -66,7 +66,7 @@ class AuthenticationContextOperationInventoryTest < ActiveSupport::TestCase
 
     policy_classes.each do |policy_class|
       declared_rules(policy_class).each do |rule|
-        policy = policy_class.new(policy_record(policy_class), user: nil)
+        policy = policy_class.new(nil, user: nil)
 
         assert_not policy.apply(rule),
                    "#{policy_class}##{rule} must fail closed for an unrecognised context"
@@ -88,21 +88,7 @@ class AuthenticationContextOperationInventoryTest < ActiveSupport::TestCase
                  AuthenticationContextValue.standby.constrain_scopes(operator_scopes)
   end
 
-
   private
-
-  def policy_record(policy_class)
-    return nil unless policy_class == Authentication::AccessPolicy
-
-    AuthenticationBase::AccessPolicyContext.new(
-      policy: :public_strict,
-      options: {},
-      controller_name: "PolicyInventoryTestController",
-      action_name: "index",
-      logged_in: true,
-      current_resource_deactivated: false,
-    )
-  end
 
   def policy_classes
     Rails.application.eager_load!

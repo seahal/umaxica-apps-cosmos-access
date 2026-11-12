@@ -12,8 +12,9 @@ module TokenStatusManagement
   VALID_STATUSES = [STATUS_ACTIVE, STATUS_EXPIRED, STATUS_RESTRICTED, STATUS_REVOKED].freeze
 
   # The token carries at most one Step-Up evidence record. Revocation and one-time consumption
-  # both clear it to these values.
+  # both clear it to these values. ABSENT distinguishes clearing from recorded negative evidence.
   CLEARED_STEP_UP_EVIDENCE = {
+    evidence_state_id: IdentityStepUpCeremonyContract::EVIDENCE_ABSENT,
     last_step_up_at: nil,
     last_step_up_scope: nil,
     # @deprecated `last_step_up_aal` is a historical label and never an authority input.
@@ -23,10 +24,9 @@ module TokenStatusManagement
     last_step_up_audience: nil,
     last_step_up_session_public_id: nil,
     last_step_up_phishing_resistant: false,
-    # FIXME: Remediation D6 retains nullable cleared evidence; NOT NULL would break revocation.
-    last_step_up_user_verified: nil,
+    last_step_up_user_verified: false,
     last_step_up_credential_ref: nil,
-    last_step_up_full_reauthentication: nil,
+    last_step_up_full_reauthentication: false,
     last_step_up_resource_ref: nil,
     last_step_up_tenant_ref: nil,
   }.freeze
@@ -215,10 +215,17 @@ module TokenStatusManagement
 
   private
 
+  def step_up_evidence_state_matches_flags
+    return unless evidence_state_id == IdentityStepUpCeremonyContract::EVIDENCE_ABSENT
+    return if last_step_up_user_verified == false && last_step_up_full_reauthentication == false
+
+    errors.add(:evidence_state_id, :invalid)
+  end
+
   # The evidence lives on this token, so it is bound to the token's owner. A requirement naming
   # another actor is refused rather than consumed.
   def step_up_requirement_names_owner?(requirement)
-    owner_ref = actor_record&.public_id
+    owner_ref = principal_public_id
     owner_ref.present? && requirement.actor_ref.present? &&
       ActiveSupport::SecurityUtils.secure_compare(requirement.actor_ref.to_s, owner_ref.to_s)
   end

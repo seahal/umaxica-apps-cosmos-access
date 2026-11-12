@@ -43,18 +43,16 @@
 require "test_helper"
 
 class ClientChronicleTest < ActiveSupport::TestCase
-  fixtures :clients, :operators, :client_chronicle_events, :client_chronicle_levels, :client_statuses
+  self.fixture_table_names = %w(client_tokens client_device_sessions client_chronicle_events client_chronicle_levels)
 
   def setup
-    @user = clients(:one)
+    @subject_id = client_tokens(:one).user_id
     @audit_event = ClientChronicleEvent.find(ClientChronicleEvent::LOGIN_SUCCESS)
     @level = ClientChronicleLevel.find_or_create_by!(id: ClientChronicleLevel::INFO)
     @audit = ClientChronicle.create!(
-      user: @user,
-      user_chronicle_level: @level,
-      user_chronicle_event: @audit_event,
-      timestamp: Time.current,
-      ip_address: "192.168.1.1",
+      subject_type: "Client", subject_id: @subject_id,
+      user_chronicle_level: @level, user_chronicle_event: @audit_event,
+      timestamp: Time.current, ip_address: "192.168.1.1",
     )
   end
 
@@ -70,140 +68,77 @@ class ClientChronicleTest < ActiveSupport::TestCase
     assert_equal "192.168.1.1", @audit.ip_address.to_s
   end
 
-  test "requires user" do
-    audit = ClientChronicle.new(
-      user_chronicle_event: @audit_event,
-    )
+  test "subject identity is required" do
+    audit = ClientChronicle.new(user_chronicle_event: @audit_event)
 
     assert_not audit.valid?
     assert_not_empty audit.errors[:subject_id]
+    assert_not_empty audit.errors[:subject_type]
   end
 
-  test "requires user_chronicle_event" do
-    audit = ClientChronicle.new(
-      user: @user,
-    )
+  test "the default event remains valid for a scalar subject" do
+    audit = ClientChronicle.new(subject_type: "Client", subject_id: @subject_id)
 
-    # Defaults to NOTHING, so it should be valid
     assert_predicate audit, :valid?
   end
 
-  test "validates foreign key constraint on event_id" do
+  test "invalid event references fail both model validation and PostgreSQL foreign key" do
     audit = ClientChronicle.new(
-      user: @user,
-      event_id: 9999,
+      subject_type: "Client", subject_id: @subject_id, event_id: 9999,
       timestamp: Time.current,
     )
 
-    # Now validation should catch it before reaching the database
     assert_not audit.valid?
-    assert_not_empty audit.errors[:event_id]
     assert_includes audit.errors[:event_id], "must reference a valid user audit event"
+    attributes = @audit.attributes.except("id").merge("event_id" => 9999)
+    assert_raises(ActiveRecord::InvalidForeignKey) do
+      ClientChronicle.transaction(requires_new: true) { ClientChronicle.insert_all!([attributes]) }
+    end
   end
 
-  test "belongs to polymorphic actor" do
-    association = ClientChronicle.reflect_on_association(:actor)
-
-    assert_not_nil association
-    assert_equal :belongs_to, association.macro
-    assert_predicate association, :polymorphic?
+  test "historical actor and subject remain scalar references without cross-database navigation" do
+    assert_nil ClientChronicle.reflect_on_association(:actor)
+    assert_nil ClientChronicle.reflect_on_association(:user)
+    assert_equal @subject_id.to_s, @audit.subject_id
+    assert_equal "Client", @audit.subject_type
+    assert_equal @subject_id, @audit.actor_id
+    assert_equal "Client", @audit.actor_type
   end
 
-  test "can be created with a Client as actor" do
-    actor_user = clients(:one)
-    audit = ClientChronicle.create!(
-      user: @user,
-      user_chronicle_event: @audit_event,
-      actor: actor_user,
-    )
+  test "Client and Operator actor references remain distinguishable on historical audit rows" do
+    ["Client", "Operator"].each_with_index do |type, index|
+      audit = ClientChronicle.create!(
+        subject_type: "Client", subject_id: @subject_id, actor_type: type, actor_id: index + 100,
+        user_chronicle_event: @audit_event,
+      )
 
-    assert_equal actor_user.id, audit.actor_id
-    assert_equal "Client", audit.actor_type
-    assert_equal actor_user, audit.actor
+      assert_equal type, audit.reload.actor_type
+      assert_equal index + 100, audit.actor_id
+    end
+    assert_equal 2, ClientChronicle.where(subject_type: "Client", subject_id: @subject_id, actor_id: [100, 101]).count
   end
 
-  test "can be created with an Operator as actor" do
-    actor_staff = operators(:one)
-    audit = ClientChronicle.create!(
-      user: @user,
-      user_chronicle_event: @audit_event,
-      actor: actor_staff,
-    )
+  test "blank event id does not produce an invalid event reference error" do
+    audit = ClientChronicle.new(subject_type: "Client", subject_id: @subject_id, event_id: nil)
+    audit.valid?
 
-    assert_equal actor_staff.id, audit.actor_id
-    assert_equal "Operator", audit.actor_type
-    assert_equal actor_staff, audit.actor
-  end
-
-  test "Client and Operator can both be actors in different audits" do
-    actor_user = clients(:one)
-    actor_staff = operators(:one)
-
-    # Multiple audits for the same user can have different actors
-    ClientChronicle.create!(
-      user: @user,
-      user_chronicle_event: @audit_event,
-      actor: actor_user,
-    )
-
-    ClientChronicle.create!(
-      user: @user,
-      user_chronicle_event: @audit_event,
-      actor: actor_staff,
-    )
-
-    # Retrieve multiple audits related to the same Client
-    user_actors = @user.client_chronicles.where(actor_type: "Client")
-    staff_actors = @user.client_chronicles.where(actor_type: "Operator")
-
-    assert_not_empty user_actors
-    assert_not_empty staff_actors
-  end
-
-  # Additional tests for helper methods
-  test "user helper method returns user" do
-    assert_equal @user, @audit.user
-  end
-
-  test "user_id helper method returns user id" do
-    assert_equal @user.id.to_s, @audit.user_id
-  end
-
-  test "user helpers return nil for non user subjects" do
-    audit = ClientChronicle.new(subject_id: @user.id.to_s, subject_type: "Staff")
-
-    assert_nil audit.user
-    assert_nil audit.user_id
-  end
-
-  test "event validation skips blank event id" do
-    audit = ClientChronicle.new(user: @user, event_id: nil)
-
-    audit.send(:event_id_must_exist)
-
-    assert_empty audit.errors[:event_id]
+    assert_not_includes audit.errors[:event_id], "must reference a valid user audit event"
   end
 
   test "occurred_at alias works" do
     assert_equal @audit.timestamp, @audit.occurred_at
   end
 
-  test "set_timestamp defaults to current time" do
-    audit = ClientChronicle.new(user_chronicle_event: @audit_event)
-    audit.user = @user
-    audit.save!
+  test "timestamp defaults to current time" do
+    audit = ClientChronicle.create!(subject_type: "Client", subject_id: @subject_id, user_chronicle_event: @audit_event)
 
     assert_not_nil audit.timestamp
   end
 
-  test "actor defaults to subject user if blank" do
-    audit = ClientChronicle.create!(
-      user: @user,
-      user_chronicle_event: @audit_event,
-      actor: nil,
-    )
+  test "actor defaults to the scalar subject if blank" do
+    audit = ClientChronicle.create!(subject_type: "Client", subject_id: @subject_id, user_chronicle_event: @audit_event)
 
-    assert_equal @user.id, audit.actor_id
+    assert_equal @subject_id, audit.actor_id
     assert_equal "Client", audit.actor_type
   end
 end

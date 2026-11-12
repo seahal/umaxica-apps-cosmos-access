@@ -6,16 +6,17 @@ require "test_helper"
 class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
   include ActiveJob::TestHelper
 
-  fixtures :clients
+  self.fixture_table_names = []
 
   setup do
-    @client = clients(:one)
-    @root = ClientToken.create!(authentication_epoch: 0, user: @client)
+    @principal_public_id = PublicId.generate
+    @device = ClientDeviceSession.create!(user_id: 9_300_001, principal_public_id: @principal_public_id)
+    @root = ClientToken.create!(authentication_epoch: 0, device_session: @device, user_id: @device.user_id)
     @grants =
       %w(core-app-jp warp-app-jp).map do |client_id|
         OpAppGrant.create!(
           authentication_epoch: 0,
-          client_token: @root, client_device_session: @root.device_session, device_session_id: @root.device_session_id,
+          client_token_id: @root.id, device_session_id: @root.device_session_id,
           oidc_client_id: client_id, oidc_scope: "openid", oidc_jti: SecureRandom.uuid, last_used_at: Time.current,
           refresh_token_expires_at: 1.day.from_now,
         )
@@ -24,7 +25,7 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
 
   test "a root stop revokes the root and every grant and records targets and participants" do
     result = OpAuthorityStopCommitter.stop_root(
-      root: @root, cause: "browser_logout", principal_public_id: @client.public_id,
+      root: @root, cause: "browser_logout", principal_public_id: @principal_public_id,
       authority_evidence_ref: "test",
     )
     stop = result.stop
@@ -33,7 +34,7 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
     assert_predicate @root.reload, :revoked?
     @grants.each { |grant| assert_not_nil grant.reload.revoked_at }
     assert_equal %w(browser_logout root), [stop.cause_name, OpAuthorityStopReference::SCOPES.key(stop.scope_id)]
-    assert_equal [@client.public_id, "app"], [stop.principal_public_id, stop.realm]
+    assert_equal [@principal_public_id, "app"], [stop.principal_public_id, stop.realm]
     assert_equal [@root.id], OpAppAuthorityStopRootTarget.where(stop_id: stop.id).map(&:root_id)
     assert_equal @grants.map(&:id).sort, OpAppAuthorityStopGrantTarget.where(stop_id: stop.id).map(&:grant_id).sort
     participants = OpAppAuthorityStopParticipant.where(stop_id: stop.id).order(:client_id)
@@ -51,32 +52,33 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
 
   test "an app root stop does not query each grant's device session separately" do
     assert_no_device_session_n_plus_one(
-      root: @root, principal_public_id: @client.public_id, table_name: "client_device_sessions",
+      root: @root, principal_public_id: @principal_public_id, table_name: "client_device_sessions",
     )
   end
 
   test "an org root stop does not query each grant's device session separately" do
-    operator = Operator.create!(
-      security_mode_id: SecurityModeConfigurable::ADVANCED, status_id: OperatorStatus::ACTIVE,
-      visibility_id: OperatorVisibility::STAFF,
+    operator_public_id = PublicId.generate
+    operator_device = OperatorDeviceSession.create!(staff_id: 9_300_002, principal_public_id: operator_public_id)
+    root = OperatorToken.create!(
+      authentication_epoch: 0, device_session: operator_device, staff_id: operator_device.staff_id,
     )
-    root = OperatorToken.create!(authentication_epoch: 0, staff: operator)
     %w(core-org-jp warp-org-jp).each do |client_id|
       OpOrgGrant.create!(
-        authentication_epoch: 0, operator_token: root, oidc_client_id: client_id, oidc_scope: "openid",
+        authentication_epoch: 0, operator_token_id: root.id, device_session_id: root.device_session_id,
+        oidc_client_id: client_id, oidc_scope: "openid",
         oidc_jti: SecureRandom.uuid, last_used_at: Time.current, refresh_token_expires_at: 1.day.from_now,
       )
     end
 
     assert_no_device_session_n_plus_one(
-      root:, principal_public_id: operator.public_id, table_name: "operator_device_sessions",
+      root:, principal_public_id: operator_public_id, table_name: "operator_device_sessions",
     )
   end
 
   test "the stop enqueues delivery after its commit" do
     assert_enqueued_with(job: OpOutboxDispatchJob) do
       OpAuthorityStopCommitter.stop_root(
-        root: @root, cause: "browser_logout", principal_public_id: @client.public_id,
+        root: @root, cause: "browser_logout", principal_public_id: @principal_public_id,
         authority_evidence_ref: "test",
       )
     end
@@ -84,7 +86,7 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
 
   test "an unregistered participant rolls back the root and grant stop" do
     unknown_grant = OpAppGrant.create!(
-      authentication_epoch: 0, client_token: @root, client_device_session: @root.device_session,
+      authentication_epoch: 0, client_token_id: @root.id,
       device_session_id: @root.device_session_id, oidc_client_id: "unknown-app-client",
       oidc_scope: "openid", oidc_jti: SecureRandom.uuid, last_used_at: Time.current,
       refresh_token_expires_at: 1.day.from_now,
@@ -94,7 +96,7 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
                           "OpAppAuthorityStopGrantTarget.count", "OpAppAuthorityStopParticipant.count",] do
       assert_raises(KeyError) do
         OpAuthorityStopCommitter.stop_root(
-          root: @root, cause: "browser_logout", principal_public_id: @client.public_id,
+          root: @root, cause: "browser_logout", principal_public_id: @principal_public_id,
           authority_evidence_ref: "test:unregistered-client",
         )
       end
@@ -104,12 +106,16 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
   end
 
   test "an unregistered ORG participant rolls back the root and grant stop" do
-    operator = Operator.create!(security_mode_id: SecurityModeConfigurable::ADVANCED, status_id: OperatorStatus::ACTIVE)
-    root = OperatorToken.create!(authentication_epoch: 0, staff: operator)
+    operator_public_id = PublicId.generate
+    operator_device = OperatorDeviceSession.create!(staff_id: 9_300_003, principal_public_id: operator_public_id)
+    root = OperatorToken.create!(
+      authentication_epoch: 0, device_session: operator_device, staff_id: operator_device.staff_id,
+    )
     grants =
       ["core-org-jp", "unknown-org-client"].map do |client_id|
         OpOrgGrant.create!(
-          authentication_epoch: 0, operator_token: root, oidc_client_id: client_id, oidc_scope: "openid",
+          authentication_epoch: 0, operator_token_id: root.id, device_session_id: root.device_session_id,
+          oidc_client_id: client_id, oidc_scope: "openid",
           oidc_jti: SecureRandom.uuid, last_used_at: Time.current, refresh_token_expires_at: 1.day.from_now,
         )
       end
@@ -118,7 +124,7 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
                           "OpOrgAuthorityStopGrantTarget.count", "OpOrgAuthorityStopParticipant.count",] do
       assert_raises(KeyError) do
         OpAuthorityStopCommitter.stop_root(
-          root: root, cause: "browser_logout", principal_public_id: operator.public_id,
+          root: root, cause: "browser_logout", principal_public_id: operator_public_id,
           authority_evidence_ref: "test:unregistered-client",
         )
       end
@@ -129,13 +135,13 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
 
   test "a re-run of the same stop returns the stored stop and writes nothing again" do
     first = OpAuthorityStopCommitter.stop_root(
-      root: @root, cause: "browser_logout", principal_public_id: @client.public_id,
+      root: @root, cause: "browser_logout", principal_public_id: @principal_public_id,
       authority_evidence_ref: "test",
     )
     second = nil
     assert_no_difference ["OpAppAuthorityStop.count", "OpAppAuthorityStopParticipant.count"] do
       second = OpAuthorityStopCommitter.stop_root(
-        root: @root, cause: "browser_logout", principal_public_id: @client.public_id,
+        root: @root, cause: "browser_logout", principal_public_id: @principal_public_id,
         authority_evidence_ref: "test",
       )
     end
@@ -148,13 +154,13 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
 
   test "an already revoked root is not stopped again" do
     OpAuthorityStopCommitter.stop_root(
-      root: @root, cause: "browser_logout", principal_public_id: @client.public_id,
+      root: @root, cause: "browser_logout", principal_public_id: @principal_public_id,
       authority_evidence_ref: "test",
     )
     other = nil
     assert_no_difference "OpAppAuthorityStop.count" do
       other = OpAuthorityStopCommitter.stop_grant(
-        grant: @grants.first, cause: "token_revocation", principal_public_id: @client.public_id,
+        grant: @grants.first, cause: "token_revocation", principal_public_id: @principal_public_id,
         authority_evidence_ref: "test",
       )
     end
@@ -164,7 +170,7 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
 
   test "a grant stop ends only that grant and keeps the root and sibling grants" do
     result = OpAuthorityStopCommitter.stop_grant(
-      grant: @grants.first, cause: "refresh_reuse", principal_public_id: @client.public_id,
+      grant: @grants.first, cause: "refresh_reuse", principal_public_id: @principal_public_id,
       authority_evidence_ref: "test",
     )
 
@@ -178,9 +184,12 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
   end
 
   test "a principal stop records its cutoff and every revoked root; zero roots is a recorded stop" do
-    second_root = ClientToken.create!(authentication_epoch: 0, user: @client)
+    second_device = ClientDeviceSession.create!(user_id: @device.user_id, principal_public_id: @principal_public_id)
+    second_root = ClientToken.create!(
+      authentication_epoch: 0, device_session: second_device, user_id: second_device.user_id,
+    )
     result = OpAuthorityStopCommitter.stop_principal(
-      realm: "app", roots: [@root, second_root], cause: "identity_stop", principal_public_id: @client.public_id,
+      realm: "app", roots: [@root, second_root], cause: "identity_stop", principal_public_id: @principal_public_id,
       authority_evidence_ref: "event-1", cutoff_epoch: 1,
     )
 
@@ -188,7 +197,7 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
                  OpAppAuthorityStopRootTarget.where(stop_id: result.stop.id).map(&:root_id).sort
     assert_equal 1, OpAppAuthorityStopEpochCutoff.find_by!(stop_id: result.stop.id).cutoff_epoch
     empty = OpAuthorityStopCommitter.stop_principal(
-      realm: "app", roots: [], cause: "administrative", principal_public_id: @client.public_id,
+      realm: "app", roots: [], cause: "administrative", principal_public_id: @principal_public_id,
       authority_evidence_ref: "event-2", cutoff_epoch: 2,
     )
 
@@ -205,18 +214,18 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
     end
     assert_raises(OpAuthorityStopCommitter::Refused) do
       OpAuthorityStopCommitter.stop_root(
-        root: @root, cause: "browser_logout", principal_public_id: @client.public_id, authority_evidence_ref: "",
+        root: @root, cause: "browser_logout", principal_public_id: @principal_public_id, authority_evidence_ref: "",
       )
     end
     assert_raises(OpAuthorityStopCommitter::Refused) do
       OpAuthorityStopCommitter.stop_root(
-        root: @root, cause: "browser_logout", principal_public_id: @client.public_id,
+        root: @root, cause: "browser_logout", principal_public_id: @principal_public_id,
         authority_evidence_ref: "x" * 129,
       )
     end
     assert_raises(KeyError) do
       OpAuthorityStopCommitter.stop_root(
-        root: @root, cause: "session_limit", principal_public_id: @client.public_id,
+        root: @root, cause: "session_limit", principal_public_id: @principal_public_id,
         authority_evidence_ref: "test",
       )
     end
@@ -228,25 +237,25 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
     stops_before = OpAppAuthorityStop.count
     assert_raises(ArgumentError) do
       OpAuthorityStopCommitter.stop_root(
-        root: @root, cause: "refresh_reuse", principal_public_id: @client.public_id,
+        root: @root, cause: "refresh_reuse", principal_public_id: @principal_public_id,
         authority_evidence_ref: "test",
       )
     end
     assert_raises(ArgumentError) do
       OpAuthorityStopCommitter.stop_grant(
-        grant: @grants.first, cause: "browser_logout", principal_public_id: @client.public_id,
+        grant: @grants.first, cause: "browser_logout", principal_public_id: @principal_public_id,
         authority_evidence_ref: "test",
       )
     end
     assert_raises(ArgumentError) do
       OpAuthorityStopCommitter.stop_principal(
-        realm: "app", roots: [], cause: "browser_logout", principal_public_id: @client.public_id,
+        realm: "app", roots: [], cause: "browser_logout", principal_public_id: @principal_public_id,
         authority_evidence_ref: "test", cutoff_epoch: 1,
       )
     end
     assert_raises(ArgumentError) do
       OpAuthorityStopCommitter.stop_principal(
-        realm: "app", roots: [], cause: "identity_stop", principal_public_id: @client.public_id,
+        realm: "app", roots: [], cause: "identity_stop", principal_public_id: @principal_public_id,
         authority_evidence_ref: "test", cutoff_epoch: 0,
       )
     end

@@ -34,7 +34,7 @@ class OperatorStepUpAuditOutboxTest < ActiveSupport::TestCase
 
     assert_equal payloads.length, OperatorStepUpAuditOutbox.count
     assert_raises(ActiveRecord::RecordNotUnique) do
-      OperatorStepUpAuditOutbox.create!(
+      OperatorStepUpAuditOutbox.new(
         event_uuid: "00000000-0000-4000-8000-000000000001",
         event_type: "step_up.requested",
         realm: "ORG",
@@ -45,7 +45,7 @@ class OperatorStepUpAuditOutboxTest < ActiveSupport::TestCase
         payload: { rp_state_ref: "another-state", return_target_kind: "relative" },
         occurred_at: Time.utc(2026, 11, 3, 12),
         delivery_state: OperatorStepUpAuditOutboxDeliveryState.find(OperatorStepUpAuditOutboxDeliveryState::PENDING),
-      )
+      ).save!(validate: false)
     end
   end
 
@@ -140,11 +140,11 @@ class OperatorStepUpAuditOutboxTest < ActiveSupport::TestCase
     )
 
     assert_raises(ActiveRecord::RecordNotUnique) do
-      OperatorStepUpAuditOutbox.create!(
+      OperatorStepUpAuditOutbox.new(
         attributes.merge(
           event_uuid: "00000000-0000-4000-8000-000000000103", event_type: "step_up.attempt_rejected",
         ),
-      )
+      ).save!(validate: false)
     end
   end
 end

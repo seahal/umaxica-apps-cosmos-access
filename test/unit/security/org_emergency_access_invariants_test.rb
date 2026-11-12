@@ -95,20 +95,13 @@ class OrgEmergencyAccessInvariantsTest < ActiveSupport::TestCase
     )
   end
 
-  # The seam, stated as a structural fact rather than as a comment: both org
-  # ceremonies reach WebAuthn through the same concern, so neither controller
-  # can carry verification code of its own.
-  test "the normal and emergency org ceremonies share one passkey sign-in implementation" do
-    [
-      Auth::Org::Sign::In::Passkey::OptionsController,
-      Auth::Org::Sign::In::Passkey::VerificationsController,
-      Auth::Org::Sign::In::Emergency::Passkey::OptionsController,
-      Auth::Org::Sign::In::Emergency::Passkey::VerificationsController,
-    ].each do |controller|
-      assert_includes controller.ancestors, PasskeySignInFlow,
-                      "#{controller} must run the shared passkey sign-in flow"
-      assert_includes controller.ancestors, PasskeyCeremonyContext,
-                      "#{controller} must use the shared challenge/ceremony context"
+  test "normal and emergency org credential endpoints share the explicit unavailable boundary" do
+    %w(/sign/in/passkey/options /sign/in/passkey/verification
+       /sign/in/emergency/passkey/options /sign/in/emergency/passkey/verification).each do |path|
+      route = Rails.application.routes.recognize_path("https://#{ORG_HOST}#{path}", method: :post)
+
+      assert_equal "auth/org/unavailable_ceremonies", route.fetch(:controller)
+      assert_equal "create", route.fetch(:action)
     end
   end
 

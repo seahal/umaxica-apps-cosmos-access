@@ -18,7 +18,6 @@
 @source "../../pages/visa/app";
 @source "../../layouts";
 @source "../../components";
-@source "../../features/auth/session/SessionLimitResolution.tsx";
 @source "../../features/sign_out";
 
 /*

@@ -65,8 +65,6 @@ Rails.application.configure do
       serializer: :message_pack,
     )
 
-  # Store uploaded files on the local file system (see config/storage.yml for options).
-
   # Don't care if the mailer can't send.
   config.action_mailer.raise_delivery_errors = true
 

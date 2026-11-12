@@ -22,9 +22,13 @@ class ClientStepUpAuditOutbox < OpBaseAppRecord
            class_name: "ClientStepUpAuditOutboxAttempt",
            foreign_key: :outbox_id,
            inverse_of: :outbox,
-           dependent: :restrict_with_error
+           dependent: :delete_all
 
   validates :event_uuid, :client_id, :subject_ref, :context_ref, :payload, :occurred_at, presence: true
+  validates :event_uuid, uniqueness: true
+  validates :context_ref, uniqueness: { scope: %i(realm client_id reason_code),
+                                        conditions: -> { where(event_type: "step_up.attempt_rejected") }, },
+                          if: -> { event_type == "step_up.attempt_rejected" }
   validates :event_type, inclusion: { in: EVENT_TYPES }
   validates :realm, inclusion: { in: ["APP"] }
   validates :reason_code, inclusion: { in: StepUpAuditCodesRegistry::REASON_CODES }

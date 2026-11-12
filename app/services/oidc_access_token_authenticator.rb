@@ -3,7 +3,7 @@
 
 class OidcAccessTokenAuthenticator < ApplicationService
   Result =
-    Data.define(:success, :payload, :token, :resource, :error) do
+    Data.define(:success, :payload, :token, :device, :principal_public_id, :error) do
       def success? = success
     end
 
@@ -39,22 +39,14 @@ class OidcAccessTokenAuthenticator < ApplicationService
     return failure("invalid_token") unless token_belongs_to_audience?(payload)
     return failure("insufficient_scope") unless token_scope_allows_userinfo?(payload)
 
-    resource = find_resource(payload)
-    return failure("invalid_token") unless resource&.active?
-    return failure("invalid_token") if resource.respond_to?(:admin_locked?) && resource.admin_locked?
-    if resource.respond_to?(:access_token_stale_for_administrative_lock?) &&
-        resource.access_token_stale_for_administrative_lock?(payload)
-      return failure("invalid_token")
-    end
-    return failure("invalid_token") unless token_subject_matches?(resource, payload)
-    return failure("invalid_token") unless base_session_actor_matches?(base_session, resource)
-    # D-165: a root issued before a stop never becomes valid again when the account is restored.
-    return failure("invalid_token") unless AuthenticationEpochValue.root_current?(
-      root_token: base_session,
-      actor: resource,
-    )
+    device = find_device_session(base_session)
+    return failure("invalid_token") if device&.principal_public_id.blank?
+    return failure("invalid_token") unless token_subject_matches?(device.principal_public_id, payload)
 
-    Result.new(success: true, payload: payload, token: base_session, resource: resource, error: nil)
+    Result.new(
+      success: true, payload: payload, token: base_session, device: device,
+      principal_public_id: device.principal_public_id, error: nil,
+    )
   end
 
   private
@@ -120,49 +112,35 @@ class OidcAccessTokenAuthenticator < ApplicationService
     false
   end
 
-  def find_resource(payload)
-    public_id = OidcSubject.public_id_from(
-      AuthorizationTokenClaims.subject(payload),
-      resource_type: resource_type,
-    )
-    return if public_id.blank?
-
-    # D-165: the stop state and epoch are read from the authoritative writer, never a lagging replica.
-    resource_class_for_resource_type.connection_class_for_self.connected_to(role: :writing) do
-      resource_class_for_resource_type.find_by(public_id: public_id)
+  def find_device_session(root)
+    model, owner =
+      case resource_type
+      when "client" then [ClientDeviceSession, { user_id: root.user_id }]
+      when "operator" then [OperatorDeviceSession, { staff_id: root.staff_id }]
+      else raise ArgumentError, "unsupported OP realm"
+      end
+    model.connection_class_for_self.connected_to(role: :writing) do
+      model.uncached { model.find_by(id: root.device_session_id, **owner) }
     end
   end
 
-  def token_subject_matches?(resource, payload)
-    expected = OidcSubject.for(resource, resource_type: resource_type)
+  def token_subject_matches?(principal_public_id, payload)
+    expected = "#{OidcSubject.prefix_for(resource_type)}_#{principal_public_id}"
     actual = payload["sub"].to_s
     return false unless expected.bytesize == actual.bytesize
 
     ActiveSupport::SecurityUtils.secure_compare(expected, actual)
   end
 
-  def base_session_actor_matches?(base_session, resource)
-    case resource_type
-    when "operator" then base_session.staff_id == resource.id
-    else base_session.user_id == resource.id
-    end
-  end
-
-  def resource_class_for_resource_type
-    case resource_type
-    when "operator" then Operator
-    else Client
-    end
-  end
-
   def token_class_for_resource_type
     case resource_type
     when "operator" then OperatorToken
-    else ClientToken
+    when "client" then ClientToken
+    else raise ArgumentError, "unsupported OP realm"
     end
   end
 
   def failure(error)
-    Result.new(success: false, payload: nil, token: nil, resource: nil, error: error)
+    Result.new(success: false, payload: nil, token: nil, device: nil, principal_public_id: nil, error: error)
   end
 end

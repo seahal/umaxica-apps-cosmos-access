@@ -27,7 +27,7 @@
 require "test_helper"
 
 class OperatorVerificationTest < ActiveSupport::TestCase
-  fixtures :operators, :operator_tokens
+  self.fixture_table_names = %w(operator_tokens operator_device_sessions)
 
   test "issue_for_token! revokes previous active verification for same token" do
     token = operator_tokens(:one)

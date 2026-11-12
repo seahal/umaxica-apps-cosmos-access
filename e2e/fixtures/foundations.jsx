@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import EmailPreferenceEdit from "../../src/features/identity/EmailPreferenceEdit";
 import InfoPage from "../../src/features/identity/InfoPage";
 
-import "../../src/styles/surfaces/auth_app.css";
+import "../../src/styles/surfaces/visa_app.css";
 
 // Japanese paragraphs are locale/reflow fixtures, not repository-authored guidance.
 const query = new URLSearchParams(location.search);

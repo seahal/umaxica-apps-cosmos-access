@@ -15,6 +15,11 @@ class OperatorAuthAdmissionBinding < OpBaseOrgRecord
                       inverse_of: :operator_auth_admission_bindings, optional: false
 
   validates :entry_ref, presence: true, uniqueness: true
+  validates :confirmation_ref, uniqueness: true, allow_nil: true
+  validates :authorization_transaction_id, :step_up_ceremony_transaction_id,
+            uniqueness: { scope: :purpose,
+                          conditions: -> { where(status_id: AuthAdmissionBinding::ACTIVE_STATUS_IDS) }, },
+            allow_nil: true, if: :active?
   validates :purpose, presence: true
   validates :base_browser_digest, presence: true, length: { is: 64 }
   validates :expires_at, :curfew_at, :entry_intent, :created_at, :updated_at, presence: true

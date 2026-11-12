@@ -6,6 +6,7 @@ class OperatorSensitiveAdmission < OpBaseOrgRecord
   validates :public_ref, :actor_subject, :grant_sid, :rp_session_ref, :event_jti, :issued_at, :expires_at,
             presence: true
   validates :secret_digest, :browser_binding_digest, :purpose, :provider, presence: true
+  validates :public_ref, :secret_digest, uniqueness: true
   validates :public_ref, format: { with: /\A[A-Za-z0-9_-]{21}\z/ }
   validates :public_ref, length: { maximum: 21 }
   validates :secret_digest, :browser_binding_digest, format: { with: DIGEST_PATTERN }

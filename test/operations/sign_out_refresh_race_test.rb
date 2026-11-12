@@ -14,13 +14,15 @@ class SignOutRefreshRaceTest < ActiveSupport::TestCase
   self.use_transactional_tests = false
 
   setup do
-    @user = Client.create!(
-      security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
-      visibility_id: ClientVisibility::USER,
+    @principal_public_id = PublicId.generate
+    @device = ClientDeviceSession.create!(
+      user_id: SecureRandom.random_number(1_000_000) + 9_300_000,
+      principal_public_id: @principal_public_id,
     )
     @root = ClientToken.create!(
       authentication_epoch: 0,
-      user: @user,
+      user_id: @device.user_id,
+      device_session: @device,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE,
       discard_at: 1.day.from_now,
@@ -29,7 +31,8 @@ class SignOutRefreshRaceTest < ActiveSupport::TestCase
     @root.rotate_refresh_token!
     @session = OpAppGrant.create!(
       authentication_epoch: 0,
-      client_token: @root,
+      client_token_id: @root.id,
+      device_session_id: @device.id,
       oidc_client_id: "core-app-jp",
       oidc_scope: "openid profile",
       refresh_token_expires_at: 1.hour.from_now,
@@ -41,10 +44,8 @@ class SignOutRefreshRaceTest < ActiveSupport::TestCase
   teardown do
     delete_authority_stops_for!(realm: "app", root_ids: [@root&.id], grant_ids: [@session&.id])
     OpAppGrant.where(id: @session&.id).delete_all
-    device_session_id = @root&.device_session_id
     ClientToken.where(id: @root&.id).delete_all
-    ClientDeviceSession.where(id: device_session_id).delete_all if device_session_id
-    Client.where(id: @user&.id).delete_all
+    ClientDeviceSession.where(id: @device&.id).delete_all
   end
 
   test "a refresh racing sign-out cannot leave a usable RP session under a revoked parent" do
@@ -58,7 +59,6 @@ class SignOutRefreshRaceTest < ActiveSupport::TestCase
           release.pop
           result = AuthenticationLogoutCurrentSession.call(
             cause: "browser_logout",
-            resource: Client.find(@user.id),
             token: ClientToken.find(@root.id),
             reason: "user_logout",
           )

@@ -341,7 +341,7 @@ class HealthRevisionContractTest < ActionDispatch::IntegrationTest
       APP_HOST,
       "secret_key_base",
       "git",
-      "AppRpRecord",
+      "OpBaseAppRecord",
       "PG::",
       "StandardError",
     ]

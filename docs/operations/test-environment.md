@@ -40,3 +40,42 @@ For a standalone Puma server exercised by TypeScript Playwright and Chromium, se
 [Rails browser E2E](rails-browser-e2e.md). That command uses the ordinary configured test databases
 and enables real CSRF only in its browser-server process. Neither command requires a PostgreSQL
 manifest or per-run database fleet. Both share a process lock and must not run concurrently.
+
+## Rails System Test
+
+`test/application_system_test_case.rb` uses Rails' `driven_by :playwright` integration with
+Capybara and Chromium. It reuses `test_helper.rb` for fixtures, Vite builds, database safety,
+the test-process lock, and Valkey isolation. Select one worker before loading that helper:
+
+```bash
+RAILS_ENV=test PARALLEL_WORKERS=1 \
+  PLAYWRIGHT_CLI_EXECUTABLE_PATH=./node_modules/.bin/playwright \
+  bin/rails test:system
+```
+
+Install the locked JavaScript dependencies and the Chromium build for that CLI first. The CLI
+path is explicit so the driver cannot download an unpinned version through `npx`. The initial
+local verification used Ruby client 1.64.0 and the installed CLI 1.64.1; exact-version alignment
+and the bundled Chromium build still need verification before making this a mandatory CI gate.
+To use an already installed Chromium, supply `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium`;
+this enables Chromium's sandbox. In environments that start Ruby's remote debugger automatically,
+also supply `RUBY_DEBUG_ENABLE=0` for unattended execution.
+
+CSRF remains at the ordinary test-environment default (disabled); do not set `RAILS_BROWSER_E2E`
+for this command. The separate TypeScript E2E retains its existing CSRF setting. System tests
+currently cover the Auth liveness response and browser back navigation to the retired Auth root.
+The current Auth root returns `unknown_host`; the historical TypeScript public-landing test assumes
+a React page there and no longer matches the current routes. No authentication admission is
+fabricated to restore that page. React, forms, and authentication journeys remain follow-up scope.
+
+Rails saves failure screenshots under `tmp/screenshots/`; application diagnostics use `log/test.log`.
+These artifacts can contain page data and must be reviewed before sharing. The current smoke
+endpoints load no external assets; browser-wide external-network enforcement remains follow-up
+work before expanding the suite to provider-backed pages.
+
+Ordinary `bin/rails test` excludes system tests. Local coverage now uses this same selection.
+The GitHub coverage command still explicitly selects `test/`, which would also load the browser
+suite; change it to `env COVERAGE=true bin/rails test` before merging this addition. The workflow
+file is mounted read-only in the current executor, including outside its sandbox, so that one-line
+correction could not be applied here. System tests are currently an explicit local command;
+automatic System Test jobs and required deployment gates are not yet configured.

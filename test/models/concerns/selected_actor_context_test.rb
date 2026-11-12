@@ -4,7 +4,7 @@
 require "test_helper"
 
 class SelectedActorContextTest < ActiveSupport::TestCase
-  self.fixture_table_names = %w(client_statuses client_visibilities)
+  self.fixture_table_names = []
 
   test "selected_actor_context? requires every account collective and unit identifier" do
     token = ClientToken.new
@@ -23,13 +23,10 @@ class SelectedActorContextTest < ActiveSupport::TestCase
   end
 
   test "clear_selected_actor_context! clears the real persisted selection and freshness" do
-    actor = Client.create!(
-      security_mode_id: SecurityModeConfigurable::NORMAL, status_id: ClientStatus::ACTIVE,
-      visibility_id: ClientVisibility::USER,
-    )
+    device = ClientDeviceSession.create!(user_id: 9_700_001, principal_public_id: "historical-subject")
     token = ClientToken.create!(
-      authentication_epoch: 0,
-      user: actor, selected_account_public_id: "account", selected_collective_public_id: "collective",
+      authentication_epoch: 0, user_id: 9_700_001, device_session: device,
+      selected_account_public_id: "account", selected_collective_public_id: "collective",
       selected_collective_unit_public_id: "unit", selected_avatar_public_id: "avatar", selected_at: Time.current,
       last_step_up_at: Time.current, last_step_up_scope: "settings_birthdate",
     )

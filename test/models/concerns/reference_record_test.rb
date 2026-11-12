@@ -7,16 +7,16 @@ class ReferenceRecordTest < ActiveSupport::TestCase
   class DummyReference < ApplicationRecord
     # We create a simple class mimicking a reference table.
     # Usually they have just an id, but for tests we don't have a table.
-    # Let's use an existing reference model for the test since ReferenceRecord requires a table.
-
-    # We will test ClientStatus as a real reference model.
+    # Use retained OP token status tables for the real reference model checks.
   end
 
   test "record_timestamps is false" do
-    assert_not ClientStatus.record_timestamps
+    assert_not ClientTokenStatus.record_timestamps
+    assert_not OperatorTokenStatus.record_timestamps
   end
 
   test "nothing_id returns NOTHING constant" do
-    assert_equal ClientStatus::NOTHING, ClientStatus.nothing_id
+    assert_equal ClientTokenStatus::NOTHING, ClientTokenStatus.nothing_id
+    assert_equal OperatorTokenStatus::NOTHING, OperatorTokenStatus.nothing_id
   end
 end

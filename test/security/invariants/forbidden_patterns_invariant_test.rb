@@ -17,7 +17,7 @@ module Security
 
       FORBIDDEN_PATTERNS = {
         "mass-assignment permit!" => /\bpermit!/,
-        "access policy bypass" => /skip_before_action\s+:enforce_access_policy!/,
+        "OP boundary bypass" => /skip_before_action\s+:enforce_op_boundary_mode!/,
         "csrf bypass" => /\bskip_forgery_protection\b/,
         "csrf null_session" => /\bprotect_from_forgery\b.*\bwith:\s*:null_session\b|\bwith:\s*:null_session\b/,
         "unsafe HTML html_safe" => /\bhtml_safe\b/,
@@ -45,30 +45,16 @@ module Security
       # removing the exception.
       ALLOWLIST = [
         {
-          pattern: "access policy bypass",
+          pattern: "OP boundary bypass",
           path: "app/controllers/concerns/authentication_base.rb",
-          line: /skip_before_action :enforce_access_policy! is prohibited/,
-          reason: "Policy guard raises on attempts to skip enforce_access_policy!.",
+          line: /skip_before_action :enforce_op_boundary_mode! is prohibited/,
+          reason: "OP metadata guard raises on attempts to skip enforce_op_boundary_mode!.",
         },
         {
           pattern: "cross-host redirect escape hatch",
           path: "app/controllers/concerns/common_redirect.rb",
           line: /redirect_to\(result\.value, allow_other_host: true/,
           reason: "Only the Jump gateway facade may enable cross-host redirects after token URL validation.",
-        },
-        {
-          pattern: "cross-host redirect escape hatch",
-          path: "app/controllers/auth/app/verification/cancellations_controller.rb",
-          line: /redirect_to\(destination, status: :see_other, allow_other_host: true\)/,
-          reason: "OIDC step-up cancellation sends only the server-issued result reference to Visa's " \
-                  "authorization endpoint.",
-        },
-        {
-          pattern: "cross-host redirect escape hatch",
-          path: "app/controllers/auth/org/verification/cancellations_controller.rb",
-          line: /redirect_to\(destination, status: :see_other, allow_other_host: true\)/,
-          reason: "OIDC step-up cancellation sends only the server-issued result reference to Visa's " \
-                  "authorization endpoint.",
         },
         {
           pattern: "cross-host redirect escape hatch",
@@ -83,75 +69,22 @@ module Security
           reason: "CSP reports are browser sensor inputs, not session form mutations; " \
                   "create still rate limits and reads bounded bodies only.",
         },
-        {
-          pattern: "cross-host redirect escape hatch",
-          path: "app/controllers/auth/app/sign/ins_controller.rb",
-          line: /\A\s*allow_other_host: true,\s*\z/,
-          reason: "Auth completes an admitted OIDC sign-in by handing the browser to its Visa continuation.",
-        },
-        {
-          pattern: "cross-host redirect escape hatch",
-          path: "app/controllers/auth/app/sign/ups_controller.rb",
-          line: /\A\s*allow_other_host: true,\s*\z/,
-          reason: "Auth completes an admitted OIDC sign-up by handing the browser to its Visa continuation.",
-        },
       ].freeze
 
       RECEIVER_REDIRECTS = {
-        "app/controllers/concerns/auth_oidc_result_handoff.rb" => {
-          target: "visa_oidc_result_url",
-          reason: "Visa receives the server-stored OIDC result by reference and resumes the admitted OP flow.",
-        },
         "app/controllers/concerns/auth_step_up_result_handoff.rb" => {
           target: "result_completion_url",
           reason: "Visa receives the server-stored OIDC Step-Up result by reference and completes the RP request.",
         },
-        "app/controllers/concerns/visa_ceremony_binding_confirmation.rb" => {
-          target: "auth_binding_entry_url",
-          reason: "Auth resumes the exact Visa-confirmed admission on its configured receiver host.",
-        },
         "app/controllers/concerns/sign_out_notice.rb" => {
           target: "uri.to_s",
           reason: "The fixed authority cleanup handoff carries only the durable logout challenge.",
-        },
-        "app/controllers/auth/app/ceremony_bindings_controller.rb" => {
-          target: "ceremony_binding_confirmation_url",
-          reason: "Auth routes OIDC authorization and Step-Up bindings to Visa for nonce and token confirmation.",
-        },
-        "app/controllers/auth/org/ceremony_bindings_controller.rb" => {
-          target: "ceremony_binding_confirmation_url",
-          reason: "Auth routes OIDC authorization and Step-Up bindings to Visa for nonce and token confirmation.",
         },
       }.freeze
 
       LOGGER_ALLOWLIST = [].freeze
 
       RAW_ACTOR_CLAIMS_ALLOWLIST = [
-        {
-          path: "app/controllers/auth/app/application_controller.rb",
-          line: /Actor\.authn\.access_claims/,
-          reason: "Current auth app controller records assurance metadata from the decoded token boundary.",
-        },
-        {
-          path: "app/controllers/auth/org/application_controller.rb",
-          line: /Actor\.authn\.access_claims/,
-          reason: "Current auth org controller records assurance metadata from the decoded token boundary.",
-        },
-        {
-          path: "app/controllers/visa/app/oauth/authorizations_controller.rb",
-          line: /Actor\.authn\.access_claims/,
-          reason: "Current OAuth launch code forwards assurance metadata to the protocol boundary.",
-        },
-        {
-          path: "app/controllers/visa/org/oauth/authorizations_controller.rb",
-          line: /Actor\.authn\.access_claims/,
-          reason: "Current OAuth launch code forwards assurance metadata to the protocol boundary.",
-        },
-        {
-          path: "app/controllers/concerns/auth_oidc_result_handoff.rb",
-          line: /Actor\.authn\.access_claims/,
-          reason: "OIDC result handoff forwards authenticated ceremony assurance metadata to Visa.",
-        },
         {
           path: "app/controllers/concerns/actor_support.rb",
           line: /token_claims: authn\.access_claims/,
@@ -161,11 +94,6 @@ module Security
           path: "app/controllers/concerns/authentication_base.rb",
           line: /token_claims: authn\.access_claims/,
           reason: "AuthenticationBase bridges authenticated resource resolution into Actor authz.",
-        },
-        {
-          path: "app/controllers/concerns/sign_up_sequence_controller_support.rb",
-          line: /access_claims: Actor\.authn\.access_claims/,
-          reason: "Sign-up support passes the authenticated token snapshot through the existing boundary.",
         },
         {
           path: "app/policies/application_policy.rb",

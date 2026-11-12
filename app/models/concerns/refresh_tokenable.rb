@@ -278,14 +278,7 @@ module RefreshTokenable
     device_session_class.find(device_session_id)
   end
 
-  def actor_record
-    case self
-    when ClientToken then Client.find_by(id: user_id)
-    when OperatorToken then Operator.find_by(id: staff_id)
-    else
-      raise FlowConfigurationError, "#{self.class.name} does not define an actor owner"
-    end
-  end
+  delegate :principal_public_id, to: :device_session_record!
 
   # Whether the refresh token has expired.
   def expired_refresh?

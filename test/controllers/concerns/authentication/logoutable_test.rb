@@ -6,6 +6,7 @@ require "test_helper"
 
 module Authentication
   class LogoutableTest < ActiveSupport::TestCase
+    self.fixture_table_names = []
     # ------------------------------------------------------------------
     # Regression coverage for "ordinary logout must not revoke other
     # sessions" (S-0). If it regresses, this test fails loudly.
@@ -15,10 +16,9 @@ module Authentication
       # `app/services/oidc/single_logout_service.rb` and revoked every
       # active token for the actor. It was deleted because (a) its name
       # promised OIDC SLO-protocol semantics while doing something else,
-      # and (b) its only correct use case is already covered by
-      # AuthenticationLogoutAllSessions. If this guard fails it means
-      # someone re-added the class -- keep the deletion and use
-      # LogoutAllSessions from a dedicated endpoint instead.
+      # and (b) principal-wide identity decisions now belong to Governance.
+      # If this guard fails, keep the deletion: current-device logout must
+      # not acquire authority to stop another device.
       assert_not defined?(Oidc::SingleLogoutService),
                  "Oidc::SingleLogoutService must remain deleted. See " \
                  "adr/logout-primitive-and-composition.md."

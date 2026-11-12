@@ -2,55 +2,67 @@
 # frozen_string_literal: true
 
 class SignRiskEnforcer
-  # resource: The user/staff record (ActiveRecord)
-  def self.call(resource)
+  def self.call(root)
+    configuration_for(root)
     return unless feature_enabled?
-    return unless resource
 
     score =
-      if resource.respond_to?(:staff_tokens)
-        SignRiskEngine.score(staff_id: resource.id)
-      else
-        SignRiskEngine.score(user_id: resource.id)
+      case root
+      when OperatorToken then SignRiskEngine.score(staff_id: root.staff_id)
+      when ClientToken then SignRiskEngine.score(user_id: root.user_id)
       end
 
     if score >= 100
-      revoke!(resource)
+      revoke!(root)
     elsif score >= 60
-      require_step_up!(resource)
+      require_step_up!(root)
     end
   end
 
-  # D-172 S-1: a risk stop ends every root of the principal with an epoch cutoff, through the
-  # identity-stop path (Zenith event under the actor lock, then the OP apply with its retry).
-  def self.revoke!(resource)
-    delivery_result = nil
-    resource.class.transaction do
-      event = IdentityAuthenticationStopRecorder.call(actor: resource.class.lock.find(resource.id), reason: "sign_risk")
-      resource.class.current_transaction.after_commit do
-        delivery_result = OpIdentityEventInvalidator.deliver(event:)
+  def self.revoke!(root)
+    with_principal_roots(root) do |roots, devices|
+      roots.each do |target|
+        OpAuthorityStopCommitter.stop_root(
+          root: target, cause: "risk", principal_public_id: root.principal_public_id,
+          authority_evidence_ref: "sign_risk:#{root.public_id}",
+        )
+        raise OpAuthorityStopCommitter::Refused, "risk stop did not revoke its root" unless target.reload.revoked?
       end
+      devices.each { |device| device.revoke!(reason: "sign_risk") }
     end
-    delivery_result
   end
 
-  def self.require_step_up!(resource)
-    require_step_up_for_token_set(resource.client_tokens) if resource.respond_to?(:client_tokens)
-    require_step_up_for_token_set(resource.staff_tokens) if resource.respond_to?(:staff_tokens)
+  def self.require_step_up!(root)
+    with_principal_roots(root, usable_only: true) do |roots, _devices|
+      roots.each { |token| IdentityStepUpCeremonyFreshnessRevoker.call!(token) }
+    end
 
     Rails.logger.info(
       JitLogEvent.format(
         "sign.risk.enforcer.step_up_required",
-        resource_type: resource.class.name,
-        resource_id: resource.id,
+        realm: OpAuthorityStopCommitter.realm_for_root(root),
       ),
     )
   end
 
-  # Risk-triggered force re-step-up. Auth owns freshness mutation.
-  def self.require_step_up_for_token_set(tokens)
-    tokens.currently_usable_at.find_each do |token|
-      IdentityStepUpCeremonyFreshnessRevoker.call!(token)
+  def self.with_principal_roots(root, usable_only: false)
+    owner, device_class = configuration_for(root)
+    owner.connected_to(role: :writing) do
+      owner.transaction do
+        devices = device_class.where(principal_public_id: root.principal_public_id).order(:id).lock.to_a
+        scope = root.class.where(device_session_id: devices.map(&:id))
+        scope = scope.currently_usable_at(root.class.database_now) if usable_only
+        roots = scope.order(:id).lock.to_a
+        yield roots, devices
+      end
+    end
+  end
+
+  def self.configuration_for(root)
+    case root
+    when ClientToken then [OpBaseAppRecord, ClientDeviceSession]
+    when OperatorToken then [OpBaseOrgRecord, OperatorDeviceSession]
+    else raise ArgumentError, "risk enforcement requires an OP root session"
     end
   end
 
@@ -61,5 +73,5 @@ class SignRiskEnforcer
     enabled_config || ENV["RISK_ENFORCEMENT_ENABLED"] == "true" || Rails.env.production?
   end
 
-  private_class_method :require_step_up_for_token_set
+  private_class_method :with_principal_roots, :configuration_for
 end

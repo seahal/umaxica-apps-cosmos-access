@@ -56,9 +56,9 @@ class Auth::IdentityAuthoritySlice1ATest < ActionDispatch::IntegrationTest
       method: :get,
     )
 
-    assert_equal "auth/app/sign/ins", sign_in.fetch(:controller)
+    assert_equal "auth/app/unavailable_ceremonies", sign_in.fetch(:controller)
     assert_equal "show", sign_in.fetch(:action)
-    assert_equal "auth/app/sign/ups", sign_up.fetch(:controller)
+    assert_equal "auth/app/unavailable_ceremonies", sign_up.fetch(:controller)
     assert_equal "show", sign_up.fetch(:action)
   end
 
