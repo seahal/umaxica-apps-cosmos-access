@@ -24,11 +24,10 @@ class BranchCoverageBatch31MoreEasyArmsTest < ActiveSupport::TestCase
   end
 
   test "OidcIdTokenIssuer blank nonce and inverted times" do
-    resource = Client.new(security_mode_id: SecurityModeConfigurable::NORMAL)
-    client = Struct.new(:client_id).new("base-rails-rp")
+    client = Struct.new(:client_id, :resource_type).new("base-rails-rp", "client")
     assert_raises(ArgumentError) do
       OidcIdTokenIssuer.new(
-        resource: resource,
+        resource_type: "client",
         client: client,
         nonce: "",
         sid: PublicId.generate,
@@ -38,7 +37,7 @@ class BranchCoverageBatch31MoreEasyArmsTest < ActiveSupport::TestCase
     end
     assert_raises(ArgumentError) do
       OidcIdTokenIssuer.new(
-        resource: resource,
+        resource_type: "client",
         client: client,
         nonce: "n",
         sid: PublicId.generate,
@@ -66,31 +65,6 @@ class BranchCoverageBatch31MoreEasyArmsTest < ActiveSupport::TestCase
         expected_audience: "a",
       )
     end
-  end
-
-  test "Telephone signup issuer writes typed ceremony proof and Source send time" do
-    ClientSignUpFlowStatus::DEFAULTS.each { |id| ClientSignUpFlowStatus.find_or_create_by!(id: id) }
-    ClientSignUpFlowCleanupStatus::DEFAULTS.each { |id| ClientSignUpFlowCleanupStatus.find_or_create_by!(id: id) }
-    telephone = ClientTelephone.new(raw_number: "+819012399928", confirm_policy: true, confirm_using_mfa: true)
-    TelephoneSignUpCandidateCreator.call(telephone: telephone)
-    now = ClientSignUpFlow.database_now
-    nonce = "branch-coverage-original-browser"
-    flow = ClientSignUpFlow.create!(
-      auth_admission_binding: SignUpAdmissionTestFactory.binding_for!(ClientSignUpFlow),
-      principal_id: telephone.user_id, status_id: ClientSignUpFlowStatus::CONTACT_PENDING, step: "contact",
-      nonce_digest: ClientSignUpFlow.digest_nonce(nonce), issued_at: now, expires_at: now + 15.minutes,
-      entry_method: "telephone", pending_contact_type: "telephone", pending_contact_id: telephone.id,
-    )
-    issued = TelephoneSignUpOtpIssuer.call(flow: flow, telephone: telephone, session_nonce: nonce)
-
-    assert issued.code.is_a?(String) && issued.code.match?(/\A[0-9]{6}\z/), "Code must contain six ASCII digits"
-    assert_predicate issued.transaction.otp_verifier, :present?
-    assert_predicate telephone.otp_last_sent_at, :present?
-    assert_predicate issued.transaction.otp_expires_at, :present?
-  end
-
-  test "AuthMethodGuard and single-use token easy rejects" do
-    assert_not AuthMethodGuard.respond_to?(:allow?)
   end
 
   test "ConfigValues OriginValue to_s default and explicit ports" do

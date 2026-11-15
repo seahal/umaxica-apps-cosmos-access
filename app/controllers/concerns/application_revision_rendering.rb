@@ -21,6 +21,8 @@ module ApplicationRevisionRendering
 
   # `GET /revision`: text/plain, no redirect, no auth, no negotiation. `render plain:` ignores
   # `Accept`, so the response is text/plain whatever the caller asked for.
+  public
+
   def render_revision
     apply_revision_response_headers
 

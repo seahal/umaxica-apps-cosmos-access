@@ -108,7 +108,10 @@ class ModelOnlyLineCoverageTest < ActiveSupport::TestCase
     root = ClientToken.includes(:device_session).find(ActiveRecord::FixtureSet.identify(:one))
     usage = OpAppGrant.create!(
       authentication_epoch: 0,
-      client_token_id: root.id, oidc_client_id: "base-app-ww", oidc_scope: "openid profile", oidc_jti: SecureRandom.uuid,
+      client_token_id: root.id,
+      oidc_client_id: "base-app-ww",
+      oidc_scope: "openid profile",
+      oidc_jti: SecureRandom.uuid,
       oidc_nonce: SecureRandom.hex(16), oidc_auth_time: OpAppGrant.database_now,
       refresh_token_expires_at: OpAppGrant.database_now + 10.minutes,
     )

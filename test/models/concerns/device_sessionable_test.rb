@@ -7,21 +7,20 @@ class DeviceSessionableTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
   setup do
-    @device = ClientDeviceSession.create!(user_id: 9_700_001, principal_public_id: "historical-subject")
+    @device = ClientDeviceSession.create!(subject_public_id: "historical-subject")
     @token = ClientToken.create!(
-      user_id: 9_700_001, device_session: @device, authentication_epoch: 0,
+      subject_public_id: @device.subject_public_id, device_session: @device, authentication_epoch: 0,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
   end
 
   test "active scope returns only active unreleased sessions" do
     active = ClientDeviceSession.create!(
-      user_id: 9_700_001, principal_public_id: "historical-subject", current_refresh_token: @token,
+      subject_public_id: "historical-subject", current_refresh_token: @token,
       status_id: DeviceSessionable::STATUS_ACTIVE,
     )
     revoked = ClientDeviceSession.create!(
-      user_id: 9_700_001,
-      principal_public_id: "historical-subject",
+      subject_public_id: "historical-subject",
       current_refresh_token: @token,
       status_id: DeviceSessionable::STATUS_REVOKED,
       revoked_at: Time.current,
@@ -57,8 +56,7 @@ class DeviceSessionableTest < ActiveSupport::TestCase
   test "revoke! persists revoked state and reason without replacing existing revoked_at" do
     revoked_at = 1.hour.ago
     session = ClientDeviceSession.create!(
-      user_id: 9_700_001,
-      principal_public_id: "historical-subject",
+      subject_public_id: "historical-subject",
       current_refresh_token: @token,
       status_id: DeviceSessionable::STATUS_ACTIVE,
       revoked_at: revoked_at,
@@ -73,7 +71,7 @@ class DeviceSessionableTest < ActiveSupport::TestCase
 
   test "bind_dbsc! persists session digest and public key thumbprint" do
     session = ClientDeviceSession.create!(
-      user_id: 9_700_001, principal_public_id: "historical-subject", current_refresh_token: @token,
+      subject_public_id: "historical-subject", current_refresh_token: @token,
       status_id: DeviceSessionable::STATUS_ACTIVE,
     )
 

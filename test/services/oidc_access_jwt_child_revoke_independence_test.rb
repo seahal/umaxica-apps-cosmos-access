@@ -23,7 +23,7 @@ class OidcAccessJwtChildRevokeIndependenceTest < ActiveSupport::TestCase
 
     assert_predicate result, :success?
     assert_equal root, result.token
-    assert_equal root.device_session.principal_public_id, result.principal_public_id
+    assert_equal root.device_session.subject_public_id, result.principal_public_id
     assert_not_respond_to result, :resource
   end
 
@@ -31,11 +31,13 @@ class OidcAccessJwtChildRevokeIndependenceTest < ActiveSupport::TestCase
     root, session = create_rp_session
     token = access_token_for(root, session)
 
-    RpSessionRevoker.call(
+    result = RpSessionRevoker.call(
       scope: :rp_session, record: session, cause: "token_revocation",
       authority_evidence_ref: "test",
     )
 
+    assert_predicate result, :success?
+    assert_equal 1, result.revoked_count
     assert_predicate authenticate(token), :success?
   end
 
@@ -123,7 +125,7 @@ class OidcAccessJwtChildRevokeIndependenceTest < ActiveSupport::TestCase
       scopes: %w(openid),
       issuer: OidcIssuer.for_resource_type("client"),
       audiences: [rp_client.aud],
-      subject: "cli_#{root.device_session.principal_public_id}",
+      subject: "cli_#{root.device_session.subject_public_id}",
       authentication_context: root.strict_authentication_context_value.to_s,
       jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type("client"),
       client_id: rp_client.client_id,

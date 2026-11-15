@@ -26,6 +26,8 @@ module Webauthn
 
     # A required policy is enforced server-side too: the verifier passes
     # user_verification: true to the gem and re-checks the UV flag itself.
+    public
+
     def enforce_server_side? = client_value == REQUIRED
 
     REGISTRY = {
@@ -47,5 +49,6 @@ module Webauthn
     end
 
     def self.all = REGISTRY.values
+    public_class_method :for, :all
   end
 end

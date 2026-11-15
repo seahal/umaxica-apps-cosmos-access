@@ -7,12 +7,12 @@ class DeviceSessionPrincipalPublicIdTest < ActiveSupport::TestCase
 
   test "persisted principal subjects cannot be reassigned while device lifecycle updates remain valid" do
     [
-      [ClientDeviceSession, :user_id, "E"],
-      [OperatorDeviceSession, :staff_id, "F"],
+      [ClientDeviceSession, :subject_public_id, "E"],
+      [OperatorDeviceSession, :subject_public_id, "F"],
     ].each do |model, actor_key, prefix|
       row = model.create!(
-        actor_key => 987_654_321, :public_id => prefix * 21,
-        :principal_public_id => "original-retention-subject",
+        :public_id => prefix * 21,
+        :subject_public_id => "original-retention-subject",
       )
       assert_raises(ActiveRecord::ReadonlyAttributeError) do
         row.update!(principal_public_id: "different-retention-subject")
@@ -28,12 +28,12 @@ class DeviceSessionPrincipalPublicIdTest < ActiveSupport::TestCase
 
   test "both realm databases preserve exact subjects and reject absent blank and overlength subjects" do
     [
-      [ClientDeviceSession, :user_id, "A"],
-      [OperatorDeviceSession, :staff_id, "O"],
+      [ClientDeviceSession, :subject_public_id, "A"],
+      [OperatorDeviceSession, :subject_public_id, "O"],
     ].each do |model, actor_key, prefix|
       subject = "#{prefix}#{"x" * 254}"
       result = model.insert_all!(
-        [{ actor_key => 987_654_321, :public_id => "#{prefix}#{"1" * 20}", :principal_public_id => subject }],
+        [{ :public_id => "#{prefix}#{"1" * 20}", :subject_public_id => subject }],
         returning: %w(id),
       )
       row = model.find(result.rows.first.first)

@@ -8,30 +8,47 @@ require "test_helper"
 class IdentityStepUpCeremonyAalTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
-  def issue_grant(required_aal: StepUpRequirement::NO_AAL)
-    IdentityStepUpCeremonyGrantIssuer.issue!(
-      surface: "app", actor_ref: "actor-public-id", session_ref: "session-public-id",
-      required_scope: "settings_email", required_aal: required_aal,
-      step_up_required: true, user_verification_required: false, full_reauthentication_required: false,
-      audience: "step_up:app", token_binding: "session-public-id", require_session_binding: true,
-      allowed_methods: %i(totp passkey), phishing_resistant_required: false,
-      return_to: "/identity/emails", expires_at: 15.minutes.from_now,
-    ).grant
-  end
+  test "legacy AAL demand is refused and Access cannot sign a Governance grant" do
+    now = Time.current
+    claims = {
+      "typ" => IdentityStepUpCeremonyGrant::TOKEN_TYPE,
+      "iss" => IdentityStepUpCeremonyContract.acme_issuer("app"),
+      "aud" => IdentityStepUpCeremonyContract.sign_audience("app"),
+      "purpose" => IdentityStepUpCeremonyGrant::PURPOSE,
+      "surface" => "app",
+      "actor_ref" => "actor-public-id",
+      "session_ref" => "session-public-id",
+      "transaction_id" => SecureRandom.uuid,
+      "jti" => SecureRandom.uuid,
+      "required_scope" => "settings_email",
+      "required_aal" => StepUpRequirement::NO_AAL,
+      "step_up_required" => true,
+      "user_verification_required" => false,
+      "full_reauthentication_required" => false,
+      "phishing_resistant_required" => false,
+      "audience" => "step_up:app",
+      "token_binding" => "session-public-id",
+      "require_session_binding" => true,
+      "allowed_methods" => %w(totp passkey),
+      "iat" => now.to_i,
+      "exp" => (now + 5.minutes).to_i,
+    }
 
-  def decode_grant(token)
-    IdentityStepUpCeremonyGrant.decode(
-      token,
-      issuer_id: IdentityStepUpCeremonyContract.acme_issuer_id("app"),
-    )
-  end
+    legacy_error =
+      assert_raises(IdentityStepUpCeremonyContract::Error) do
+        IdentityStepUpCeremonyGrant.new(claims.merge("required_aal" => "aal2"), now: now)
+      end
+    assert_includes legacy_error.message, "legacy AAL requirements are unsupported"
 
-  test "the no-AAL storage label decodes as no legacy requirement" do
-    assert_nil decode_grant(issue_grant).required_aal
-  end
-
-  test "an explicit legacy AAL demand is refused instead of translated" do
-    assert_raises(ArgumentError) { issue_grant(required_aal: "aal2") }
+    signing_error =
+      assert_raises(JitSecurityJwtRegistry::ConfigurationError) do
+        IdentityStepUpCeremonyGrant.issue(
+          claims,
+          issuer_id: IdentityStepUpCeremonyContract.acme_issuer_id("app"),
+          now: now,
+        )
+      end
+    assert_includes signing_error.message, "surface:BASE_APP"
   end
 
   def issue_result(aal: "aal1", user_verified: false, phishing_resistant: false)

@@ -12,6 +12,8 @@ class JitSecurityTurnstileConfig
   }.freeze
 
   class << self
+    public
+
     def visible_site_key
       fetch(:CLOUDFLARE_TURNSTILE_VISIBLE_SITE_KEY)
     end

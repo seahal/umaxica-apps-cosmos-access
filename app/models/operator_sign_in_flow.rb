@@ -43,6 +43,37 @@
 #
 class OperatorSignInFlow < OpBaseOrgRecord
   include SignInFlow
+
+  before_validation :generate_public_id, on: :create
+  before_validation :refresh_generated_public_id_after_collision, on: :create
+  before_validation :assign_default_state_id
+  before_create :generate_public_id
+  around_create :retry_public_id_collision
+  validate :public_id_immutable_after_create, on: :update
+
+  validates :public_id, presence: true, length: { is: PublicId::GENERATION_SIZE }, uniqueness: true
+  attribute :discard_at, :datetime, default: -> { Retainable::SENTINEL }
+  attribute :purge_eligible_at, :datetime, default: -> { Retainable::SENTINEL }
+
+  validates :discard_at, presence: true
+  validates :purge_eligible_at, presence: true
+  validate :retention_order_valid
+  validate :retention_times_not_before_created_at, on: :update
+
+  Retainable.registry << self unless Retainable.registry.include?(self)
+  attribute :issued_at, :datetime, default: -> { Time.current }
+  attribute :expires_at, :datetime, default: -> { default_ttl.from_now }
+
+  validates :nonce_digest, presence: true
+  validates :issued_at, :expires_at, presence: true
+  validate :expires_after_issued_at
+
+  scope :recent_first, -> { order(created_at: :desc) }
+  scope :current,
+        -> do
+          where(arel_table[:discard_at].gt(Time.current))
+            .where(arel_table[:expires_at].gt(Time.current))
+        end
   include FlowSignIn
 
   cycle_status_column :state_id
@@ -93,6 +124,11 @@ class OperatorSignInFlow < OpBaseOrgRecord
   # A sign-in flow exists before its root token is issued and is deleted with that token afterward.
   belongs_to :token, class_name: "OperatorToken", optional: true
   belongs_to :state, class_name: "OperatorSignInFlowState"
+  has_many :session_limit_resolution_transactions,
+           class_name: "OperatorSessionLimitResolutionTransaction",
+           foreign_key: :sign_in_flow_id,
+           inverse_of: :sign_in_flow,
+           dependent: :restrict_with_error
 
   validates :state_id, inclusion: { in: ->(record) { record.class::STATE_IDS } }
   validates :token_id, uniqueness: true, allow_nil: true, if: :will_save_change_to_token_id?
@@ -100,7 +136,6 @@ class OperatorSignInFlow < OpBaseOrgRecord
   validates :result_digest, length: { maximum: 64 }
   validates :result_digest, uniqueness: true, allow_nil: true
 
-  before_validation :assign_default_state_id
   public
 
   def record_authentication_evidence!(method:, authenticated_at: nil,

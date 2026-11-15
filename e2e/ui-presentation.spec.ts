@@ -1,4 +1,5 @@
 import { AxeBuilder } from "@axe-core/playwright";
+import type { Page } from "playwright";
 import { expect, test } from "playwright/test";
 
 // Component browser coverage, explicitly separate from application route coverage.
@@ -7,7 +8,7 @@ const fixtureUrl = "http://127.0.0.1:3190/";
 
 for (const width of [320, 768, 1024, 1440]) {
   for (const theme of ["light", "dark", "system"] as const) {
-    test(`primitives reflow at ${width}px in ${theme} mode`, async ({ page }) => {
+    test(`primitives reflow at ${width}px in ${theme} mode`, async ({ page }: { page: Page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
       await page.goto(fixtureUrl);

@@ -14,6 +14,8 @@ class IdentityEmailCeremonyTransactionPurger
     @batch_size = batch_size
   end
 
+  public
+
   def call
     MODELS.transform_values { |model| purge_model(model) }
   end

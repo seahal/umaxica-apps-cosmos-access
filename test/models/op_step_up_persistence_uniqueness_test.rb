@@ -7,13 +7,13 @@ class OpStepUpPersistenceUniquenessTest < ActiveSupport::TestCase
 
   test "each realm rejects duplicate context identities and authorization owners before saving" do
     [
-      ["app", client_tokens(:one), OpAppGrant, :client_token,
+      ["app", client_tokens(:one), OpAppGrant, :client_token_id,
        ClientOidcAuthorizationTransaction, ClientStepUpContext, "base-app-ww",],
-      ["org", operator_tokens(:one), OpOrgGrant, :operator_token,
+      ["org", operator_tokens(:one), OpOrgGrant, :operator_token_id,
        OperatorOidcAuthorizationTransaction, OperatorStepUpContext, "base-org-ww",],
     ].each do |surface, root, grant_model, root_key, parent_model, context_model, client_id|
       grant = grant_model.create!(
-        root_key => root, :device_session_id => root.device_session_id,
+        root_key => root.id, :device_session_id => root.device_session_id,
         :authentication_epoch => 0, :oidc_client_id => client_id,
       )
       now = parent_model.database_now
@@ -22,8 +22,7 @@ class OpStepUpPersistenceUniquenessTest < ActiveSupport::TestCase
           parent_model.create_transaction!(
             surface: surface, intent: "step_up", client_id: client_id,
             redirect_uri: "https://base.example.test/step-up/callback", response_type: "code", scope: "openid",
-            state: "context-#{number}", nonce: "nonce-#{number}", code_challenge: "a" * 43,
-            code_challenge_method: "S256", login_challenge: "#{surface}-challenge-#{number}",
+            state: "context-#{number}", nonce: "nonce-#{number}", pkce: { code_challenge: "a" * 43, code_challenge_method: "S256" }, login_challenge: "#{surface}-challenge-#{number}",
             login_challenge_expires_at: now + 1.minute, expires_at: now + 15.minutes, now: now,
           )
         end
@@ -58,16 +57,16 @@ class OpStepUpPersistenceUniquenessTest < ActiveSupport::TestCase
 
   test "each realm preserves commit identity and transition target ownership through model validation" do
     [
-      ["app", client_tokens(:one), OpAppGrant, :client_token,
+      ["app", client_tokens(:one), OpAppGrant, :client_token_id,
        ClientOidcAuthorizationTransaction, ClientStepUpContext, ClientStepUpCommit,
        ClientStepUpContextTransition, "base-app-ww",],
-      ["org", operator_tokens(:one), OpOrgGrant, :operator_token,
+      ["org", operator_tokens(:one), OpOrgGrant, :operator_token_id,
        OperatorOidcAuthorizationTransaction, OperatorStepUpContext, OperatorStepUpCommit,
        OperatorStepUpContextTransition, "base-org-ww",],
     ].each do |surface, root, grant_model, root_key, authorization_model, context_model,
                commit_model, transition_model, client_id|
       grant = grant_model.create!(
-        root_key => root, :device_session_id => root.device_session_id,
+        root_key => root.id, :device_session_id => root.device_session_id,
         :authentication_epoch => 0, :oidc_client_id => client_id,
       )
       now = authorization_model.database_now
@@ -76,8 +75,7 @@ class OpStepUpPersistenceUniquenessTest < ActiveSupport::TestCase
           authorization = authorization_model.create_transaction!(
             surface: surface, intent: "step_up", client_id: client_id,
             redirect_uri: "https://base.example.test/step-up/callback", response_type: "code", scope: "openid",
-            state: "context-#{number}", nonce: "nonce-#{number}", code_challenge: "a" * 43,
-            code_challenge_method: "S256", login_challenge: "#{surface}-challenge-#{number}",
+            state: "context-#{number}", nonce: "nonce-#{number}", pkce: { code_challenge: "a" * 43, code_challenge_method: "S256" }, login_challenge: "#{surface}-challenge-#{number}",
             login_challenge_expires_at: now + 1.minute, expires_at: now + 15.minutes, now: now,
           )
           context_model.create!(

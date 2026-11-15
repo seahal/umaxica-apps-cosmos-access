@@ -6,7 +6,9 @@ stateDiagram-v2
     state "Completed marker" as completed
     [*] --> empty
     empty --> pending: valid end-session request
-    pending --> pending: refusal or retryable failure
+    pending --> pending: matching request or context-only continuation
+    pending --> pending: conflicting request refused; payload retained
+    pending --> pending: retryable stop failure
     pending --> expired: request lifetime ends
     pending --> completed: committed or already-revoked device
     pending --> empty: session reset or expiry

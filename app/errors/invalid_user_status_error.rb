@@ -9,6 +9,8 @@ class InvalidUserStatusError < ApplicationError
     super(i18n_key, :unprocessable_content, invalid_status: invalid_status, **context)
   end
 
+  public
+
   def message
     provided_message = context[:message]
     if provided_message

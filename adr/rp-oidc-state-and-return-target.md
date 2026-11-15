@@ -2,17 +2,20 @@
 
 ## Status
 
-**Accepted (2026-10-23); RP Rails slice implemented 2026-10-24 (WU-39).** Owner decisions D-149,
-D-150, D-151, D-152, D-153, D-154, D-155, D-160, D-162 of the 2026-10 authentication cycle;
-implementation in its work unit WU-43. The current implementation covers the RP-owned signed state,
-path-only target, one-pending entry rule, callback interruption, and related Rails tests. Production
-key rotation, external Jump/Edge behavior, and deployment evidence remain separate operational work.
+**Accepted (2026-10-23); RP Rails slice implemented 2026-10-24 (WU-39); amended 2026-11-13:** Access
+signs and verifies this state as PS256 using RSA keys of at least 3072 bits, with no ES384
+compatibility period. The remaining state and browser-binding requirements are unchanged. Owner
+decisions D-149, D-150, D-151, D-152, D-153, D-154, D-155, D-160, D-162 of the 2026-10
+authentication cycle; implementation in its work unit WU-43. The current implementation covers the
+RP-owned signed state, path-only target, one-pending entry rule, callback interruption, and related
+Rails tests. Production key rotation, external Jump/Edge behavior, and deployment evidence remain
+separate operational work.
 
 ## Decision
 
-1. **`state` is an ES384 JWS** signed with the RP's existing `oidc_client:<namespace>` key (no new
+1. **`state` is a PS256 JWS** signed with the RP's existing `oidc_client:<namespace>` key (no new
    key; sharing the key with client assertions is an accepted trade-off). Header `typ`
-   `umaxica-oidc-state+jwt`; `alg` exactly ES384 in the header and the verifier allow list; `kid`
+   `umaxica-oidc-state+jwt`; `alg` exactly PS256 in the header and the verifier allow list; `kid`
    resolved only in the RP's own key set. Claims at least `iss`, `aud` (state-specific), `jti`,
    `iat`, `exp`, `v`, and `target_link_uri`; never `sid`, `code_verifier` or session secrets.
    Verification uses the `jwt` gem's supported options (`verify_expiration`, `verify_not_before`,

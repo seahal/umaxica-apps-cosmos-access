@@ -33,6 +33,8 @@ class RedirectsNavigationTargetResolver
     @source = source
   end
 
+  public
+
   def call
     return failure(:raw_url) if raw_url_or_path?
 
@@ -76,4 +78,5 @@ class RedirectsNavigationTargetResolver
   def failure(reason)
     RedirectsTargetResult.failure(kind: :nt, source: source, reason: reason, unsafe_value: key)
   end
+  public_class_method :call, :surface
 end

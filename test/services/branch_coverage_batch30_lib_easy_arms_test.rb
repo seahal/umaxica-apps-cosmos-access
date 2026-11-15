@@ -6,17 +6,18 @@ require "test_helper"
 class BranchCoverageBatch30LibEasyArmsTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
-  test "JitSecurityJwtJwk normalize_public and validate_public arms" do
+  test "JitSecurityJwtJwk normalize_public and validate_public refusal arms" do
     assert_raises(JitSecurityJwtJwk::Error) { JitSecurityJwtJwk.normalize_public([]) }
     assert_raises(JitSecurityJwtJwk::Error) do
       JitSecurityJwtJwk.normalize_public(
         "alg" => JitSecurityJwtJwk::ALGORITHM,
         "use" => "sig",
         "kty" => "EC",
-        "crv" => JitSecurityJwtJwk::CURVE,
+        "kid" => "k",
+        "n" => "n",
+        "e" => "AQAB",
         "x" => "x",
         "y" => "y",
-        "kid" => "k",
         "d" => "private",
       )
     end
@@ -25,10 +26,9 @@ class BranchCoverageBatch30LibEasyArmsTest < ActiveSupport::TestCase
         "alg" => JitSecurityJwtJwk::ALGORITHM,
         "use" => "sig",
         "kty" => "RSA",
-        "crv" => JitSecurityJwtJwk::CURVE,
-        "x" => "x",
-        "y" => "y",
         "kid" => "k",
+        "n" => "AQ",
+        "e" => "AQAB",
       )
     end
     assert_raises(JitSecurityJwtJwk::Error) do
@@ -36,32 +36,31 @@ class BranchCoverageBatch30LibEasyArmsTest < ActiveSupport::TestCase
         "alg" => JitSecurityJwtJwk::ALGORITHM,
         "use" => "sig",
         "kty" => "EC",
-        "crv" => "P-256",
+        "kid" => "k",
+        "n" => "n",
+        "e" => "AQAB",
         "x" => "x",
         "y" => "y",
-        "kid" => "k",
       )
     end
     assert_raises(JitSecurityJwtJwk::Error) do
       JitSecurityJwtJwk.validate_public!(
         "alg" => "ES256",
         "use" => "sig",
-        "kty" => "EC",
-        "crv" => JitSecurityJwtJwk::CURVE,
-        "x" => "x",
-        "y" => "y",
+        "kty" => "RSA",
         "kid" => "k",
+        "n" => "n",
+        "e" => "AQAB",
       )
     end
     assert_raises(JitSecurityJwtJwk::Error) do
       JitSecurityJwtJwk.validate_public!(
         "alg" => JitSecurityJwtJwk::ALGORITHM,
         "use" => "enc",
-        "kty" => "EC",
-        "crv" => JitSecurityJwtJwk::CURVE,
-        "x" => "x",
-        "y" => "y",
+        "kty" => "RSA",
         "kid" => "k",
+        "n" => "n",
+        "e" => "AQAB",
       )
     end
   end
@@ -71,7 +70,7 @@ class BranchCoverageBatch30LibEasyArmsTest < ActiveSupport::TestCase
     client = Struct.new(:client_id, :resource_type).new("cid", "client")
     assert_raises(ArgumentError) do
       SecurityJwtOidcIdTokenCodec.build_payload(
-        resource: Client.new(security_mode_id: SecurityModeConfigurable::NORMAL),
+        resource_type: "client",
         client: client,
         nonce: "n",
         issued_at: now + 1.hour,
@@ -79,7 +78,7 @@ class BranchCoverageBatch30LibEasyArmsTest < ActiveSupport::TestCase
         acr: nil,
         amr: nil,
         issuer: "iss",
-        subject: "sub",
+        subject: "cli_subject",
         sid: "sid",
         auth_time: nil,
         step_up_until: nil,
@@ -87,7 +86,7 @@ class BranchCoverageBatch30LibEasyArmsTest < ActiveSupport::TestCase
     end
 
     payload = SecurityJwtOidcIdTokenCodec.build_payload(
-      resource: Client.new(security_mode_id: SecurityModeConfigurable::NORMAL),
+      resource_type: "client",
       client: client,
       nonce: "n",
       issued_at: now,
@@ -95,7 +94,7 @@ class BranchCoverageBatch30LibEasyArmsTest < ActiveSupport::TestCase
       acr: nil,
       amr: ["pwd"],
       issuer: "iss",
-      subject: "sub",
+      subject: "cli_subject",
       sid: "sid",
       auth_time: now,
       step_up_until: now + 30,
@@ -107,14 +106,16 @@ class BranchCoverageBatch30LibEasyArmsTest < ActiveSupport::TestCase
     assert_equal "client", SecurityJwtOidcIdTokenCodec.resource_type_for_client(client)
     assert_equal "operator",
                  SecurityJwtOidcIdTokenCodec.resource_type_for_client(Struct.new(:resource_type).new("staff"))
-    assert_equal "operator", SecurityJwtOidcIdTokenCodec.resource_type_for_resource(Operator.new(security_mode_id: SecurityModeConfigurable::ADVANCED))
+    operator_client = Struct.new(:resource_type).new("operator")
+
+    assert_equal "operator", SecurityJwtOidcIdTokenCodec.resource_type_for_client(operator_client)
   end
 
   test "SecurityJwtOidcIdTokenCodec normalizes integer NumericDate inputs" do
     issued_at = 1_800_000_000
     client = Struct.new(:client_id, :resource_type).new("cid", "client")
     payload = SecurityJwtOidcIdTokenCodec.build_payload(
-      resource: Client.new(security_mode_id: SecurityModeConfigurable::NORMAL),
+      resource_type: "client",
       client:,
       nonce: "n",
       issued_at:,
@@ -122,7 +123,7 @@ class BranchCoverageBatch30LibEasyArmsTest < ActiveSupport::TestCase
       acr: "aal1",
       amr: nil,
       issuer: "iss",
-      subject: "sub",
+      subject: "cli_subject",
       sid: "sid",
       auth_time: nil,
       step_up_until: nil,

@@ -10,8 +10,8 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
 
   setup do
     @principal_public_id = PublicId.generate
-    @device = ClientDeviceSession.create!(user_id: 9_300_001, principal_public_id: @principal_public_id)
-    @root = ClientToken.create!(authentication_epoch: 0, device_session: @device, user_id: @device.user_id)
+    @device = ClientDeviceSession.create!(subject_public_id: @principal_public_id)
+    @root = ClientToken.create!(authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id)
     @grants =
       %w(core-app-jp warp-app-jp).map do |client_id|
         OpAppGrant.create!(
@@ -58,9 +58,9 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
 
   test "an org root stop does not query each grant's device session separately" do
     operator_public_id = PublicId.generate
-    operator_device = OperatorDeviceSession.create!(staff_id: 9_300_002, principal_public_id: operator_public_id)
+    operator_device = OperatorDeviceSession.create!(subject_public_id: operator_public_id)
     root = OperatorToken.create!(
-      authentication_epoch: 0, device_session: operator_device, staff_id: operator_device.staff_id,
+      authentication_epoch: 0, device_session: operator_device, subject_public_id: operator_device.subject_public_id,
     )
     %w(core-org-jp warp-org-jp).each do |client_id|
       OpOrgGrant.create!(
@@ -107,9 +107,9 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
 
   test "an unregistered ORG participant rolls back the root and grant stop" do
     operator_public_id = PublicId.generate
-    operator_device = OperatorDeviceSession.create!(staff_id: 9_300_003, principal_public_id: operator_public_id)
+    operator_device = OperatorDeviceSession.create!(subject_public_id: operator_public_id)
     root = OperatorToken.create!(
-      authentication_epoch: 0, device_session: operator_device, staff_id: operator_device.staff_id,
+      authentication_epoch: 0, device_session: operator_device, subject_public_id: operator_device.subject_public_id,
     )
     grants =
       ["core-org-jp", "unknown-org-client"].map do |client_id|
@@ -184,9 +184,9 @@ class OpAuthorityStopCommitterTest < ActiveSupport::TestCase
   end
 
   test "a principal stop records its cutoff and every revoked root; zero roots is a recorded stop" do
-    second_device = ClientDeviceSession.create!(user_id: @device.user_id, principal_public_id: @principal_public_id)
+    second_device = ClientDeviceSession.create!(subject_public_id: @principal_public_id)
     second_root = ClientToken.create!(
-      authentication_epoch: 0, device_session: second_device, user_id: second_device.user_id,
+      authentication_epoch: 0, device_session: second_device, subject_public_id: second_device.subject_public_id,
     )
     result = OpAuthorityStopCommitter.stop_principal(
       realm: "app", roots: [@root, second_root], cause: "identity_stop", principal_public_id: @principal_public_id,

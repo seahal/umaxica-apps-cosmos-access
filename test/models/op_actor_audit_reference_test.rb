@@ -88,4 +88,37 @@ class OpActorAuditReferenceTest < ActiveSupport::TestCase
     assert_equal pending_before + 1,
                  ChronicleOutboxEntry.where(event: AuthenticationAuditWriter::WRITE_FAILED_EVENT).count
   end
+
+  test "reference audit recovery keeps scalar actor identity and sanitizes its context" do
+    event_id = ClientChronicleEvent::REFRESH_TOKEN_REUSE_DETECTED
+    before_count = ChronicleOutboxEntry.where(event: AuthenticationAuditWriter::WRITE_FAILED_EVENT).count
+
+    result =
+      AuthenticationAuditWriter.stub(
+        :write_reference!, ->(*, **) { raise ActiveRecord::ConnectionNotEstablished, "Chronicle unavailable" },
+      ) do
+        AuthenticationAuditWriter.write_reference(
+          ClientChronicle, event_id,
+          subject_type: "Client", subject_id: "123", actor_type: "Client", actor_id: "123",
+          context: {
+            result: "rp_session_revoked",
+            access_token: "test-marker-should-not-survive",
+            password: "test-marker-should-not-survive",
+          },
+        )
+      end
+
+    assert_not result
+    assert_equal before_count + 1, ChronicleOutboxEntry.where(event: AuthenticationAuditWriter::WRITE_FAILED_EVENT).count
+    entry = ChronicleOutboxEntry.where(event: AuthenticationAuditWriter::WRITE_FAILED_EVENT).order(:id).last!
+
+    assert_equal "ClientChronicle", entry.payload.fetch("audit_class")
+    assert_equal event_id.to_s, entry.payload.fetch("event_id")
+    assert_equal "Client", entry.payload.fetch("resource_type")
+    assert_equal "123", entry.payload.fetch("resource_id")
+    assert_equal "Client", entry.payload.fetch("actor_type")
+    assert_equal "123", entry.payload.fetch("actor_id")
+    assert_equal "rp_session_revoked", entry.payload.fetch("context").fetch("result")
+    assert_not_includes entry.payload.to_json, "test-marker-should-not-survive"
+  end
 end

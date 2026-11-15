@@ -24,7 +24,7 @@ class OidcTokenExchangeRetainedBoundaryTest < ActiveSupport::TestCase
   end
 
   test "refresh grant rejects missing credentials before resolving session state" do
-    client = Struct.new(:registered_token_endpoint_auth_method).new("none")
+    client = Struct.new(:registered_token_endpoint_auth_method, :authorization_response_type).new("none", "code")
 
     OidcClientRegistry.stub(:find, client) do
       missing = service(refresh_token: nil).call
@@ -49,7 +49,7 @@ class OidcTokenExchangeRetainedBoundaryTest < ActiveSupport::TestCase
   end
 
   test "private-key JWT refresh authentication refuses secrets and invalid assertions" do
-    client = Struct.new(:registered_token_endpoint_auth_method).new("private_key_jwt")
+    client = Struct.new(:registered_token_endpoint_auth_method, :authorization_response_type).new("private_key_jwt", "code")
     invalid_assertion = OidcClientRegistry::AssertionAuthenticationResult.new(
       authenticated: false, client: nil, step_up_claims_state: :none, step_up_expectation: nil,
     )

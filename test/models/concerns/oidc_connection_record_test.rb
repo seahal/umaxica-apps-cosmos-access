@@ -12,8 +12,12 @@ class OidcConnectionRecordTest < ActiveSupport::TestCase
   end
 
   test "status helpers classify active and revoked connections" do
-    active = ClientOidcConnection.create!(user_id: @client_root.user_id, client_id: "core-app-jp")
-    revoked = ClientOidcConnection.create!(user_id: @client_root.user_id, client_id: "warp-app-jp", revoked_at: Time.current)
+    active = ClientOidcConnection.create!(subject_public_id: @client_root.subject_public_id, client_id: "core-app-jp")
+    revoked = ClientOidcConnection.create!(
+      subject_public_id: @client_root.subject_public_id,
+      client_id: "warp-app-jp",
+      revoked_at: Time.current,
+    )
 
     assert_predicate active, :active?
     assert_not_predicate active, :revoked?
@@ -51,9 +55,18 @@ class OidcConnectionRecordTest < ActiveSupport::TestCase
     assert_equal now, connection.connected_at
   end
 
+  test "each OIDC connection selects its actor's realm key" do
+    assert_equal :user_id, ClientOidcConnection.actor_foreign_key
+    assert_equal :staff_id, OperatorOidcConnection.actor_foreign_key
+  end
+
   test "active scope excludes revoked connections" do
-    active = ClientOidcConnection.create!(user_id: @client_root.user_id, client_id: "core-app-jp")
-    revoked = ClientOidcConnection.create!(user_id: @client_root.user_id, client_id: "warp-app-jp", revoked_at: Time.current)
+    active = ClientOidcConnection.create!(subject_public_id: @client_root.subject_public_id, client_id: "core-app-jp")
+    revoked = ClientOidcConnection.create!(
+      subject_public_id: @client_root.subject_public_id,
+      client_id: "warp-app-jp",
+      revoked_at: Time.current,
+    )
 
     active_connections = ClientOidcConnection.active.to_a
 
@@ -62,8 +75,8 @@ class OidcConnectionRecordTest < ActiveSupport::TestCase
   end
 
   test "active_tokens delegates to the surface token inventory" do
-    client_connection = ClientOidcConnection.create!(user_id: @client_root.user_id, client_id: "core-app-jp")
-    operator_connection = OperatorOidcConnection.create!(staff_id: @operator_root.staff_id, client_id: "core-org-jp")
+    client_connection = ClientOidcConnection.create!(subject_public_id: @client_root.subject_public_id, client_id: "core-app-jp")
+    operator_connection = OperatorOidcConnection.create!(subject_public_id: @operator_root.subject_public_id, client_id: "core-org-jp")
     @client_root.update!(oidc_connection: client_connection)
     @operator_root.update!(oidc_connection: operator_connection)
 

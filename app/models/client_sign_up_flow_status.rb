@@ -11,6 +11,8 @@
 class ClientSignUpFlowStatus < OpBaseAppRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   STARTED = 10
   CONTACT_PENDING = 20
   CREDENTIAL_PENDING = 30

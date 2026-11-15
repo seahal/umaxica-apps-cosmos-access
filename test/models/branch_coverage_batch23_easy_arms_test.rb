@@ -4,20 +4,9 @@
 require "test_helper"
 require "jwt"
 
-# Pure unit tops for branches the full suite still leaves cold: model case arms, DPoP request-
-# binding refusals, and the SurfaceInertiaPage layout derivation guard.
+# Pure unit coverage for redirect refusals that reject unknown keys and malformed targets.
 class BranchCoverageBatch23EasyArmsTest < ActiveSupport::TestCase
   self.fixture_table_names = []
-
-  test "SurfaceInertiaPage refuses a controller path without a family and surface" do
-    assert_raises(ArgumentError) do
-      Class.new(ApplicationController) do
-        def self.controller_path = "orphan"
-
-        include SurfaceInertiaPage
-      end
-    end
-  end
 
   test "RedirectsExternalTargetResolver refuses unknown keys and relative targets" do
     unknown = RedirectsExternalTargetResolver.call(:not_a_registry_key)

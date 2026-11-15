@@ -11,7 +11,7 @@ module Jit
         self.fixture_table_names = []
 
         setup do
-          @key = OpenSSL::PKey::EC.generate("secp384r1")
+          @key = OpenSSL::PKey::RSA.generate(3_072)
           @public_jwk = JitSecurityJwtJwk.export_public(@key, kid: "kid-1")
         end
 
@@ -43,20 +43,38 @@ module Jit
               JitSecurityJwtJwk.normalize_public(@public_jwk.merge("alg" => "HS256"))
             end
 
-          assert_match(/alg must be ES384/, error.message)
+          assert_match(/alg must be PS256/, error.message)
         end
 
         test "rejects incomplete public jwk" do
           error =
             assert_raises(JitSecurityJwtJwk::Error) do
-              JitSecurityJwtJwk.normalize_public(@public_jwk.except("x"))
+              JitSecurityJwtJwk.normalize_public(@public_jwk.except("n"))
             end
 
-          assert_match(/missing x/, error.message)
+          assert_match(/missing n/, error.message)
         end
 
         test "imports valid public jwk material" do
-          assert_kind_of OpenSSL::PKey::EC, JitSecurityJwtJwk.import_public_key(@public_jwk)
+          assert_kind_of OpenSSL::PKey::RSA, JitSecurityJwtJwk.import_public_key(@public_jwk)
+        end
+
+        test "rejects RSA JWKs labelled with non-PS256 algorithms" do
+          %w(RS256 PS384 HS256).each do |algorithm|
+            assert_raises(JitSecurityJwtJwk::Error, algorithm) do
+              JitSecurityJwtJwk.normalize_public(@public_jwk.merge("alg" => algorithm))
+            end
+          end
+        end
+
+        test "rejects EC public JWKs for first-party verification" do
+          ec_key = OpenSSL::PKey::EC.generate("secp384r1")
+          ec_jwk = JWT::JWK.new(ec_key, kid: "legacy-es384").export.stringify_keys.except("d").merge(
+            "alg" => "ES384",
+            "use" => "sig",
+          )
+
+          assert_raises(JitSecurityJwtJwk::Error) { JitSecurityJwtJwk.normalize_public(ec_jwk) }
         end
       end
     end

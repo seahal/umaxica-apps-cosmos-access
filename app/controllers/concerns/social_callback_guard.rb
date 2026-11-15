@@ -442,4 +442,5 @@ module SocialCallbackGuard
   end
 
   private_class_method :allowed_request_origins, :reject_request_phase!
+  public_class_method :normalized_request_source, :ensure_state_query_param!
 end

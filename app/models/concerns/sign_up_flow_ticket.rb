@@ -19,20 +19,6 @@ module SignUpFlowTicket
     /challenge/i,
   ].freeze
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    before_validation :normalize_completed_requirements
-    before_validation :default_cleanup_status
-    before_validation :cap_expiry_at_admission_curfew, on: :create
-
-    validates :entry_method, presence: true, inclusion: { in: ->(record) { record.class::ENTRY_METHODS } }
-    validates :pending_contact_type, inclusion: { in: CONTACT_TYPES }, allow_nil: true
-    validates :completed_requirements, exclusion: { in: [nil] }
-    validate :completed_requirements_is_object
-    validate :return_to_is_safe_internal_path
-    validate :completed_requirements_exclude_secret_credential_material
-  end
-
   class_methods do
     def cleanup_status_class
       nil
@@ -51,6 +37,8 @@ module SignUpFlowTicket
       defined?(self::SOCIAL_ENTRY_METHODS) ? self::SOCIAL_ENTRY_METHODS : []
     end
   end
+
+  public
 
   def social_entry_method?
     self.class.social_entry_methods.include?(entry_method)

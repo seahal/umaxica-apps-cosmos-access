@@ -3,6 +3,8 @@
 
 class SecurityOneTimeReveal < OpBaseAppRecord
   class << self
+    public
+
     def consume(jti_digest:, actor_type:, actor_id:, session_nonce_digest:, purpose:, now: Time.current)
       transaction do
         record = lock.find_by(

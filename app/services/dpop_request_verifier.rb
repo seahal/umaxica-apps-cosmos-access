@@ -17,6 +17,8 @@ class DpopRequestVerifier
     @resource_type = resource_type
   end
 
+  public
+
   def call
     token_jkt = @access_token_payload&.dig("cnf", "jkt")
 

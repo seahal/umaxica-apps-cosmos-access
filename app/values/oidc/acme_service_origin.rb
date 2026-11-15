@@ -35,6 +35,8 @@ module Oidc
       end
 
     class << self
+      public
+
       def from(value, default_scheme:)
         raw = value.to_s.strip
         raise ArgumentError, "missing origin" if raw.blank?
@@ -95,6 +97,8 @@ module Oidc
       @host = host.to_s.downcase
       @port = port
     end
+
+    public
 
     def origin
       build_uri("/").to_s.delete_suffix("/")

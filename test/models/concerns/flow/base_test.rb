@@ -8,6 +8,16 @@ class FlowBaseTest < ActiveSupport::TestCase
     self.table_name = "cycle_base_test_records"
 
     include Retainable
+
+    attribute :discard_at, :datetime, default: -> { Retainable::SENTINEL }
+    attribute :purge_eligible_at, :datetime, default: -> { Retainable::SENTINEL }
+
+    validates :discard_at, presence: true
+    validates :purge_eligible_at, presence: true
+    validate :retention_order_valid
+    validate :retention_times_not_before_created_at, on: :update
+
+    Retainable.registry << self unless Retainable.registry.include?(self)
     include FlowBase
 
     cycle_status_column :cycle_status_id

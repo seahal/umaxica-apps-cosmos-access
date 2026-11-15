@@ -12,6 +12,8 @@
 class ClientTokenKind < OpBaseAppRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   self.primary_key = :id
   self.record_timestamps = false
 

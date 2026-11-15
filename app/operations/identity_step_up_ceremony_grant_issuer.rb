@@ -44,6 +44,8 @@ class IdentityStepUpCeremonyGrantIssuer
     @now = now
   end
 
+  public
+
   def call
     IdentityStepUpCeremonyGrant.issue(transaction.grant_claims(now: now), issuer_id: issuer_id, now: now)
   end
@@ -51,4 +53,6 @@ class IdentityStepUpCeremonyGrantIssuer
   private
 
   attr_reader :transaction, :issuer_id, :now
+
+  public_class_method :issue!
 end

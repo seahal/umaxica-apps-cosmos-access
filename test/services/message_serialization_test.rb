@@ -5,35 +5,6 @@ require "test_helper"
 class MessageSerializationTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
-  test "sign-in resend state round-trips JSON and rejects authenticated Marshal" do
-    binding = "b" * 64
-    token = SignInOtpResendState.issue(
-      kind: "email", target: "serialization@example.test", surface: "app",
-      browser_binding: binding, contact: nil,
-    )
-
-    assert_equal "serialization@example.test",
-                 SignInOtpResendState.parse(token, browser_binding: binding).fetch(:target)
-
-    key = ActiveSupport::KeyGenerator.new(Rails.application.secret_key_base).generate_key(
-      "sign-in-otp-resend", ActiveSupport::MessageEncryptor.key_len,
-    )
-    legacy = ActiveSupport::MessageEncryptor.new(key, cipher: "aes-256-gcm", serializer: Marshal)
-    payload = {
-      "version" => "2",
-      "kind" => "email",
-      "target" => "serialization@example.test",
-      "surface" => "app",
-      "contact_mode" => "fake",
-      "contact_ref" => "0" * 21,
-      "owner_ref" => "0" * 20,
-      "binding_fact" => "0000-00-00T00:00:00.000000Z",
-    }
-    token = legacy.encrypt_and_sign(payload, purpose: "sign-in-otp-resend:#{binding}", expires_in: 30.minutes)
-
-    assert_nil SignInOtpResendState.parse(token, browser_binding: binding)
-  end
-
   test "outbound payload rejects authenticated Marshal for each delivery purpose" do
     ["outbound.email.otp", "outbound.email.verification_token", "outbound.sms.delivery.v1"].each do |purpose|
       key = ActiveSupport::KeyGenerator.new(Rails.application.secret_key_base).generate_key(
@@ -91,6 +62,23 @@ class MessageSerializationTest < ActiveSupport::TestCase
     )
 
     assert_nil OrgNormalSignInBindingCodec.decode(token)
+  end
+
+  test "sign-up flow binding encodes its persisted phase and round-trips the signed fields" do
+    flow = Struct.new(:public_id, :step, :checkpoint_version, :expires_at).new(
+      "flow-public-id", "contact_pending", 3, 15.minutes.from_now,
+    )
+
+    token = SignFlowBindingCodec.encode(flow:, surface: "app")
+    binding = SignFlowBindingCodec.decode(token)
+
+    assert_equal "sign_up", binding.kind
+    assert_equal "app", binding.surface
+    assert_equal "flow-public-id", binding.flow_public_id
+    assert_equal "contact_pending", binding.phase
+    assert_equal 3, binding.generation
+    assert_equal flow.expires_at.to_i, binding.expires_at
+    assert_raises(ArgumentError) { SignFlowBindingCodec.encode(flow:, surface: "org") }
   end
 
   test "root session reference lookups refuse authenticated Marshal before accessing records" do

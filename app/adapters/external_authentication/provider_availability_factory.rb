@@ -6,5 +6,6 @@ module ExternalAuthentication
     def self.current
       FlipperProviderAvailabilityAdapter.new
     end
+    public_class_method :current
   end
 end

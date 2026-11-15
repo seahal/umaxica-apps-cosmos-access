@@ -4,6 +4,8 @@
 class ClientOidcAuthorizationTransactionStatus < OpBaseAppRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   PENDING = OidcAuthorizationTransactionable::STATUS_PENDING
   AUTHENTICATED = OidcAuthorizationTransactionable::STATUS_AUTHENTICATED
   CONSUMED = OidcAuthorizationTransactionable::STATUS_CONSUMED

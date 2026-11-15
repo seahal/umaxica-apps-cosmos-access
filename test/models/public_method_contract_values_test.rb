@@ -10,27 +10,6 @@ class PublicMethodContractValuesTest < ActiveSupport::TestCase
     assert_equal "ClientToken has a blank public_id and cannot be exposed to a client", error.message
   end
 
-  test "resource lifecycle predicates distinguish active and inactive state in every family" do
-    active = AuthorityResourceLifecycleStateValue::ACTIVE
-    inactive = AuthorityResourceLifecycleStateValue::INACTIVE
-    lifecycles = [AgentLifecycle, BureauLifecycle, EnterpriseLifecycle]
-
-    lifecycles.each do |lifecycle_class|
-      assert_predicate lifecycle_class.new(state: active), :active?
-      assert_not_predicate lifecycle_class.new(state: inactive), :active?
-    end
-  end
-
-  test "persisted owner cutover markers are readonly in each owner family" do
-    [AgentAuthorityCutover, BureauAuthorityCutover, EnterpriseAuthorityCutover].each do |cutover_class|
-      cutover = cutover_class.establish!
-
-      assert_predicate cutover, :readonly?, cutover_class.name
-    end
-  end
-
-
-
   test "passkey result candidate initializes metadata as an empty object by default" do
     candidate = IdentityPasskeyCeremonyResultIssuer::Candidate.new(
       webauthn_id: "credential-id",
@@ -63,6 +42,8 @@ class PublicMethodContractValuesTest < ActiveSupport::TestCase
     grant = IdentitySocialCeremonyGrant.new(payload, issuer_id:, now:)
 
     assert_equal Time.zone.at(expires_at.to_i), grant.expires_at
+    assert_equal "link", grant["operation"]
+    assert_equal "google", grant.fetch(:provider)
   end
 
   test "identifier inventory result serializes its stable public shape" do
@@ -79,6 +60,4 @@ class PublicMethodContractValuesTest < ActiveSupport::TestCase
     )
     assert_equal result.to_h, JSON.parse(result.to_json, symbolize_names: true)
   end
-
-
 end

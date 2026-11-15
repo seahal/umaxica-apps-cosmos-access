@@ -4,6 +4,8 @@
 class ClientSessionLimitResolutionState < OpBaseAppRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   PENDING = 10
   SESSION_SELECTED = 20
   RESOLVED = 100

@@ -47,6 +47,8 @@ class StepUpResolver
     @now = now
   end
 
+  public
+
   def call
     if token.present? && requirement.step_up_required?
       raise GovernanceLookupUnavailableError, "Governance step-up policy lookup is unavailable"
@@ -205,4 +207,5 @@ class StepUpResolver
 
     token.public_send(name)
   end
+  public_class_method :call
 end

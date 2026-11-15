@@ -29,8 +29,10 @@ The external Jump gateway verifies the inbound Rails-issued token against the is
 For an internal return, the gateway issues its own signed return token and redirects back to the
 app. The app verifies that returned token with `JumpRtReturnVerifier` against the Jump public JWKS
 only (`https://jump.umaxica.net/.well-known/jwks.json` derived from the configured Jump origin).
-Return tokens are ES384, at most 30 seconds, with 5 seconds of clock leeway. JWKS fetch failures
-fail closed. Rails must not hold the Jump gateway private key.
+Access requires PS256 return tokens using RSA keys of at least 3072 bits, at most 30 seconds, with 5
+seconds of clock leeway. JWKS fetch failures fail closed. Rails must not hold the Jump gateway
+private key. The Edge Jump repository's published receiver contract still says ES384; its PS256
+implementation and live interoperability check remain follow-up work.
 
 This Rails app must not expose `jump_*` route helpers, DB-backed `JumpLink` models, or
 `JumpLinkable` lifecycle behavior.

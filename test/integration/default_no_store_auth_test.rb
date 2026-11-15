@@ -15,12 +15,12 @@ class DefaultNoStoreAuthTest < ActionDispatch::IntegrationTest
     assert_nil response.headers["Location"]
   end
 
-  test "Auth app ApplicationController region redirect issued by a callback is no-store" do
+  test "Auth app sign-in entry fails closed without caching" do
     host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
 
     get("/sign/in")
 
-    assert_response :found
+    assert_response :service_unavailable
     assert_equal "no-store", response.headers.fetch("Cache-Control")
   end
 
@@ -44,12 +44,12 @@ class DefaultNoStoreAuthTest < ActionDispatch::IntegrationTest
     assert_nil response.headers["Location"]
   end
 
-  test "Auth org ApplicationController region redirect issued by a callback is no-store" do
+  test "Auth org sign-in entry fails closed without caching" do
     host! ENV.fetch("PUBLIC_AUTH_STAFF_URL")
 
     get("/sign/in")
 
-    assert_response :found
+    assert_response :service_unavailable
     assert_equal "no-store", response.headers.fetch("Cache-Control")
   end
 

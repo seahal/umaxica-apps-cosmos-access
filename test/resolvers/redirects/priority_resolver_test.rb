@@ -9,7 +9,6 @@ class RedirectsPriorityResolverTest < ActiveSupport::TestCase
       def auth_app_sign_in_check_path(ri:) = "/sign/in/check?ri=#{ri}"
 
       def auth_app_sign_in_path(ri:) = "/sign/in?ri=#{ri}"
-
     end
 
   test "explicit nt wins over signed pt" do
@@ -59,9 +58,5 @@ end
 
 # DAMP local route helper aliases for former shared test support.
 class RedirectsPriorityResolverTest
-
   private
-
-
-
 end

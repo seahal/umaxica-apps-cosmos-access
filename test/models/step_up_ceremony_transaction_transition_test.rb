@@ -13,6 +13,8 @@ class StepUpCeremonyTransactionTransitionTest < ActiveSupport::TestCase
         actor_ref: "actor", session_ref: "session", required_scope: "settings_passkey",
         required_aal: "none", allowed_methods: ["passkey"], purpose: "step_up",
       )
+
+      assert_equal "step_up", transaction.intent
       verified_at = model.database_now
 
       transaction.record_verification!(
@@ -119,10 +121,14 @@ class StepUpCeremonyTransactionTransitionTest < ActiveSupport::TestCase
       )
       now = model.database_now
 
+      assert_predicate transaction, :cancellation_handoff_available?
+      assert_not transaction.cancellation_handoff_available?(now: transaction.expires_at)
+
       transaction.commit_cancellation!(now: now)
 
       assert_equal "canceled", transaction.reload.status
       assert_equal now, transaction.canceled_at
+      assert_predicate transaction, :cancellation_handoff_available?
     end
 
     test "#{model.name} cancellation closes a verified transaction" do
@@ -312,6 +318,22 @@ class StepUpCeremonyTransactionTransitionTest < ActiveSupport::TestCase
 
       assert_equal "transaction_unavailable", error.code
       assert_equal "pending", transaction.reload.status
+    end
+
+    test "#{model.name} the public email registration consumer refuses a step-up purpose" do
+      transaction = model.create_transaction!(
+        actor_ref: "actor", session_ref: "session", required_scope: "settings_email",
+        required_aal: "none", allowed_methods: ["email_otp"], purpose: "step_up",
+      )
+      original = transaction.reload.attributes
+
+      error =
+        assert_raises(IdentityStepUpCeremonyContract::Error) do
+          transaction.consume_email_registration!(registered_credential_ref: "email-ref")
+        end
+
+      assert_equal "transaction_unavailable", error.code
+      assert_equal original, transaction.reload.attributes
     end
 
     test "#{model.name} result delivery is prepared only for a verified transaction and counts generations" do

@@ -66,6 +66,8 @@ module OmniAuth
         end
       end
 
+      public
+
       def request_phase
         return fail!(:provider_unavailable) unless entra_start_available?
 

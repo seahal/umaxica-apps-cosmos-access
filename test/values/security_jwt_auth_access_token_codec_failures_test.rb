@@ -15,7 +15,7 @@ class SecurityJwtAuthAccessTokenCodecFailuresTest < ActiveSupport::TestCase
     unusable = ->(*, **) { raise OpenSSL::PKey::PKeyError, "unusable key" }
 
     Rails.logger.stub(:info, ->(*args, &block) { recorded << (args.first || block&.call).to_s }) do
-      JitSecurityJwtKeyring.stub(:parse_header, { "kid" => "any", "typ" => "at+jwt", "alg" => "ES384" }) do
+      JitSecurityJwtKeyring.stub(:parse_header, { "kid" => "any", "typ" => "at+jwt", "alg" => "PS256" }) do
         SecurityJwtAuthAccessTokenCodec.stub(:valid_header?, true) do
           JitSecurityJwtKeyring.stub(:public_key_for, unusable) do
             assert_nil SecurityJwtAuthAccessTokenCodec.decode_with_expiration(

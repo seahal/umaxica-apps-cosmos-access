@@ -40,9 +40,16 @@ class IdentityStepUpCeremonyRefusalCodeTest < ActiveSupport::TestCase
           required_aal: "none", allowed_methods: ["passkey"], purpose: "step_up",
         )
         # The stored status is the input under test; the transitions that reach it are covered elsewhere.
+        evidence_state_id =
+          if status == "consumed"
+            IdentityStepUpCeremonyContract::EVIDENCE_RECORDED
+          else
+            IdentityStepUpCeremonyContract::EVIDENCE_ABSENT
+          end
         transaction.update_columns(
           status: status, revoked_at: ((status == "revoked") ? transaction.created_at : nil),
           consumed_at: ((status == "consumed") ? transaction.created_at : nil),
+          evidence_state_id: evidence_state_id,
         )
 
         assert_equal code, transaction.unavailable_refusal_code(

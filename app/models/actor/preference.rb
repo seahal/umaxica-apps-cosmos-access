@@ -77,6 +77,8 @@ class Actor
       freeze
     end
 
+    public
+
     def cookie
       @cookie
     end
@@ -255,5 +257,6 @@ class Actor
     end
 
     private_class_method :build_cookie_from_object
+    public_class_method :from_jwt, :cookie_from
   end
 end

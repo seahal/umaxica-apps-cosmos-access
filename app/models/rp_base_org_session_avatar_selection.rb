@@ -7,6 +7,8 @@ class RpBaseOrgSessionAvatarSelection < RpBaseOrgRecord
              primary_key: :rp_session_id,
              inverse_of: :avatar_selection
 
+  validates :rp_session_id, uniqueness: true
+
   validates :avatar_public_id, presence: true
   validates :avatar_public_id, format: { with: /\A[0-9A-Za-z_-]{21}\z/ }
   validates :avatar_public_id, length: { maximum: 21 }

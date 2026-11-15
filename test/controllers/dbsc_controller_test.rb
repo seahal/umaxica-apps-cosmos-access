@@ -493,7 +493,7 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
     ClientToken.create!(
       {
         device_session: device_session,
-        user_id: device_session.user_id,
+        subject_public_id: device_session.subject_public_id,
       }.merge(attributes),
     )
   end
@@ -504,7 +504,7 @@ class DbscControllerTest < ActionDispatch::IntegrationTest
     OperatorToken.create!(
       {
         device_session: device_session,
-        staff_id: device_session.staff_id,
+        subject_public_id: device_session.subject_public_id,
       }.merge(attributes),
     )
   end

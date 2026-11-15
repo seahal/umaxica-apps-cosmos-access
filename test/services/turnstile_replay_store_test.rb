@@ -25,7 +25,7 @@ class TurnstileReplayStoreTest < ActiveSupport::TestCase
     assert replay.consumed_at
   end
 
-  test "consume! raises RecordNotUnique for duplicate token digests" do
+  test "consume! refuses duplicate token digests through the model validation" do
     TurnstileReplayStore.consume!(
       token: "dup-token",
       ceremony_id: "first-ceremony",
@@ -35,7 +35,7 @@ class TurnstileReplayStoreTest < ActiveSupport::TestCase
       expires_at: 1.hour.from_now,
     )
 
-    assert_raises(ActiveRecord::RecordNotUnique) do
+    assert_raises(ActiveRecord::RecordInvalid) do
       TurnstileReplayStore.consume!(
         token: "dup-token",
         ceremony_id: "second-ceremony",

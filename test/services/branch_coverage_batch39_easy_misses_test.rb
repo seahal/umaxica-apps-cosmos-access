@@ -9,7 +9,7 @@ class BranchCoverageBatch39EasyMissesTest < ActiveSupport::TestCase
 
   test "SignRiskEnforcer returns early for blank resource" do
     SignRiskEnforcer.stub(:feature_enabled?, true) do
-      assert_nil SignRiskEnforcer.call(nil)
+      assert_raises(ArgumentError) { SignRiskEnforcer.call(nil) }
     end
   end
 
@@ -19,21 +19,6 @@ class BranchCoverageBatch39EasyMissesTest < ActiveSupport::TestCase
 
     assert_kind_of SignInSequence, result
     assert_predicate result.payload, :blank?
-  end
-
-  test "SignAppUpSocialCancellation requires cycle and social provider" do
-    result = SignAppUpSocialCancellation.new(cycle: nil).call
-
-    assert_equal :blocked, result.status
-
-    cycle = Object.new
-    cycle.define_singleton_method(:social_provider) { nil }
-    cycle.define_singleton_method(:entry_method) { "password" }
-    cycle.define_singleton_method(:social_entry_method?) { false }
-    cycle.define_singleton_method(:step) { "start" }
-    result = SignAppUpSocialCancellation.new(cycle: cycle).call
-
-    assert_equal :blocked, result.status
   end
 
   test "RedirectsJumpGatewayUrl origin validation arms" do

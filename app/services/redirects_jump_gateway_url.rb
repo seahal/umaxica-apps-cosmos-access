@@ -15,6 +15,8 @@ class RedirectsJumpGatewayUrl
     @source = source
   end
 
+  public
+
   def call
     return failure(:blank_token) if token.blank?
     return failure(:control_char) if token.match?(/[\x00-\x1F\x7F]/)
@@ -49,4 +51,5 @@ class RedirectsJumpGatewayUrl
   def failure(reason)
     RedirectsTargetResult.failure(kind: :external, source: source, reason: reason, unsafe_value: token)
   end
+  public_class_method :call
 end

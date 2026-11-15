@@ -8,6 +8,8 @@ module Authentication
   class CurrentResourceResolverTest < ActiveSupport::TestCase
     FakeResource =
       Struct.new(:id, :admin_locked, :token_valid_after_at, keyword_init: true) do
+        def public_id = id.to_s
+
         def admin_locked?
           admin_locked
         end
@@ -22,11 +24,11 @@ module Authentication
     class FakeTokenScope
       FakeToken =
         Struct.new(
-          :public_id, :oidc_jti, :last_used_at, :created_at, :user_id,
-          :device_session_id, :device_session, :visitor_id, :staff_id,
+          :public_id, :oidc_jti, :last_used_at, :created_at, :subject_public_id,
+          :device_session_id, :device_session, :visitor_id,
         ) do
           def has_attribute?(attribute)
-            %i(public_id oidc_jti last_used_at created_at user_id device_session_id visitor_id staff_id)
+            %i(public_id oidc_jti last_used_at created_at subject_public_id device_session_id visitor_id)
               .include?(attribute.to_sym)
           end
 
@@ -113,9 +115,8 @@ module Authentication
         FakeToken.new(
           "token_public_id", self.class.token_oidc_jti,
           self.class.token_last_used_at, self.class.token_created_at,
-          self.class.token_user_id || 123, self.class.token_device_session_id,
+          (self.class.token_user_id || self.class.token_staff_id || 123).to_s, self.class.token_device_session_id,
           self.class.token_device_session, 123,
-          self.class.token_staff_id || 123,
         )
       end
     end
@@ -376,7 +377,7 @@ module Authentication
       payload = { "sub" => "123", "sid" => "sess_1", "scope" => "domain:client", "jti" => "current-jti" }
       FakeTokenScope.token_oidc_jti = "current-jti"
       FakeTokenScope.token_device_session_id = 42
-      FakeTokenScope.token_device_session = Struct.new(:user_id, :public_id, :dpop_jkt, :status_id, :revoked_at)
+      FakeTokenScope.token_device_session = Struct.new(:subject_public_id, :public_id, :dpop_jkt, :status_id, :revoked_at)
         .new(999, "session_1", nil, DeviceSessionable::STATUS_ACTIVE, nil)
 
       AuthenticationToken.stub(:decode, payload) do
@@ -400,7 +401,7 @@ module Authentication
       FakeTokenScope.token_oidc_jti = "current-jti"
       FakeTokenScope.token_device_session_id = 42
       FakeTokenScope.token_device_session = ClientDeviceSession.new(
-        user_id: 123, public_id: "session_1", dpop_jkt: nil,
+        subject_public_id: "123", public_id: "session_1", dpop_jkt: nil,
         status_id: DeviceSessionable::STATUS_ACTIVE, revoked_at: nil,
       )
 
@@ -425,7 +426,7 @@ module Authentication
       payload = { "sub" => "123", "sid" => "sess_1", "scope" => "domain:client", "jti" => "current-jti" }
       FakeTokenScope.token_oidc_jti = "current-jti"
       FakeTokenScope.token_device_session_id = 42
-      session_class = Struct.new(:user_id, :public_id, :dpop_jkt, :status_id, :revoked_at)
+      session_class = Struct.new(:subject_public_id, :public_id, :dpop_jkt, :status_id, :revoked_at)
 
       AuthenticationToken.stub(:decode, payload) do
         AuthenticationToken.stub(:resource_type_scope_matches?, true) do

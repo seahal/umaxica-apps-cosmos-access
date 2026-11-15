@@ -2,24 +2,20 @@
 
 ## Purpose
 
-This runbook manages ES384 signing keys for Jump redirect tokens.
+This runbook manages PS256 RSA signing keys for Jump RTs issued by Access. Access now also requires
+PS256 RSA keys for return tokens. The Edge Jump repository's published return-token contract still
+specifies ES384, so live return-token interoperability awaits its owner's update.
 
 Jump RT keys are issuer-surface scoped. Do not reuse one private key or `kid` across issuer
-namespaces or across the `auth`, `base`, `visa`, `core`, `warp` and `palm` issuer groups.
+namespaces.
 
-Jump issuers are exactly these eleven namespaces:
+Jump issuer namespaces are exactly these four:
 
 - `AUTH_APP`, `AUTH_ORG`
-- `BASE_APP`, `BASE_ORG`
 - `VISA_APP`, `VISA_ORG`
-- `CORE_APP`, `CORE_ORG`
-- `WARP_APP`, `WARP_ORG`
-- `PALM_APP`
 
-The list is `JumpRtSurface::ISSUER_NAMESPACES` (`app/values/jump_rt_surface.rb`). The corporate
-authentication realm has no Jump issuer. `ACME_APP` and `ACME_ORG` remain in the general
-`JitSecurityJwtRegistry::SURFACE_NAMESPACES` registry for other token families, but they are not
-Jump signing authorities and are not rotated by this runbook.
+The list is `JumpRtSurface::ISSUER_NAMESPACES` (`app/values/jump_rt_surface.rb`). Other RP origins
+remain return destinations only; they are not Access Jump signing authorities.
 
 Issuer registration and permitted destinations are separate contracts. See
 [the directed handoff ADR](../../adr/jump-directed-rails-handoff-contract.md). Issuer identity is
@@ -38,8 +34,8 @@ At boot, `Jit::Security::Jwt::Registry` builds immutable issuer/key records:
 - current public JWK is derived once from the current private key;
 - legacy/grace public JWKs are loaded from `JWT_<NAMESPACE>_PUBLIC_KEYSET`;
 - revoked kids are loaded from `JWT_<NAMESPACE>_REVOKED_KIDS`;
-- malformed JWKs, private JWK fields, wrong `alg`, wrong `kty`, wrong `crv`, active/public mismatch,
-  and non-default duplicate kids fail boot.
+- malformed JWKs, private JWK fields, wrong `alg`, wrong `kty`, active/public mismatch, and
+  non-default duplicate kids fail boot.
 
 The JWKS endpoint must only render the prebuilt public JWKS. It must not read private keys,
 credentials, files, KMS, or the network while serving a request.
@@ -96,8 +92,8 @@ signer is published only if it is listed in `PUBLIC_KEYSET`.
 
 ### Phase A: pre-publish K2
 
-1. Generate a new P-384 private key `K2`.
-2. Choose a globally unique `kid`, for example `auth-app-jump-rt-es384-prod-2026-06-a`.
+1. Generate a new unencrypted RSA 3072-bit or larger PKCS#8 private key `K2`.
+2. Choose a globally unique `kid`, for example `auth-app-jump-rt-ps256-prod-2026-11-a`.
 3. Store `K2` as a new, inactive version of the `JWT_<NAMESPACE>_PRIVATE_KEY` secret. Do not switch
    the runtime reference to it yet: a private key that changes while `ACTIVE_KID` still names `K1`
    fails boot as an active/public mismatch.
@@ -115,7 +111,7 @@ signer is published only if it is listed in `PUBLIC_KEYSET`.
    other.
 2. Keep both public JWKs in `PUBLIC_KEYSET`.
 3. Deploy issuer instances and confirm boot validation passes.
-4. Issue a smoke token and confirm its header has `alg: ES384` and the `K2` kid.
+4. Issue a smoke token and confirm its header has `alg: PS256` and the `K2` kid.
 5. Confirm Jump accepts the new token.
 
 ### Grace removal
@@ -195,8 +191,8 @@ JWKS may be cached publicly, but emergency revoke must not depend on CDN expiry.
 
 Before production deployment:
 
-- `kid` is globally unique and includes token family, surface, environment, date, and sequence.
-- The key is P-384 and signs with ES384.
+- `kid` is globally unique and identifies the PS256 key generation.
+- The key is RSA 3072-bit or larger and uses unencrypted PKCS#8 PEM or Base64-encoded PKCS#8 DER.
 - Active private key derives the active public JWK.
 - JWKS contains no private fields: `d`, PEM, DER, `k`, or secret backend names.
 - Revoked kids are absent from JWKS.
@@ -211,7 +207,7 @@ Before production deployment:
 no emulator exists. `JUMP_GATEWAY_URL` was removed and fails boot if still set.
 `PRIVATE_JUMP_GATEWAY_URL` is not supported: Rails has no private network path to Jump, so setting
 it, even empty, fails boot. There are no Jump-specific development settings. Development signs with
-the installer-owned keys in `tmp/local_jwt_keysets.json` (kid `development-<namespace>-es384-a`); a
+the installer-owned keys in `tmp/local_jwt_keysets.json` (kid `development-<namespace>-ps256-a`); a
 `JWT_<NAMESPACE>_*` environment value that does not match that store fails boot, so no other key
 material can be injected locally.
 

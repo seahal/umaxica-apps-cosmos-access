@@ -3,8 +3,10 @@
 
 # Explicit WebAuthn surface declaration for controllers.
 #
-# Each surface's auth base controller declares its surface once:
+# Each concrete host must declare the class attribute before including this concern, then declares
+# its surface explicitly:
 #
+#   class_attribute :declared_webauthn_surface_key, instance_writer: false, default: nil
 #   webauthn_surface :app
 #
 # Ceremony code then reads webauthn_surface / webauthn_relying_party_config.
@@ -15,16 +17,13 @@ module WebauthnSurfaceDeclarable
 
   class SurfaceNotDeclaredError < StandardError; end
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    class_attribute :declared_webauthn_surface_key, instance_writer: false, default: nil # rubocop:disable ThreadSafety/ClassAndModuleAttributes
-  end
-
   class_methods do
     def webauthn_surface(key)
       self.declared_webauthn_surface_key = Webauthn::Surface.for(key).key
     end
   end
+
+  public
 
   def webauthn_surface
     key = self.class.declared_webauthn_surface_key

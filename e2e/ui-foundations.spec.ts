@@ -1,4 +1,5 @@
 import { AxeBuilder } from "@axe-core/playwright";
+import type { Page } from "playwright";
 import { expect, test } from "playwright/test";
 
 // Real presentation components, isolated from application admission and authentication journeys.
@@ -120,6 +121,8 @@ for (const lang of ["en", "ja"]) {
   for (const width of [320, 768, 1024, 1440]) {
     test(`reading paragraphs keep their relationship at ${width}px in ${lang}`, async ({
       page,
+    }: {
+      page: Page;
     }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.route("**/synthetic/**", (route) => route.abort());

@@ -31,6 +31,8 @@ class IdentityTelephoneCeremonyTransaction
     validate!
   end
 
+  public
+
   def grant_claims(now: Time.current)
     {
       "surface" => surface,

@@ -5,7 +5,7 @@ require "test_helper"
 class AccessPersonalResponseCacheControlTest < ActionDispatch::IntegrationTest
   self.fixture_table_names = []
 
-  test "unauthenticated settings responses remain uncacheable when admission stops before the action" do
+  test "unavailable Auth settings routes remain uncacheable" do
     host!(ENV.fetch("PUBLIC_AUTH_SERVICE_URL"))
     https!
 
@@ -14,19 +14,20 @@ class AccessPersonalResponseCacheControlTest < ActionDispatch::IntegrationTest
     assert_equal 404, response.status, "/settings"
     assert_equal "private, no-store", response.headers["Cache-Control"], "/settings"
 
-    %w(/settings/apple /settings/apple/edit /settings/google /settings/google/edit /settings//apple).each do |path|
+    %w(/settings/apple /settings/apple/edit /settings/google /settings/google/edit).each do |path|
       get path, params: { ri: "jp" }
 
-      assert_equal 400, response.status, path
+      assert_response :service_unavailable, path
       assert_equal "private, no-store", response.headers["Cache-Control"], path
     end
+
+    get "/settings//apple", params: { ri: "jp" }
+
+    assert_response :service_unavailable, "/settings//apple"
+    assert_equal "private, no-store", response.headers["Cache-Control"], "/settings//apple"
   end
 
-  test "provider callback refusals including normalized paths are uncacheable in the owning Auth realm" do
-    previous_test_mode = OmniAuth.config.test_mode
-    previous_auth = OmniAuth.config.mock_auth.slice(:google, :apple, :entra)
-    OmniAuth.config.test_mode = true
-    %i(google apple entra).each { |provider| OmniAuth.config.mock_auth[provider] = :invalid_credentials }
+  test "provider callback entry points fail closed without caching in the owning Auth realm" do
     https!
 
     [
@@ -40,41 +41,31 @@ class AccessPersonalResponseCacheControlTest < ActionDispatch::IntegrationTest
       host!(host)
       get(path)
 
-      assert_operator response.status, :>=, 300, path
-      assert_operator response.status, :<, 500, path
-      assert_equal "private, no-store", response.headers["Cache-Control"], path
-
-      post(path)
-
-      assert_operator response.status, :>=, 300, path
-      assert_operator response.status, :<, 500, path
+      assert_response :service_unavailable, path
       assert_equal "private, no-store", response.headers["Cache-Control"], path
     end
-  ensure
-    %i(google apple entra).each { |provider| OmniAuth.config.mock_auth.delete(provider) }
-    previous_auth.each { |provider, value| OmniAuth.config.mock_auth[provider] = value }
-    OmniAuth.config.test_mode = previous_test_mode
   end
 
-  test "a real authorization CSRF refusal retains no-store after framework exception rendering" do
-    app_protection = Visa::App::Oauth::AuthorizationsController.allow_forgery_protection
-    org_protection = Visa::Org::Oauth::AuthorizationsController.allow_forgery_protection
-    Visa::App::Oauth::AuthorizationsController.allow_forgery_protection = true
-    Visa::Org::Oauth::AuthorizationsController.allow_forgery_protection = true
+  test "JSON logout CSRF refusals remain private in both realms" do
+    controllers = [Visa::App::Oidc::LogoutsController, Visa::Org::Oidc::LogoutsController]
+    previous_protections = controllers.map(&:allow_forgery_protection)
+    controllers.each { |controller| controller.allow_forgery_protection = true }
     https!
 
     [ENV.fetch("PUBLIC_VISA_SERVICE_URL"), ENV.fetch("PUBLIC_VISA_STAFF_URL")].each do |host|
       host!(host)
-      %w(/oauth/authorize /oauth//authorize).each do |path|
-        post(path, params: { ceremony_action: "start" })
+      post(
+        "/oidc/logout", params: { ri: "jp" },
+                        headers: { "Sec-Fetch-Site" => "cross-site" }, as: :json,
+      )
 
-        assert_response :unprocessable_content
-        assert_equal "private, no-store", response.headers["Cache-Control"]
-      end
+      assert_response :forbidden
+      assert_equal "no-store", response.headers["Cache-Control"]
     end
   ensure
-    Visa::App::Oauth::AuthorizationsController.allow_forgery_protection = app_protection
-    Visa::Org::Oauth::AuthorizationsController.allow_forgery_protection = org_protection
+    controllers.zip(previous_protections).each do |controller, protection|
+      controller.allow_forgery_protection = protection
+    end
   end
 
   test "public metadata is outside the personal response cache boundary" do

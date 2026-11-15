@@ -10,40 +10,13 @@ module SecretCredentialCeremonyTransactionable
   STATUSES = [STATUS_PENDING, STATUS_CONSUMED].freeze
   RETENTION_PERIOD = 7.days
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    # rubocop:disable ThreadSafety/ClassAndModuleAttributes
-    class_attribute :ceremony_surface_name, instance_accessor: false
-    # rubocop:enable ThreadSafety/ClassAndModuleAttributes
-
-    scope :expired_at, ->(time) { where(arel_table[:expires_at].lteq(time)) }
-    scope :consumed, -> { where.not(consumed_at: nil).or(where(status: STATUS_CONSUMED)) }
-    scope :active_at, ->(time) {
-      where(arel_table[:expires_at].gt(time)).where(consumed_at: nil, status: STATUS_PENDING)
-    }
-    scope :pending, -> { where(status: STATUS_PENDING, consumed_at: nil) }
-    scope :purgeable_at, lambda { |time, retention_period: RETENTION_PERIOD|
-      cutoff = time - retention_period
-      where(arel_table[:expires_at].lteq(cutoff))
-        .or(where(arel_table[:consumed_at].lteq(cutoff)))
-    }
-
-    validates :transaction_id, :surface, :actor_ref, :session_ref, :operation, :status, :grant_jti, :expires_at,
-              presence: true
-    validates :transaction_id, uniqueness: true
-    validates :grant_jti, uniqueness: true
-    validates :result_jti, uniqueness: true, allow_nil: true
-    validates :surface, inclusion: { in: IdentitySecretCredentialCeremonyContract::SURFACES }
-    validates :operation, inclusion: { in: IdentitySecretCredentialCeremonyContract::OPERATIONS }
-    validates :status, inclusion: { in: STATUSES }
-    validate :surface_matches_transaction_class
-    validate :consumed_transaction_has_result
-  end
-
   class_methods do
     def ceremony_surface(value = nil)
-      self.ceremony_surface_name = value.to_s if value
-      ceremony_surface_name
+      raise ArgumentError, "ceremony surface must be declared" if value.nil?
+
+      declared_surface = value.to_s.dup.freeze
+      define_singleton_method(:ceremony_surface) { declared_surface }
+      declared_surface
     end
 
     def create_transaction!(surface: ceremony_surface, actor_ref:, session_ref:, operation:, transaction_id: nil,
@@ -116,6 +89,8 @@ module SecretCredentialCeremonyTransactionable
       end
     end
   end
+
+  public
 
   def grant_claims(now: Time.current)
     {

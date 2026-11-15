@@ -13,6 +13,8 @@ class SignSecretRevoke
     @now = now
   end
 
+  public
+
   def call
     @secret_credential.with_lock do
       @secret_credential.reload
@@ -24,4 +26,5 @@ class SignSecretRevoke
     SignSecretRecordEvent.call(event_name: "secret.revoked", secret_credential: @secret_credential)
     Result.new(secret_credential: @secret_credential)
   end
+  public_class_method :call
 end

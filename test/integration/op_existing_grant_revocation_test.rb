@@ -23,17 +23,19 @@ class OpExistingGrantRevocationTest < ActionDispatch::IntegrationTest
   end
 
   test "both realms revoke only an authenticated client's grant and reject its later refresh" do
-    [["client", ClientToken, OpAppGrant, :client_token, "core-app-jp", "warp-app-jp"],
-     ["operator", OperatorToken, OpOrgGrant, :operator_token, "core-org-jp",
+    [["client", ClientToken, OpAppGrant, :client_token_id, "core-app-jp", "warp-app-jp"],
+     ["operator", OperatorToken, OpOrgGrant, :operator_token_id, "core-org-jp",
       "warp-org-jp",],].each do |type, model, grant_class, root_key, client_id, sibling_client_id|
       root = model.includes(:device_session).find(ActiveRecord::FixtureSet.identify(:one))
       root.update!(authentication_context: "normal") if type == "operator"
       target = grant_class.create!(
-        root_key => root, :authentication_epoch => root.authentication_epoch, :oidc_client_id => client_id,
+        root_key => root.id, :device_session_id => root.device_session_id,
+        :authentication_epoch => root.authentication_epoch, :oidc_client_id => client_id,
         :oidc_scope => "openid", :oidc_jti => SecureRandom.uuid, :refresh_token_expires_at => 1.hour.from_now,
       )
       sibling = grant_class.create!(
-        root_key => root, :authentication_epoch => root.authentication_epoch, :oidc_client_id => sibling_client_id,
+        root_key => root.id, :device_session_id => root.device_session_id,
+        :authentication_epoch => root.authentication_epoch, :oidc_client_id => sibling_client_id,
         :oidc_scope => "openid", :oidc_jti => SecureRandom.uuid, :refresh_token_expires_at => 1.hour.from_now,
       )
       refresh = target.issue_refresh_token!

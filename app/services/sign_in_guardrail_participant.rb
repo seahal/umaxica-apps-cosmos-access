@@ -14,6 +14,8 @@ class SignInGuardrailParticipant
     @evaluators = evaluators
   end
 
+  public
+
   def evaluate
     SignInParticipantResult.new(
       participant: :guardrail,

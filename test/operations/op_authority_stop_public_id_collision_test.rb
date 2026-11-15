@@ -138,20 +138,20 @@ class OpAuthorityStopPublicIdCollisionTest < ActiveSupport::TestCase
        OpOrgAuthorityStop, OpOrgAuthorityStopEpochCutoff, OpOrgAuthorityStopRootTarget,
        OpOrgAuthorityStopGrantTarget, OpOrgAuthorityStopParticipant, "core-org-jp",],
     ].each do |realm, principal_public_id, token_model, device_model, actor_key, root_key, grant_model,
-               parent_key, model, epoch_model,
+               _parent_key, model, epoch_model,
                root_target, grant_target, participant, client_id|
       original = OpAuthorityStopCommitter.stop_principal(
         realm: realm, roots: [], cause: "identity_stop", principal_public_id: principal_public_id,
         authority_evidence_ref: "retained-identity", cutoff_epoch: 1,
       ).stop
       actor_id = SecureRandom.random_number(1_000_000) + 9_300_000
-      device = device_model.create!(actor_key => actor_id, principal_public_id: principal_public_id)
+      device = device_model.create!(:subject_public_id => principal_public_id)
       root = token_model.create!(
-        actor_key => actor_id, device_session: device, authentication_epoch: 0,
+        :subject_public_id => device.subject_public_id, :device_session => device, :authentication_epoch => 0,
       )
       grant = grant_model.create!(
-        root_key => root.id, device_session_id: device.id,
-        authentication_epoch: 0, oidc_client_id: client_id,
+        root_key => root.id, :device_session_id => device.id,
+        :authentication_epoch => 0, :oidc_client_id => client_id,
       )
       deadline = root.discard_at
       before_counts = [model, epoch_model, root_target, grant_target, participant].map(&:count)

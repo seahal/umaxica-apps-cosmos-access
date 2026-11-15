@@ -4,9 +4,11 @@ require "test_helper"
 
 class AppRailsEdgeOwnershipContractTest < ActiveSupport::TestCase
   RAILS_OWNED = [
-    [ENV.fetch("PUBLIC_AUTH_SERVICE_URL"), :get, "/sign/in", "auth/app/sign/ins", "show"],
+    [ENV.fetch("PUBLIC_AUTH_SERVICE_URL"), :get, "/sign/in", "auth/app/unavailable_ceremonies", "show"],
     [ENV.fetch("PUBLIC_VISA_SERVICE_URL"), :get, "/oauth/authorize", "visa/app/oauth/authorizations", "show"],
     [ENV.fetch("PUBLIC_VISA_SERVICE_URL"), :post, "/oauth/token", "visa/app/oauth/tokens", "create"],
+    [ENV.fetch("PUBLIC_AUTH_STAFF_URL"), :get, "/sign/in", "auth/org/unavailable_ceremonies", "show"],
+    [ENV.fetch("PUBLIC_VISA_STAFF_URL"), :get, "/oauth/authorize", "visa/org/oauth/authorizations", "show"],
   ].freeze
 
   test "app route ownership stays with retained Auth and Visa endpoints" do
@@ -22,5 +24,4 @@ class AppRailsEdgeOwnershipContractTest < ActiveSupport::TestCase
 
     assert_empty mismatches
   end
-
 end

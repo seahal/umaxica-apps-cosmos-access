@@ -40,31 +40,4 @@ class AuditRecordIntegrityTest < ActiveSupport::TestCase
     assert_not chronicle.metadata.key?("refresh_token")
     assert_not chronicle.metadata.key?("authorization_code")
   end
-
-  test "email enqueue audit records identify only the controlled purpose" do
-    email = ClientEmail.create!(
-      user: clients(:one),
-      raw_address: "audit-integrity-#{SecureRandom.hex(6)}@example.com",
-      confirm_policy: true,
-      user_email_status_id: ClientEmailStatus::VERIFIED,
-    )
-
-    assert_difference -> { Chronicle.where(action: "notification.delivery.email.enqueued").count }, 1 do
-      OtpAdapter.for(surface: :app, channel: :email).deliver(
-        record: email,
-        otp_code: "123456",
-        purpose: :sign_in,
-        auth_ceremony_session_ref: "1",
-        auth_email_otp_generation: SecureRandom.uuid,
-      )
-    end
-
-    chronicle = Chronicle.where(action: "notification.delivery.email.enqueued").order(:created_at).last
-
-    assert_equal "ClientEmail", chronicle.subject_type
-    assert_equal email.id, chronicle.subject_id
-    assert_equal({ "purpose" => "sign_in" }, chronicle.metadata)
-    assert_not chronicle.metadata.key?("recipient")
-    assert_not chronicle.metadata.key?("code")
-  end
 end

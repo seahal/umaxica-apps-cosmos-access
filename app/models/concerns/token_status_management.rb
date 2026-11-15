@@ -33,19 +33,7 @@ module TokenStatusManagement
 
   class StepUpEvidenceUnavailable < StandardError; end
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    scope :session_inventory, ->(now = Time.current) { currently_usable_at(now) }
-    scope :active_status,
-          ->(now = Time.current) do
-            currently_usable_at(now).where(token_status_foreign_key => token_status_model::ACTIVE)
-          end
-    scope :restricted_status,
-          ->(now = Time.current) do
-            currently_usable_at(now).where(token_status_foreign_key => token_status_model::RESTRICTED)
-          end
-    scope :not_revoked, ->(now = Time.current) { currently_usable_at(now) }
-  end
+  public
 
   def restricted?
     token_status_id == self.class.token_status_model::RESTRICTED
@@ -171,6 +159,8 @@ module TokenStatusManagement
   end
 
   module ClassMethods
+    public
+
     def currently_usable_at(now = Time.current)
       scope = currently_valid_at(now)
       scope = scope.where(rotated_at: nil) if column_names.include?("rotated_at")
@@ -225,7 +215,7 @@ module TokenStatusManagement
   # The evidence lives on this token, so it is bound to the token's owner. A requirement naming
   # another actor is refused rather than consumed.
   def step_up_requirement_names_owner?(requirement)
-    owner_ref = principal_public_id
+    owner_ref = subject_public_id
     owner_ref.present? && requirement.actor_ref.present? &&
       ActiveSupport::SecurityUtils.secure_compare(requirement.actor_ref.to_s, owner_ref.to_s)
   end

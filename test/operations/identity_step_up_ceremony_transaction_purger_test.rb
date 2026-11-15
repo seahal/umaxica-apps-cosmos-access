@@ -84,7 +84,9 @@ class IdentityStepUpCeremonyTransactionPurgerTest < ActiveSupport::TestCase
     now = Time.current.change(usec: 0)
     token = client_root_created_at(now - 9.days)
     parent = ClientStepUpCeremonyTransaction.create_transaction!(
-      actor_ref: token.device_session.principal_public_id, session_ref: token.public_id, required_scope: "settings_passkey",
+      actor_ref: token.device_session.subject_public_id,
+      session_ref: token.public_id,
+      required_scope: "settings_passkey",
       required_aal: "none", allowed_methods: ["passkey"], now: now - 9.days,
       expires_at: now - 8.days,
     )
@@ -118,7 +120,9 @@ class IdentityStepUpCeremonyTransactionPurgerTest < ActiveSupport::TestCase
     now = Time.current
     token = client_root_created_at(now - 9.days)
     parent = ClientStepUpCeremonyTransaction.create_transaction!(
-      actor_ref: token.device_session.principal_public_id, session_ref: token.public_id, required_scope: "settings_passkey",
+      actor_ref: token.device_session.subject_public_id,
+      session_ref: token.public_id,
+      required_scope: "settings_passkey",
       required_aal: "none", allowed_methods: ["passkey"], now: now - 9.days, expires_at: now - 8.days,
     )
     session = ClientStepUpSession.create!(

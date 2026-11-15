@@ -16,6 +16,8 @@ module ExternalAuthenticationInfrastructureOmniauthGoogleOidcEnforcement
   MAX_TOKEN_AGE = 10.minutes
   CLOCK_SKEW = 60.seconds
 
+  public
+
   def authorize_params
     super.tap do |params|
       nonce = SecureRandom.urlsafe_base64(32, false)

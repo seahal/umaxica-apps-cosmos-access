@@ -276,3 +276,16 @@ RP cell for sign-out. The current RP logout controllers use the local-session-fi
 not read or send a stored ID Token hint. A separate shared-role branch in `BrowserRpAuthentication`
 still reads the OP grant chain for ordinary request authentication and refresh. WU-A8 remains open
 until that branch and its end-to-end acceptance surface are reconciled.
+
+## Access implementation clarification (2026-11-12): pending-request binding
+
+Access Visa keeps one pending end-session request in each browser session. Repeating the same
+resolved client, grant, registered return URI, OIDC `state`, `ui_locales` and legacy return-region
+claim may resume the existing confirmation. Its canonical redirect continuation may carry only `ri`
+and optional `lx`; it renders the request already stored in that session. A distinct protocol
+request in that browser session receives HTTP 403 and leaves both the original request and OP
+authority unchanged. This explicitly refuses sequential multi-tab collisions instead of presenting
+one tab's return context as another tab's request. It does not claim per-tab concurrent-flow
+support. The browser-flow-handle ADR remains the direction for per-tab support; simultaneous
+requests against the cookie-backed Rails session remain an implementation boundary and are recorded
+in the current evidence.

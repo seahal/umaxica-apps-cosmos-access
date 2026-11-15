@@ -40,7 +40,6 @@ module Security
     end
 
     test "keeps existing family constants aligned with the application policy" do
-      assert_equal SecurityTokenLifetimes::AUTH_ACCESS_JWT_TTL, AuthenticationBase::ACCESS_TOKEN_TTL
       assert_equal SecurityTokenLifetimes::OIDC_ID_TOKEN_TTL, OidcIdTokenIssuer::TOKEN_TTL
       assert_equal SecurityTokenLifetimes::JUMP_RT_TTL, JumpRtIssuer::DEFAULT_TTL
       assert_equal SecurityTokenLifetimes::JUMP_RT_TTL, JumpRtIssuer::MAX_TTL

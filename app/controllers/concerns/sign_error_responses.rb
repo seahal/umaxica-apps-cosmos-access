@@ -14,6 +14,8 @@ module SignErrorResponses
 
   include CommonRedirect
 
+  public
+
   def handle_application_error(exception)
     respond_to do |format|
       format.html do

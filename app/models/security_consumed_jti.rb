@@ -9,6 +9,8 @@ class SecurityConsumedJti < OpBaseAppRecord
   }.freeze
 
   class << self
+    public
+
     def consume!(purpose:, issuer:, jti:, expires_at:)
       return false if purpose.to_s.blank? || issuer.to_s.blank? || jti.to_s.blank?
 

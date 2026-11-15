@@ -16,6 +16,8 @@ module Outbound
     # delivery gap while preserving the no-plaintext-delivery boundary.
     discard_on ArgumentError, report: true
 
+    public
+
     def perform(encrypted_payload: nil)
       payload = OutboundSensitivePayload.decrypt_sms_delivery(encrypted_payload)
       if payload.key?(:otp_binding)

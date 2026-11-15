@@ -13,6 +13,8 @@ class DbscVerificationService < ApplicationService
     @expected_audience = expected_audience
   end
 
+  public
+
   def call
     return failure("record_missing") if record.blank?
     return failure("missing_session_id") if session_id.blank?

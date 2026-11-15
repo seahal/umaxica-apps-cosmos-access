@@ -34,12 +34,12 @@ class OtpVerificationFailureBudgetTest < ActiveSupport::TestCase
     assert_operator @connection.call("PTTL", @key), :<=, 900_000
   end
 
-  test "success creates no key and signup exhaustion cannot exhaust other scopes" do
+  test "success creates no key and signup exhaustion cannot exhaust other active scopes" do
     assert_equal :verified, @budget.verify!(**@scope, valid: true)
     assert_nil @connection.call("GET", @key)
     5.times { @budget.verify!(**@scope, valid: false) }
 
-    [{ surface: :com }, { purpose: :authentication }, { purpose: :credential_registration },
+    [{ surface: :org }, { purpose: :authentication }, { purpose: :credential_registration },
      { purpose: :enforcement_recovery }, { purpose: :withdrawal_reentry },
      { destination_digest: "b" * 64 },].each do |difference|
       assert_equal :verified, @budget.verify!(**@scope.merge(difference), valid: true)

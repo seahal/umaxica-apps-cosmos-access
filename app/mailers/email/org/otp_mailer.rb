@@ -9,6 +9,8 @@ module Email::Org
     layout "email/application"
     around_deliver :require_governance_delivery_authority!
 
+    public
+
     def create
       @pass_code = OutboundSensitivePayload.decrypt_email_otp(params[:encrypted_hotp_token])
       reject_plaintext_verification_token!

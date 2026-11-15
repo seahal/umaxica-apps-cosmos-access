@@ -12,7 +12,7 @@ class ClientSignUpResultDigestUniquenessTest < ActiveSupport::TestCase
         parent = ClientOidcAuthorizationTransaction.create_transaction!(
           surface: "app", intent: "sign_up", client_id: "core-app-jp", redirect_uri: "https://example.com/callback",
           response_type: "code", scope: "openid", state: "state", nonce: "nonce",
-          code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", code_challenge_method: "S256",
+          pkce: { code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", code_challenge_method: "S256" },
           login_challenge: SecureRandom.base58(32), login_challenge_expires_at: now + 15.minutes,
           expires_at: now + 15.minutes,
         )

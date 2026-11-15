@@ -32,7 +32,6 @@ class OidcEndpointRateLimitTest < ActionDispatch::IntegrationTest
 
   OAUTH_REVOCATION_QUOTA = 20
   OAUTH_USERINFO_QUOTA = 60
-  ENTRA_CALLBACK_QUOTA = 10
 
   test "the app OAuth revocation endpoint bounds revocation probing per source" do
     host! visa_host_for_test_surface(:app)
@@ -67,24 +66,5 @@ class OidcEndpointRateLimitTest < ActionDispatch::IntegrationTest
       assert_response :too_many_requests
       assert_equal "60", response.headers["Retry-After"]
     end
-  end
-
-  test "the staff Entra callback bounds replayed callbacks per source" do
-    previous_test_mode = OmniAuth.config.test_mode
-    OmniAuth.config.test_mode = true
-    OmniAuth.config.mock_auth[:entra] = OmniAuth::AuthHash.new(provider: "entra", uid: "probe")
-    host!(ENV.fetch("PUBLIC_AUTH_STAFF_URL"))
-
-    ENTRA_CALLBACK_QUOTA.times { get(auth_org_social_entra_callback_path(ri: "jp")) }
-
-    assert_not_equal 429, response.status
-
-    get(auth_org_social_entra_callback_path(ri: "jp"))
-
-    assert_response :too_many_requests
-    assert_equal "60", response.headers["Retry-After"]
-  ensure
-    OmniAuth.config.mock_auth.delete(:entra)
-    OmniAuth.config.test_mode = previous_test_mode
   end
 end

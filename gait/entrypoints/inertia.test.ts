@@ -79,6 +79,17 @@ describe("reportInertiaBootFailure", () => {
 
     expect(() => reportInertiaBootFailure(error)).toThrow(error);
   });
+
+  test("reports a missing Inertia root as a layout configuration error", () => {
+    document.body.innerHTML = "";
+    const report = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(() => reportInertiaBootFailure(new Error("root missing"))).not.toThrow();
+
+    expect(report).toHaveBeenCalledWith(
+      expect.stringContaining("This entrypoint belongs to a surface Inertia layout"),
+    );
+  });
 });
 
 describe("bootSurfaceInertiaApp", () => {
@@ -92,6 +103,7 @@ describe("bootSurfaceInertiaApp", () => {
 
   afterEach(() => {
     document.cookie = "ct=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+    document.head.querySelector('meta[property="csp-nonce"]')?.remove();
     document.body.innerHTML = "";
   });
 
@@ -104,5 +116,29 @@ describe("bootSurfaceInertiaApp", () => {
     await cookieStore.set({ name: "ct", value: "li" });
     await vi.waitFor(() => expect(document.documentElement.dataset["theme"]).toBe("light"));
     expect(createInertiaApp).toHaveBeenCalledTimes(1);
+  });
+
+  test("passes a published CSP nonce to Inertia", async () => {
+    const meta = document.createElement("meta");
+    meta.setAttribute("property", "csp-nonce");
+    meta.nonce = "surface-nonce";
+    document.head.append(meta);
+
+    await bootSurfaceInertiaApp({}, "visa/app");
+
+    const options = vi.mocked(createInertiaApp).mock.calls[0]?.[0];
+    expect(options).toHaveProperty("nonce", "surface-nonce");
+  });
+
+  test("omits an empty CSP nonce", async () => {
+    const meta = document.createElement("meta");
+    meta.setAttribute("property", "csp-nonce");
+    meta.nonce = "";
+    document.head.append(meta);
+
+    await bootSurfaceInertiaApp({}, "visa/app");
+
+    const options = vi.mocked(createInertiaApp).mock.calls[0]?.[0];
+    expect(options).not.toHaveProperty("nonce");
   });
 });

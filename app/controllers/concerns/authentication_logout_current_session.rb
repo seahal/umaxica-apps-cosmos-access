@@ -9,6 +9,7 @@ class AuthenticationLogoutCurrentSession
   def self.call(...)
     new(...).call
   end
+  public_class_method :call
 
   # cause - the two.md 5.8 v2 authority-stop cause (D-172, D-173); every root this sign-out ends is
   #         stopped through OpAuthorityStopCommitter with it (BX-1).
@@ -29,6 +30,8 @@ class AuthenticationLogoutCurrentSession
 
   # The authority-stop results committed by #call, the presented root's first.
   attr_reader :stop_results
+
+  public
 
   def call
     token_record = resolved_token
@@ -250,7 +253,7 @@ class AuthenticationLogoutCurrentSession
 
   # D-123: the stop names its principal; one that cannot be established is refused by the primitive.
   def principal_public_id_for(root)
-    root.principal_public_id
+    root.subject_public_id
   end
 
   def device_session_for_token(token_record)

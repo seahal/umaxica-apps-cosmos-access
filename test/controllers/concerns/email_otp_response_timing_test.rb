@@ -17,4 +17,29 @@ class EmailOtpResponseTimingTest < ActiveSupport::TestCase
 
     assert_equal Array.new(2, EmailOtpPolicy::EMAIL_AUTH_RESPONSE_MINIMUM_SECONDS), floors
   end
+
+  test "OTP verification responses apply the timing floor only to six digit submissions" do
+    floors = []
+    timing = Object.new.extend(EmailOtpResponseTiming)
+    timing.define_singleton_method(:params) do
+      ActionController::Parameters.new(client_email: { pass_code: "123456" })
+    end
+
+    timing.stub(:ensure_min_elapsed, ->(_started_at, floor) { floors << floor }) do
+      assert_equal :refused, timing.with_otp_verification_response_timing { :refused }
+    end
+
+    assert_equal [EmailOtpPolicy::EMAIL_AUTH_RESPONSE_MINIMUM_SECONDS], floors
+
+    floors.clear
+    timing.define_singleton_method(:params) do
+      ActionController::Parameters.new(client_email: { pass_code: "12x456" })
+    end
+
+    timing.stub(:ensure_min_elapsed, ->(_started_at, floor) { floors << floor }) do
+      assert_equal :refused, timing.with_otp_verification_response_timing { :refused }
+    end
+
+    assert_empty floors
+  end
 end

@@ -101,10 +101,7 @@ class OpBrowserSessionResolver
 
   def owner_matches?(root, device, payload)
     owner_id, device_owner_id =
-      case resource_type
-      when "client" then [root.user_id, device.user_id]
-      when "operator" then [root.staff_id, device.staff_id]
-      end
+      [root.subject_public_id, device.subject_public_id]
     owner_id == device_owner_id && payload["sub"].is_a?(String) &&
       ActiveSupport::SecurityUtils.secure_compare(owner_id.to_s, payload["sub"])
   end

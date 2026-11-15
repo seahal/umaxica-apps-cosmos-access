@@ -20,43 +20,27 @@ module OidcAuthorizationTransactionable
   CANCELLATION_HANDOFF_DIGEST = /\A[0-9a-f]{64}\z/
   RETENTION_PERIOD = 15.minutes
   RESULT_TTL = 10.seconds
+  # `code` carries a PKCE child row; `id_token` is the first-party Base front-channel profile and
+  # carries none (adr/oidc-authorization-code-only-implicit-and-hybrid-non-adoption.md).
+  RESPONSE_TYPES = %w(code id_token).freeze
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
   included do
-    class_attribute :oidc_authorization_surface_name, instance_accessor: false # rubocop:disable ThreadSafety/ClassAndModuleAttributes
-
-    scope :pending, -> { where(status_id: STATUS_PENDING) }
-    scope :authenticated, -> { where(status_id: STATUS_AUTHENTICATED) }
-    scope :consumed, -> { where(status_id: STATUS_CONSUMED) }
-    scope :active_at, ->(time) { where(arel_table[:expires_at].gt(time)) }
-    scope :purgeable_at, lambda { |time, retention_period: RETENTION_PERIOD|
-      where(arel_table[:expires_at].lteq(time - retention_period))
-    }
-
-    validates :transaction_id, :surface, :intent, :client_id, :redirect_uri, :response_type, :scope, :state,
-              :nonce, :code_challenge, :code_challenge_method, :login_challenge, :login_challenge_expires_at,
-              :expires_at, :status_id, presence: true
-    validates :surface, inclusion: { in: %w(app org) }
-    validates :intent, inclusion: { in: %w(authentication sign_in sign_up invitation reauthentication step_up) }
-    validates :response_type, inclusion: { in: ["code"] }
-    validates :oidc_prompt, inclusion: { in: OidcAuthorizationRequestMetadataValue::SUPPORTED_PROMPTS }, allow_nil: true
-    validates :oidc_max_age, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
-    validates :code_challenge_method, inclusion: { in: ["S256"] }
-    validates :status_id, inclusion: { in: STATUS_IDS }
-    validates :transaction_id, uniqueness: true
-    validates :login_challenge, uniqueness: true
-    validate :transaction_surface_matches_class
+    validate :pkce_matches_response_type, on: :create
   end
 
   class_methods do
     def oidc_authorization_surface(value = nil)
-      self.oidc_authorization_surface_name = value.to_s if value
-      oidc_authorization_surface_name
+      raise ArgumentError, "OIDC authorization surface must be declared" if value.nil?
+
+      declared_surface = value.to_s.dup.freeze
+      define_singleton_method(:oidc_authorization_surface) { declared_surface }
+      declared_surface
     end
 
     def create_transaction!(surface:, intent:, client_id:, redirect_uri:, response_type:, scope:, state:, nonce:,
-                            code_challenge:, code_challenge_method:, login_challenge:, login_challenge_expires_at:,
+                            pkce:, login_challenge:, login_challenge_expires_at:,
                             expires_at:, prompt: nil, max_age: nil, now: nil)
+      validate_pkce_for_response_type!(response_type: response_type.to_s, pkce: pkce)
       retries = 0
 
       connection_owner.connected_to(role: :writing) do
@@ -65,14 +49,18 @@ module OidcAuthorizationTransactionable
           attributes = authorization_transaction_attributes(
             transaction_id: PublicId.generate, surface: surface, intent: intent, client_id: client_id,
             redirect_uri: redirect_uri, response_type: response_type, scope: scope, state: state,
-            nonce: nonce, code_challenge: code_challenge, code_challenge_method: code_challenge_method,
-            prompt: prompt, max_age: max_age, login_challenge: login_challenge,
+            nonce: nonce, prompt: prompt, max_age: max_age, login_challenge: login_challenge,
             login_challenge_expires_at: login_challenge_expires_at, expires_at: expires_at,
             decision_time: decision_time,
           )
 
           begin
-            return transaction(requires_new: true) { create!(attributes) }
+            return transaction(requires_new: true) do
+              record = new(attributes)
+              record.build_pkce_challenge(**pkce, created_at: decision_time, updated_at: decision_time) if pkce
+              record.save!
+              record
+            end
           rescue ActiveRecord::RecordInvalid => e
             raise unless generated_reference_collision_validation?(e)
           rescue ActiveRecord::RecordNotUnique => e
@@ -98,8 +86,8 @@ module OidcAuthorizationTransactionable
     private
 
     def authorization_transaction_attributes(transaction_id:, surface:, intent:, client_id:, redirect_uri:,
-                                             response_type:, scope:, state:, nonce:, code_challenge:,
-                                             code_challenge_method:, prompt:, max_age:, login_challenge:,
+                                             response_type:, scope:, state:, nonce:, prompt:, max_age:,
+                                             login_challenge:,
                                              login_challenge_expires_at:, expires_at:, decision_time:)
       {
         transaction_id: transaction_id,
@@ -111,8 +99,6 @@ module OidcAuthorizationTransactionable
         scope: scope.to_s,
         state: state.to_s,
         nonce: nonce.to_s,
-        code_challenge: code_challenge.to_s,
-        code_challenge_method: code_challenge_method.to_s,
         oidc_prompt: prompt.presence,
         oidc_max_age: max_age.presence,
         login_challenge: login_challenge.to_s,
@@ -122,6 +108,18 @@ module OidcAuthorizationTransactionable
         created_at: decision_time,
         updated_at: decision_time,
       }
+    end
+
+    def validate_pkce_for_response_type!(response_type:, pkce:)
+      case response_type
+      when "code"
+        raise ArgumentError, "a Code transaction requires PKCE" unless
+          pkce.is_a?(Hash) && pkce.keys.sort == %i(code_challenge code_challenge_method)
+      when "id_token"
+        raise ArgumentError, "a front-channel id_token transaction carries no PKCE" unless pkce.nil?
+      else
+        raise ArgumentError, "unsupported authorization transaction response_type"
+      end
     end
 
     def generated_reference_collision_validation?(error)
@@ -364,8 +362,8 @@ module OidcAuthorizationTransactionable
       scope: scope,
       state: state,
       nonce: nonce,
-      code_challenge: code_challenge,
-      code_challenge_method: code_challenge_method,
+      code_challenge: pkce_challenge&.code_challenge,
+      code_challenge_method: pkce_challenge&.code_challenge_method,
       prompt: oidc_prompt,
       max_age: oidc_max_age,
     }.compact
@@ -420,6 +418,15 @@ module OidcAuthorizationTransactionable
   end
 
   private
+
+  def pkce_matches_response_type
+    case response_type
+    when "code"
+      errors.add(:pkce_challenge, :blank) if pkce_challenge.nil?
+    when "id_token"
+      errors.add(:pkce_challenge, :present) unless pkce_challenge.nil?
+    end
+  end
 
   def transaction_surface_matches_class
     return if self.class.oidc_authorization_surface.blank?

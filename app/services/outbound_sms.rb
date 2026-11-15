@@ -108,6 +108,8 @@ class OutboundSms < ApplicationService
     @options = options
   end
 
+  public
+
   def call
     self.class.deliver_later(to: to, title: title, body: body)
   end
@@ -115,4 +117,6 @@ class OutboundSms < ApplicationService
   private
 
   attr_reader :to, :title, :body, :options
+
+  public_class_method :deliver_now, :deliver_later, :suspended?, :suspended_result, :provider
 end

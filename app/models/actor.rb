@@ -56,6 +56,8 @@ class Actor < ActiveSupport::CurrentAttributes
     # bearer? read transport. The two axes are not conflated.
     delegate :browser?, :native?, :cookie?, :bearer?, to: :context
 
+    public
+
     def context
       super || ActorValuesContext.empty
     end

@@ -10,7 +10,7 @@ class SecurityJwtAccessTokenNegativeCasesTest < ActiveSupport::TestCase
 
   # --- auth_access -----------------------------------------------------------
 
-  test "auth access rejects every algorithm other than ES384" do
+  test "auth access rejects ES384 RS256 PS384 none HMAC and undersized PS256" do
     payload, header = auth_parts
 
     foreign_keys.each do |alg, key|
@@ -22,21 +22,30 @@ class SecurityJwtAccessTokenNegativeCasesTest < ActiveSupport::TestCase
 
   test "auth access rejects a token signed by another keyring" do
     surface_token = AuthenticationToken.encode(
-      clients(:one), host: AUTH_HOST, session_public_id: "sid", resource_type: "client",
-                     jwt_issuer_id: "surface:AUTH_APP",
+      client_resource, host: AUTH_HOST, session_public_id: "sid", resource_type: "client",
+                       jwt_issuer_id: "surface:AUTH_APP",
     )
     payload, header = auth_parts
-    unrelated_signed = JWT.encode(payload, OpenSSL::PKey::EC.generate("secp384r1"), "ES384", header)
+    unrelated_signed = JWT.encode(payload, OpenSSL::PKey::RSA.generate(3_072), "PS256", header)
 
     assert_nil decode_auth(surface_token)
     assert_nil decode_auth(unrelated_signed)
   end
 
+  test "auth access rejects an algorithm header that does not match its PS256 signature" do
+    payload, = auth_parts
+    token = JWT.encode(payload, AuthenticationJwtConfiguration.private_key, "PS256", { typ: "at+jwt" })
+    _, body, signature = token.split(".")
+    mismatched_header = Base64.urlsafe_encode64({ alg: "RS256", typ: "at+jwt" }.to_json, padding: false)
+
+    assert_nil decode_auth([mismatched_header, body, signature].join("."))
+  end
+
   test "auth access facade preserves an explicitly supplied authentication time" do
     auth_time = Time.utc(2026, 1, 2, 3, 4, 5)
     token = AuthenticationToken.encode(
-      clients(:one), host: AUTH_HOST, session_public_id: "sid", resource_type: "client",
-                     auth_time: auth_time,
+      client_resource, host: AUTH_HOST, session_public_id: "sid", resource_type: "client",
+                       auth_time: auth_time,
     )
 
     payload = decode_auth(token)
@@ -53,7 +62,7 @@ class SecurityJwtAccessTokenNegativeCasesTest < ActiveSupport::TestCase
       "iss missing" => ->(p) { p.except("iss") },
       "aud empty" => ->(p) { p.merge("aud" => []) },
       "iat as float" => ->(p) { p.merge("iat" => p["iat"] + 0.5) },
-      "sub numeric" => ->(p) { p.merge("sub" => clients(:one).id) },
+      "sub numeric" => ->(p) { p.merge("sub" => client_resource.id) },
       "scope as array" => ->(p) { p.merge("scope" => p["scope"].split) },
       "scope missing" => ->(p) { p.except("scope") },
       "future nbf" => ->(p) { p.merge("nbf" => 10.minutes.from_now.to_i) },
@@ -79,9 +88,9 @@ class SecurityJwtAccessTokenNegativeCasesTest < ActiveSupport::TestCase
   test "auth access rejects a legacy custom-typ token end to end" do
     payload, header = auth_parts
     legacy = JWT.encode(
-      payload.merge("scp" => payload["scope"].split, "act" => "client", "sub" => clients(:one).id),
+      payload.merge("scp" => payload["scope"].split, "act" => "client", "sub" => client_resource.id),
       AuthenticationJwtConfiguration.private_key,
-      "ES384",
+      "PS256",
       header.merge("typ" => "auth-access-token;client"),
     )
 
@@ -135,25 +144,29 @@ class SecurityJwtAccessTokenNegativeCasesTest < ActiveSupport::TestCase
 
   def foreign_keys
     {
-      "ES256" => OpenSSL::PKey::EC.generate("prime256v1"),
-      "ES512" => OpenSSL::PKey::EC.generate("secp521r1"),
-      "RS256" => OpenSSL::PKey::RSA.generate(2048),
+      "ES384" => OpenSSL::PKey::EC.generate("secp384r1"),
+      "RS256" => OpenSSL::PKey::RSA.generate(3_072),
+      "PS384" => OpenSSL::PKey::RSA.generate(3_072),
       "PS256" => OpenSSL::PKey::RSA.generate(2048),
       "HS256" => "shared-secret",
       "none" => nil,
     }
   end
 
+  def client_resource
+    Struct.new(:id).new(123)
+  end
+
   def auth_parts
     token = AuthenticationToken.encode(
-      clients(:one), host: AUTH_HOST, session_public_id: "sid", resource_type: "client",
+      client_resource, host: AUTH_HOST, session_public_id: "sid", resource_type: "client",
     )
     JWT.decode(token, nil, false)
   end
 
   def resign_auth
     payload, header = auth_parts
-    JWT.encode(yield(payload), AuthenticationJwtConfiguration.private_key, "ES384", header)
+    JWT.encode(yield(payload), AuthenticationJwtConfiguration.private_key, "PS256", header)
   end
 
   def decode_auth(token)

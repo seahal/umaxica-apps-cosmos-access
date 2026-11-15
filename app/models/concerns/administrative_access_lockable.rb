@@ -19,15 +19,7 @@ module AdministrativeAccessLockable
     other
   ).freeze
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    attribute :access_state, :string, default: ACCESS_STATE_ENABLED
-
-    validates :access_state, presence: true, inclusion: { in: ACCESS_STATES }
-    validates :admin_locked_reason_code, inclusion: { in: ADMIN_LOCK_REASON_CODES }, allow_nil: true,
-                                         if: :admin_locked_reason_code_column?
-    validate :administrative_lock_columns_are_consistent
-  end
+  public
 
   def access_enabled?
     access_state == ACCESS_STATE_ENABLED

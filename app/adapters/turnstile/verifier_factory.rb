@@ -18,5 +18,6 @@ module Turnstile
 
       verifier.to_s.constantize
     end
+    public_class_method :current
   end
 end

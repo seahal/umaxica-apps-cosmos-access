@@ -46,9 +46,4 @@ class BranchCoverageBatch38ThresholdPushTest < ActiveSupport::TestCase
       assert_nil OidcLogoutRequest.verify("token")
     end
   end
-
-  test "AppleOnlyCredentialStatus short-circuits blank client" do
-    assert_not AppleOnlyCredentialStatus.call(nil)
-    assert_not AppleOnlyCredentialStatus.new(nil).call
-  end
 end

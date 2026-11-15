@@ -10,6 +10,8 @@ module Auth
         AUTHENTICATION_MODE = :bare
         HEALTH_PROFILE = ::Health::Profiles::SignApp
 
+        public
+
         def show
           render_probe(::Health::ReadinessCheck.call(profile: health_profile))
         end

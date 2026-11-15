@@ -66,12 +66,13 @@ module Security
                      "Use the owning connection class instead, e.g. `OpBaseAppRecord.transaction`."
       end
 
-      test "the token exchange coordinator opens its transaction on the code's own connection" do
-        source = Rails.root.join("app/services/oidc_token_exchange_coordinator.rb").read
+      test "refresh rotation locks through the grant's own connection" do
+        source = Rails.root.join("app/operations/oidc_refresh_token_issuer.rb").read
 
-        assert_includes source, "connection_class.transaction",
-                        "The authorization-code consume path must hold its row lock and its consume in one " \
-                        "transaction on the ticket connection, otherwise a code can be redeemed twice."
+        assert_includes source, "owner.connected_to(role: :writing)",
+                        "Refresh rotation must read on the writing role to avoid accepting a stale token."
+        assert_includes source, "usage.with_parent_and_self_lock",
+                        "Refresh rotation must hold the parent session, current root and grant locks together."
       end
     end
   end

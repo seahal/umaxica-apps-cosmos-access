@@ -15,6 +15,12 @@ class ModelTableFixtureConsistencyTest < ActiveSupport::TestCase
     "OpOrgConsumedJti" => "op_consumed_jtis",
     "OpAppInboundEventReceipt" => "op_inbound_event_receipts",
     "OpOrgInboundEventReceipt" => "op_inbound_event_receipts",
+    "RpBaseOrgStepUpAuditOutbox" => "rp_step_up_audit_outboxes",
+    "RpBaseOrgStepUpAuditOutboxAttempt" => "rp_step_up_audit_outbox_attempts",
+    "RpBaseOrgStepUpAuditOutboxDeliveryState" => "rp_step_up_audit_outbox_delivery_states",
+    "RpBaseOrgStepUpState" => "rp_step_up_states",
+    "RpBaseOrgStepUpStateStatus" => "rp_step_up_state_statuses",
+    "RpBaseOrgStepUpStateTransition" => "rp_step_up_state_transitions",
   }.merge(
     RpCellBinding::CELLS.values.each_with_object({}) do |cell, mapping|
       {

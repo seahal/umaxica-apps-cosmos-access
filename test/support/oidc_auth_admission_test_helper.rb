@@ -187,7 +187,7 @@ module OidcAuthAdmissionTestHelper
       result_token,
       JitSecurityJwtRegistry.public_key_for(issuer.id, issuer.current_kid),
       true,
-      algorithms: ["ES384"],
+      algorithms: ["PS256"],
       verify_iss: true,
       iss: "https://#{visa_host}",
       verify_aud: true,

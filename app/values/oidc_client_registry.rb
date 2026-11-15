@@ -18,6 +18,7 @@ module OidcClientRegistry
       :aud, :resource_type,
       :name, :domains, :allowed_scopes, :registered_token_endpoint_auth_method,
       :metadata_token_endpoint_auth_method, :jwt_namespace, :required_operator_capability,
+      :authorization_response_type,
     ) do
       def public_client?
         registered_token_endpoint_auth_method == "none"
@@ -29,6 +30,10 @@ module OidcClientRegistry
 
       def private_key_jwt_client?
         registered_token_endpoint_auth_method == "private_key_jwt"
+      end
+
+      def front_channel_id_token?
+        authorization_response_type == "id_token"
       end
     end
   AssertionAuthenticationResult =
@@ -71,6 +76,7 @@ module OidcClientRegistry
       registered_token_endpoint_auth_method: registered_auth_method,
       metadata_token_endpoint_auth_method: registered_auth_method || metadata_auth_method(client_id.to_s),
       jwt_namespace: config[:jwt_namespace],
+      authorization_response_type: config.fetch(:authorization_response_type, "code"),
     )
   end
 

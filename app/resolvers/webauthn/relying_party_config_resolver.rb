@@ -24,6 +24,8 @@ module Webauthn
       @surface = surface
     end
 
+    public
+
     def resolve
       RelyingPartyConfig.new(rp_id: value_for("RP_ID", :rp_id), origin: value_for("ORIGIN", :origin))
     end
@@ -44,5 +46,6 @@ module Webauthn
             "WebAuthn #{credentials_key} for surface #{surface.key} is not configured. " \
             "Set #{env_key} or credentials webauthn.#{surface.key}.#{credentials_key}."
     end
+    public_class_method :resolve
   end
 end

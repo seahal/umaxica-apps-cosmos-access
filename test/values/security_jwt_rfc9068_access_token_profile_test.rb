@@ -4,20 +4,24 @@
 require "test_helper"
 
 class SecurityJwtRfc9068AccessTokenProfileTest < ActiveSupport::TestCase
+  test "verification-key facade exposes the active issuer's public key" do
+    assert_equal JitSecurityJwtKeyring.public_key_for_active, AuthenticationJwtConfiguration.public_key
+  end
+
   test "auth access token header and required claims follow the RFC 9068 profile" do
     token = AuthenticationToken.encode(
-      clients(:one), host: "example.com", session_public_id: "sid", resource_type: "client",
+      client_resource, host: "example.com", session_public_id: "sid", resource_type: "client",
     )
     payload, header = JWT.decode(token, nil, false)
 
     assert_equal "at+jwt", header["typ"]
-    assert_equal "ES384", header["alg"]
+    assert_equal "PS256", header["alg"]
     assert_predicate header["kid"], :present?
     %w(iss exp aud sub client_id iat jti).each do |claim|
       assert payload.key?(claim), "missing #{claim}"
     end
     assert_kind_of String, payload["sub"]
-    assert_equal clients(:one).id.to_s, payload["sub"]
+    assert_equal client_resource.id.to_s, payload["sub"]
     assert_equal AuthenticationJwtConfiguration.client_id("client"), payload["client_id"]
     assert_equal AuthenticationJwtConfiguration.issuer, payload["iss"]
     assert_equal AuthenticationJwtConfiguration.audiences("client"), payload["aud"]
@@ -50,13 +54,13 @@ class SecurityJwtRfc9068AccessTokenProfileTest < ActiveSupport::TestCase
 
   test "auth access verification rejects wrong JOSE typ, missing typ, and none alg" do
     token = AuthenticationToken.encode(
-      clients(:one), host: "example.com", session_public_id: "sid", resource_type: "client",
+      client_resource, host: "example.com", session_public_id: "sid", resource_type: "client",
     )
     payload, header = JWT.decode(token, nil, false)
     key = AuthenticationJwtConfiguration.private_key
 
-    wrong_typ = JWT.encode(payload, key, "ES384", header.merge("typ" => "auth-access-token;client"))
-    missing_typ = JWT.encode(payload, key, "ES384", header.except("typ"))
+    wrong_typ = JWT.encode(payload, key, "PS256", header.merge("typ" => "auth-access-token;client"))
+    missing_typ = JWT.encode(payload, key, "PS256", header.except("typ"))
     none_alg = JWT.encode(payload, nil, "none", header.merge("alg" => "none"))
 
     assert_nil AuthenticationToken.decode(wrong_typ, host: "example.com", resource_type: "client")
@@ -66,14 +70,14 @@ class SecurityJwtRfc9068AccessTokenProfileTest < ActiveSupport::TestCase
 
   test "auth access verification rejects expired tokens and wrong issuer or audience" do
     token = AuthenticationToken.encode(
-      clients(:one), host: "example.com", session_public_id: "sid", resource_type: "client",
+      client_resource, host: "example.com", session_public_id: "sid", resource_type: "client",
     )
     payload, header = JWT.decode(token, nil, false)
     key = AuthenticationJwtConfiguration.private_key
 
-    expired = JWT.encode(payload.merge("exp" => 1.hour.ago.to_i), key, "ES384", header)
-    wrong_iss = JWT.encode(payload.merge("iss" => "urn:umaxica:other:auth"), key, "ES384", header)
-    wrong_aud = JWT.encode(payload.merge("aud" => ["not-this-resource"]), key, "ES384", header)
+    expired = JWT.encode(payload.merge("exp" => 1.hour.ago.to_i), key, "PS256", header)
+    wrong_iss = JWT.encode(payload.merge("iss" => "urn:umaxica:other:auth"), key, "PS256", header)
+    wrong_aud = JWT.encode(payload.merge("aud" => ["not-this-resource"]), key, "PS256", header)
 
     assert_nil AuthenticationToken.decode(expired, host: "example.com", resource_type: "client")
     assert_nil AuthenticationToken.decode(wrong_iss, host: "example.com", resource_type: "client")
@@ -82,14 +86,14 @@ class SecurityJwtRfc9068AccessTokenProfileTest < ActiveSupport::TestCase
 
   test "auth access verification rejects a development issuer when expecting the test issuer" do
     token = AuthenticationToken.encode(
-      clients(:one), host: "example.com", session_public_id: "sid", resource_type: "client",
+      client_resource, host: "example.com", session_public_id: "sid", resource_type: "client",
     )
     payload, header = JWT.decode(token, nil, false)
     key = AuthenticationJwtConfiguration.private_key
     foreign = JWT.encode(
       payload.merge("iss" => "urn:umaxica:development:auth"),
       key,
-      "ES384",
+      "PS256",
       header,
     )
 
@@ -110,6 +114,10 @@ class SecurityJwtRfc9068AccessTokenProfileTest < ActiveSupport::TestCase
   end
 
   private
+
+  def client_resource
+    Struct.new(:id).new(123)
+  end
 
   def with_env(vars)
     originals = vars.keys.index_with { |key| ENV.fetch(key, nil) }

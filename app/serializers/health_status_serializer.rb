@@ -36,6 +36,8 @@ class HealthStatusSerializer
     @timestamp = timestamp
   end
 
+  public
+
   def call
     mapped = CHECK_ORDER.index_with { |name| vocab_for(@results.fetch(name)) }
     overall = aggregate(mapped.values)
@@ -77,4 +79,5 @@ class HealthStatusSerializer
 
     "pass"
   end
+  public_class_method :call
 end

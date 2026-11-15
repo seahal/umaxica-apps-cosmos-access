@@ -57,14 +57,14 @@ module Visa
 
       def token_class = ClientToken
 
-      def root_owner_id(root) = root.user_id
+      def root_owner_id(root) = root.subject_public_id
 
-      def browser_risk_payload(root) = { user_id: root.user_id, user_token_id: root.public_id }
+      def browser_risk_payload(root) = { user_id: root.subject_public_id, user_token_id: root.public_id }
 
       def write_browser_refresh_audit(root)
         AuthenticationAuditWriter.write_reference(
           ClientChronicle, ClientChronicleEvent::TOKEN_REFRESHED,
-          subject_type: "Client", subject_id: root.user_id.to_s, actor_type: "Client", actor_id: root.user_id.to_s,
+          subject_type: "Client", subject_id: root.subject_public_id.to_s, actor_type: "Client", actor_id: root.subject_public_id.to_s,
           context: { session_public_id: root.device_session_record.public_id },
         )
       end

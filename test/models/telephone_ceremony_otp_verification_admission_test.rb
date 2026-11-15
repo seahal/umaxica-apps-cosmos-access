@@ -16,6 +16,11 @@ class TelephoneCeremonyOtpVerificationAdmissionTest < ActiveSupport::TestCase
       end
       Time.use_zone("UTC") do
         transported = false
+        wrong_code = (code == "000000") ? "000001" : "000000"
+
+        assert transaction.telephone_otp_delivery_current?(generation: transaction.otp_generation, code: code)
+        assert_not transaction.telephone_otp_delivery_current?(generation: transaction.otp_generation, code: wrong_code)
+        assert_not transaction.telephone_otp_delivery_current?(generation: "stale-generation", code: code)
 
         assert transaction.deliver_telephone_otp!(generation: transaction.otp_generation, code: code) {
           transported = true

@@ -53,6 +53,22 @@ class OidcIssuerTest < ActiveSupport::TestCase
     end
   end
 
+  test "ID token resource lookup follows the strict issuer realm contract" do
+    [
+      ["client", "client"],
+      ["operator", "operator"],
+      ["staff", "operator"],
+    ].each do |resource_type, expected|
+      client = Struct.new(:resource_type).new(resource_type)
+
+      assert_equal expected, SecurityJwtOidcIdTokenCodec.resource_type_for_client(client), resource_type
+    end
+
+    assert_raises(ArgumentError) do
+      SecurityJwtOidcIdTokenCodec.resource_type_for_client(Struct.new(:resource_type).new("unknown"))
+    end
+  end
+
   test "resource type values outside the app and org contract are refused" do
     [nil, "", "unknown", "visitor", "customer"].each do |resource_type|
       assert_raises(ArgumentError) { OidcIssuer.host_for_resource_type(resource_type) }

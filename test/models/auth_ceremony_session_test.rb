@@ -6,6 +6,18 @@ require "test_helper"
 class AuthCeremonySessionTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
+  test "an Auth session without an admitted email challenge cannot cancel, deliver or report it current" do
+    session, = ClientAuthCeremonySession.issue!
+    delivered = false
+
+    assert_not session.email_otp_challenge_current?(contact: nil)
+    assert_not session.cancel_email_otp_challenge!
+    assert_not session.with_email_otp_delivery!(generation: "missing", code: "000000", destination: "") {
+      delivered = true
+    }
+    assert_not delivered
+  end
+
   CASES = [
     ClientAuthCeremonySession,
     OperatorAuthCeremonySession,
@@ -35,6 +47,7 @@ class AuthCeremonySessionTest < ActiveSupport::TestCase
       record.revoke!
 
       assert_not record.reload.active?
+      assert_predicate record, :revoked?
       assert_equal AuthCeremonySession::STATUS_REVOKED, record.status_id
       assert_nil model.find_active_by_raw_sid(rotated)
     end
@@ -150,6 +163,7 @@ class AuthCeremonySessionTest < ActiveSupport::TestCase
 
       assert_predicate previous.reload, :terminal?
       assert_equal AuthCeremonySession::STATUS_REPLACED, previous.status_id
+      assert_predicate previous, :replaced?
       assert_not_predicate previous, :admitted?
       assert_equal admitted_at, previous.admitted_at
       assert_not_predicate previous, :active?
@@ -159,6 +173,30 @@ class AuthCeremonySessionTest < ActiveSupport::TestCase
       assert_equal previous.sid_digest, replacement.previous_sid_digest
       assert_nil model.find_active_by_raw_sid(previous_sid)
       assert_equal replacement.id, model.find_active_by_raw_sid(replacement_sid).id
+    end
+
+    test "#{model.name} resolves only cancelled authentication parents for exact sid retries" do
+      cancelled, raw_sid = model.issue!
+      cancelled.admit!(
+        admission_purpose: "authentication_handoff",
+        authorization_transaction_ref: "cancel-replay-#{model.name}",
+      )
+      cancelled.cancel!
+
+      assert_equal cancelled.id, model.find_cancelled_parent_cancel_replay_by_raw_sid(raw_sid).id
+
+      invitation, invitation_sid = model.issue!
+      invitation.admit!(admission_purpose: "invitation_handoff")
+      invitation.cancel!
+
+      assert_nil model.find_cancelled_parent_cancel_replay_by_raw_sid(invitation_sid)
+
+      unbound, unbound_sid = model.issue!
+      unbound.admit!(admission_purpose: "authentication_handoff")
+      unbound.cancel!
+
+      assert_nil model.find_cancelled_parent_cancel_replay_by_raw_sid(unbound_sid)
+      assert_raises(ArgumentError) { model.find_cancelled_parent_cancel_replay_by_raw_sid("malformed") }
     end
 
     test "#{model.name} rejects a second replacement from the same previous session" do

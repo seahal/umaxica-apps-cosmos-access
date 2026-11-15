@@ -9,6 +9,8 @@ module Auth
       AUTHENTICATION_MODE = :bare
       HEALTH_PROFILE = ::Health::Profiles::SignOrg
 
+      public
+
       def show
         render_snapshot(::Health::SnapshotCheck.call(profile: health_profile))
       end

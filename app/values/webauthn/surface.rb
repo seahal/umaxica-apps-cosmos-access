@@ -27,6 +27,8 @@ module Webauthn
       freeze
     end
 
+    public
+
     def ceremony_transaction_class = ceremony_transaction_class_name.constantize
 
     delegate :to_s, to: :key
@@ -59,5 +61,6 @@ module Webauthn
     end
 
     def self.all = REGISTRY.values
+    public_class_method :for, :all
   end
 end

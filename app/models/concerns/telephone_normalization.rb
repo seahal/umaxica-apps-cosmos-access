@@ -216,4 +216,5 @@ module TelephoneNormalization
   end
 
   private_class_method :convert_domestic_format
+  public_class_method :normalize_to_e164
 end

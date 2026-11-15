@@ -14,6 +14,8 @@ class SignSecretRecordEvent
     @details = details
   end
 
+  public
+
   def call
     Rails.logger.info(
       JitLogEvent.format(
@@ -26,4 +28,5 @@ class SignSecretRecordEvent
 
     Result.new(event_name: @event_name, secret_credential_id: @secret_credential&.id, details: @details)
   end
+  public_class_method :call
 end

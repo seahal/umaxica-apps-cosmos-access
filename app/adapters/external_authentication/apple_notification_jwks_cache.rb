@@ -18,6 +18,8 @@ module ExternalAuthentication
       @fetcher = fetcher || method(:fetch_jwks)
     end
 
+    public
+
     def loader
       lambda do |options|
         Rails.cache.delete(cache_key) if options[:kid_not_found] || options[:invalidate]

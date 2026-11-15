@@ -11,6 +11,8 @@
 class ClientTokenDbscStatus < OpBaseAppRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   # Fixed IDs - do not modify these values
   NOTHING = 0
   ACTIVE = 1
@@ -27,4 +29,5 @@ class ClientTokenDbscStatus < OpBaseAppRecord
   def self.ensure_defaults!
     insert_missing_fixed_ids!(DEFAULTS)
   end
+  public_class_method :ensure_defaults!
 end

@@ -82,6 +82,70 @@ class ClientSignUpFlowTest < ActiveSupport::TestCase
     assert_nil ClientSignUpFlow.reflect_on_association(:principal)
   end
 
+  test "admission binding deletion is restricted while sign-up lifecycle history refers to it" do
+    client = OidcClientRegistry.find!("base-app-ww")
+    parameters = {
+      response_type: "code",
+      client_id: client.client_id,
+      redirect_uri: client.redirect_uris_by_realm.fetch("client").first,
+      code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+      code_challenge_method: "S256",
+      state: SecureRandom.urlsafe_base64(32),
+      nonce: SecureRandom.urlsafe_base64(32),
+      scope: "openid profile",
+      prompt: "create",
+    }
+    browser_nonce = SecureRandom.urlsafe_base64(32)
+    issuance = OidcAuthorizationTransactionCoordinator.issue_with_handoff!(
+      surface: "app", intent: "sign_up", params: parameters,
+      base_browser_nonce: browser_nonce, base_token: nil,
+    )
+    binding = BaseAuthAdmissionCoordinator.find_admission_binding!(
+      surface: "app", reference: issuance.handoff.reference,
+    )
+    ceremony_session_class = binding.class.auth_admission_session_class
+    attached_session, raw_auth_sid = ceremony_session_class.issue!
+    binding.attach_auth_session!(auth_session: attached_session, confirmation_ref: SecureRandom.uuid)
+    binding.confirm_base!(
+      base_token: nil,
+      browser_digest: AuthAdmissionBinding.browser_digest(
+        surface: "app", entry_ref: issuance.handoff.reference, nonce: browser_nonce,
+      ),
+    )
+    BaseAuthAdmissionCoordinator.consume_entry_reference!(
+      reference: issuance.handoff.reference,
+      surface: "app",
+      expected_intent: "sign_up",
+      binding: binding,
+      raw_auth_sid: raw_auth_sid,
+    )
+    admitted_session, = ceremony_session_class.rotate_and_admit!(
+      admission_purpose: "authentication_handoff",
+      previous_raw_sid: raw_auth_sid,
+      authorization_transaction_ref: issuance.transaction.transaction_id,
+    )
+    binding.redeem!(auth_session: attached_session, admitted_auth_session: admitted_session)
+    ClientSignUpFlow.create!(
+      auth_admission_binding: binding,
+      principal_id: 0,
+      entry_method: "email",
+      step: "start",
+      nonce_digest: ClientSignUpFlow.digest_nonce("sign-up-binding-retention"),
+      status_id: ClientSignUpFlowStatus::STARTED,
+      state: "STARTED",
+      cleanup_status_id: ClientSignUpFlowCleanupStatus::IDLE,
+    )
+
+    assert_raises(ActiveRecord::DeleteRestrictionError) { binding.destroy! }
+    assert ClientSignUpFlow.exists?(auth_admission_binding_id: binding.id)
+    error =
+      assert_raises(ActiveRecord::StatementInvalid) do
+        binding.class.transaction(requires_new: true) { binding.delete }
+      end
+    assert_instance_of PG::RestrictViolation, error.cause
+    assert ClientSignUpFlow.exists?(auth_admission_binding_id: binding.id)
+  end
+
   test "registration reconciliation and new forward progress require Governance authority" do
     binding = SignUpAdmissionTestFactory.binding_for!(ClientSignUpFlow)
     flow = ClientSignUpFlow.create!(

@@ -8,6 +8,8 @@ class SignInCheckpointParticipant
     @evaluators = evaluators
   end
 
+  public
+
   def evaluate
     SignInParticipantResult.new(
       participant: :checkpoint,

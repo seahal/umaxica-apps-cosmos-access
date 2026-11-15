@@ -16,9 +16,9 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       stop: OpAppAuthorityStop,
       participant: OpAppAuthorityStopParticipant,
       target: OpAppAuthorityStopRootTarget,
-      owner: :user_id,
+      owner: :subject_public_id,
       device: ClientDeviceSession,
-      root: :client_token,
+      root: :client_token_id,
       kind: :user_token_kind_id,
       kind_value: ClientTokenKind::BROWSER_WEB,
       resource_type: "client",
@@ -31,9 +31,9 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       stop: OpOrgAuthorityStop,
       participant: OpOrgAuthorityStopParticipant,
       target: OpOrgAuthorityStopRootTarget,
-      owner: :staff_id,
+      owner: :subject_public_id,
       device: OperatorDeviceSession,
-      root: :operator_token,
+      root: :operator_token_id,
       kind: :staff_token_kind_id,
       kind_value: OperatorTokenKind::BROWSER_WEB,
       resource_type: "operator",
@@ -42,13 +42,13 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
   }.freeze
 
   CASES.each do |realm, config|
-    test "#{realm} authorization GET explicitly refuses new admission and never stops an existing device" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+    test "#{realm} authorization start hands off without revoking an existing device session" do
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
@@ -69,21 +69,38 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
         "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
       )
       before = config.fetch(:stop).count
-      browser.get("/oauth/authorize", params: { ri: "jp" })
+      client = OidcClientRegistry.find!("core-#{realm}-jp")
+      browser.get(
+        "/oauth/authorize",
+        params: {
+          client_id: client.client_id,
+          code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          code_challenge_method: "S256",
+          nonce: "existing-device-session-nonce",
+          redirect_uri: client.redirect_uris_by_realm.fetch(config.fetch(:resource_type)).first,
+          response_type: "code",
+          ri: "jp",
+          scope: "openid profile",
+          state: "existing-device-session-state",
+        },
+      )
 
-      assert_equal 503, browser.response.status
+      assert_equal 303, browser.response.status
+      jump_host = URI.parse(Rails.configuration.x.boot_config.fetch(:jump).origin).host
+
+      assert_equal jump_host, URI.parse(browser.response.location).host
       assert_equal before, config.fetch(:stop).count
       assert_not_predicate root.reload, :revoked?
       assert_predicate root.device_session.reload, :usable?
     end
 
     test "#{realm} logout confirmation posts to its separate confirmation endpoint" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       [nil, "jp"].each do |region|
@@ -118,6 +135,12 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
 
         assert page
         props = JSON.parse(page.text).fetch("props")
+        document = Nokogiri::HTML(browser.response.body)
+
+        assert document.at_css('meta[property="csp-nonce"]'), "Visa logout page must use its Inertia document layout"
+        assert_equal realm, props.fetch("chrome").fetch("surface")
+        assert_equal "VISA", props.fetch("chrome").fetch("family_label")
+        assert_not props.fetch("clear_history")
 
         assert_equal "/oidc/logout/confirmation?#{{ ri: region }.to_query}", props.fetch("form").fetch("action")
         # The confirmation answers through Jump to the RP's post-logout URI; browsers apply
@@ -147,17 +170,18 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} validates hint signature issuer audience and accepts an expired hint" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       client = OidcClientRegistry.find!("core-#{realm}-jp")
       grant = config.fetch(:grant).create!(
-        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :authentication_epoch => 0, config.fetch(:root) => root.id, :device_session_id => root.device_session_id,
+        :oidc_client_id => client.client_id,
         :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
         :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
       )
@@ -168,7 +192,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
           resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
           expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
           jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
-          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.subject_public_id}",
           sid: grant.public_id, auth_time: grant.oidc_auth_time,
         ),
       )
@@ -176,7 +200,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       foreign = OidcIdTokenIssuer.call(
         resource_type: config.fetch(:resource_type), client: client, nonce: "nonce", issuer: "https://foreign.example",
         jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(config.fetch(:resource_type)),
-        subject: "#{OidcSubject.prefix_for(config.fetch(:resource_type))}_#{root.principal_public_id}",
+        subject: "#{OidcSubject.prefix_for(config.fetch(:resource_type))}_#{root.subject_public_id}",
         sid: grant.public_id,
       )
       invalids = [
@@ -227,7 +251,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
         issued_at: 10.minutes.ago, expires_at: 1.minute.ago,
         issuer: OidcIssuer.for_resource_type(config.fetch(:resource_type)),
         jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(config.fetch(:resource_type)),
-        subject: "#{OidcSubject.prefix_for(config.fetch(:resource_type))}_#{root.principal_public_id}",
+        subject: "#{OidcSubject.prefix_for(config.fetch(:resource_type))}_#{root.subject_public_id}",
         sid: grant.public_id,
       )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
@@ -269,17 +293,18 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} invalid hint displays a localized public error" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       client = OidcClientRegistry.find!("core-#{realm}-jp")
       grant = config.fetch(:grant).create!(
-        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :authentication_epoch => 0, config.fetch(:root) => root.id, :device_session_id => root.device_session_id,
+        :oidc_client_id => client.client_id,
         :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
         :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
       )
@@ -290,7 +315,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
           resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
           expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
           jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
-          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.subject_public_id}",
           sid: grant.public_id, auth_time: grant.oidc_auth_time,
         ),
       )
@@ -332,12 +357,12 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} invalid hint preserves the protocol error in JSON" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
@@ -370,12 +395,12 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} an unregistered return URI is refused even without a hint" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
@@ -408,12 +433,12 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} retry after an unknown uncommitted stop ends the same device" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
@@ -451,20 +476,109 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
       assert_predicate root.reload, :revoked?
     end
 
+    test "#{realm} a different logout request cannot reuse another tab's pending return state" do
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
+      root = config.fetch(:token).create!(
+        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        config.fetch(:kind) => config.fetch(:kind_value),
+        :device_session => config.fetch(:device).create!(
+          :subject_public_id => actor,
+        ),
+      )
+      host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
+      browser = open_session
+      browser.host!(host)
+      browser.https!
+      type = config.fetch(:resource_type)
+      payload = AuthorizationTokenClaims.build(
+        resource: nil, subject: actor.to_s, resource_type: type, issued_at: Time.current,
+        access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
+        oidc_jti: root.oidc_jti, authentication_context: root.strict_authentication_context_value.to_s,
+      )
+      credential = JitSecurityJwtKeyring.encode(
+        payload, typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+                 issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type),
+      )
+      browser.cookies << Rack::Test::Cookie.new(
+        "#{AuthenticationCookieName.access}=#{Rack::Utils.escape(credential)}", URI.parse("https://#{host}/"),
+      )
+      first_client = OidcClientRegistry.find!("core-#{realm}-jp")
+      second_client = OidcClientRegistry.find!("warp-#{realm}-jp")
+      first_uri = first_client.post_logout_redirect_uris.first
+      second_uri = second_client.post_logout_redirect_uris.first
+
+      assert_not_equal first_uri, second_uri
+
+      browser.get(
+        "/oidc/logout", params: {
+          client_id: first_client.client_id,
+          post_logout_redirect_uri: first_uri,
+          state: "first-tab-state",
+          ri: "jp",
+        },
+      )
+
+      assert_equal 303, browser.response.status
+      original_pending = browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY].deep_dup
+      browser.get("/oidc/logout", params: { ri: "jp", lx: "en" })
+
+      assert_equal 200, browser.response.status
+      assert_equal original_pending, browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY]
+      stop_count = config.fetch(:stop).count
+      browser.get(
+        "/oidc/logout", params: {
+          client_id: first_client.client_id,
+          post_logout_redirect_uri: first_uri,
+          state: "first-tab-state",
+          ri: "jp",
+        },
+      )
+
+      assert_equal 200, browser.response.status
+      assert_equal original_pending, browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY]
+      browser.get(
+        "/oidc/logout", params: {
+          client_id: first_client.client_id,
+          post_logout_redirect_uri: first_uri,
+          state: "changed-state",
+          ri: "jp",
+        },
+      )
+
+      assert_equal 403, browser.response.status
+      assert_nil browser.response.location
+      assert_equal original_pending, browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY]
+      browser.get(
+        "/oidc/logout", params: {
+          client_id: second_client.client_id,
+          post_logout_redirect_uri: second_uri,
+          state: "second-tab-state",
+          ri: "jp",
+        },
+      )
+
+      assert_equal 403, browser.response.status
+      assert_nil browser.response.location
+      assert_equal original_pending, browser.request.session[SignOidcLogout::OIDC_LOGOUT_REQUEST_SESSION_KEY]
+      assert_equal stop_count, config.fetch(:stop).count
+      assert_not_predicate root.reload, :revoked?
+      assert_predicate root.device_session.reload, :usable?
+    end
+
     test "#{realm} a new pending request supersedes the previous completion marker" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       old_root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       new_root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
@@ -517,19 +631,19 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} an old confirmation after a new sign-in cannot end the new device" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       old_root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       new_root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
@@ -577,17 +691,18 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} verified hint without an OP session is forbidden in both languages" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       client = OidcClientRegistry.find!("core-#{realm}-jp")
       grant = config.fetch(:grant).create!(
-        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :authentication_epoch => 0, config.fetch(:root) => root.id, :device_session_id => root.device_session_id,
+        :oidc_client_id => client.client_id,
         :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
         :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
       )
@@ -598,7 +713,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
           resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
           expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
           jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
-          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.subject_public_id}",
           sid: grant.public_id, auth_time: grant.oidc_auth_time,
         ),
       )
@@ -630,24 +745,25 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} a hint for another device of the same person cannot select its grant" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       current = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       other = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       client = OidcClientRegistry.find!("core-#{realm}-jp")
       grant = config.fetch(:grant).create!(
-        :authentication_epoch => 0, config.fetch(:root) => other, :oidc_client_id => client.client_id,
+        :authentication_epoch => 0, config.fetch(:root) => other.id,
+        :device_session_id => other.device_session_id, :oidc_client_id => client.client_id,
         :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
         :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
       )
@@ -658,7 +774,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
           resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
           expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
           jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
-          subject: "#{OidcSubject.prefix_for(resource_type)}_#{other.principal_public_id}",
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{other.subject_public_id}",
           sid: grant.public_id, auth_time: grant.oidc_auth_time,
         ),
       )
@@ -701,25 +817,26 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} a hint for an unrelated person cannot select its grant" do
-      current_actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
-      other_actor = 9_000_000 + SecureRandom.random_number(1_000_000)
+      current_actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
+      other_actor = "logout-#{9_000_000 + SecureRandom.random_number(1_000_000)}"
       current = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => current_actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => current_actor, :principal_public_id => "logout-#{current_actor}",
+          :subject_public_id => current_actor,
         ),
       )
       other = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => other_actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => other_actor, :principal_public_id => "logout-#{other_actor}",
+          :subject_public_id => other_actor,
         ),
       )
       client = OidcClientRegistry.find!("core-#{realm}-jp")
       grant = config.fetch(:grant).create!(
-        :authentication_epoch => 0, config.fetch(:root) => other, :oidc_client_id => client.client_id,
+        :authentication_epoch => 0, config.fetch(:root) => other.id,
+        :device_session_id => other.device_session_id, :oidc_client_id => client.client_id,
         :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
         :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
       )
@@ -730,7 +847,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
           resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
           expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
           jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
-          subject: "#{OidcSubject.prefix_for(resource_type)}_#{other.principal_public_id}",
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{other.subject_public_id}",
           sid: grant.public_id, auth_time: grant.oidc_auth_time,
         ),
       )
@@ -795,19 +912,19 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} confirmation refuses a different current device" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       original = config.fetch(:token).create!(
-        :authentication_epoch => 0, config.fetch(:owner) => actor,
+        :authentication_epoch => 0, config.fetch(:owner) => other_actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       replacement = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
@@ -854,12 +971,12 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} a repeated confirmation reports already signed out and writes no second stop" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
@@ -898,12 +1015,12 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} programming errors during the stop propagate" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
@@ -937,12 +1054,12 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} a failed precondition on an active device is forbidden" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
@@ -977,12 +1094,12 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} a failed precondition after a committed stop reports already signed out" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
@@ -1022,12 +1139,12 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} an unreadable persisted device preserves the browser and returns unknown" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
@@ -1078,17 +1195,18 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} a stop failing before commit keeps the browser and pending request" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       client = OidcClientRegistry.find!("core-#{realm}-jp")
       grant = config.fetch(:grant).create!(
-        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :authentication_epoch => 0, config.fetch(:root) => root.id, :device_session_id => root.device_session_id,
+        :oidc_client_id => client.client_id,
         :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
         :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
       )
@@ -1099,7 +1217,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
           resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
           expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
           jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
-          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.subject_public_id}",
           sid: grant.public_id, auth_time: grant.oidc_auth_time,
         ),
       )
@@ -1138,12 +1256,12 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} an unknown commit keeps the browser and a retry observes the committed stop" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       host = Rails.configuration.x.boot_config.fetch(:hosts).public_send(config.fetch(:visa_host)).host
@@ -1190,17 +1308,18 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} a notice store failure after commit renders the signed-out page" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       client = OidcClientRegistry.find!("core-#{realm}-jp")
       grant = config.fetch(:grant).create!(
-        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :authentication_epoch => 0, config.fetch(:root) => root.id, :device_session_id => root.device_session_id,
+        :oidc_client_id => client.client_id,
         :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
         :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
       )
@@ -1211,7 +1330,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
           resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
           expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
           jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
-          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.subject_public_id}",
           sid: grant.public_id, auth_time: grant.oidc_auth_time,
         ),
       )
@@ -1254,17 +1373,18 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} a missing Jump ticket after commit renders the signed-out page" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       client = OidcClientRegistry.find!("core-#{realm}-jp")
       grant = config.fetch(:grant).create!(
-        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :authentication_epoch => 0, config.fetch(:root) => root.id, :device_session_id => root.device_session_id,
+        :oidc_client_id => client.client_id,
         :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
         :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
       )
@@ -1275,7 +1395,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
           resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
           expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
           jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
-          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.subject_public_id}",
           sid: grant.public_id, auth_time: grant.oidc_auth_time,
         ),
       )
@@ -1337,17 +1457,18 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} a rejected Jump gateway after commit renders the signed-out page" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       client = OidcClientRegistry.find!("core-#{realm}-jp")
       grant = config.fetch(:grant).create!(
-        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :authentication_epoch => 0, config.fetch(:root) => root.id, :device_session_id => root.device_session_id,
+        :oidc_client_id => client.client_id,
         :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
         :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
       )
@@ -1358,7 +1479,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
           resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
           expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
           jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
-          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.subject_public_id}",
           sid: grant.public_id, auth_time: grant.oidc_auth_time,
         ),
       )
@@ -1421,17 +1542,18 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} programming errors after commit propagate" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       client = OidcClientRegistry.find!("core-#{realm}-jp")
       grant = config.fetch(:grant).create!(
-        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :authentication_epoch => 0, config.fetch(:root) => root.id, :device_session_id => root.device_session_id,
+        :oidc_client_id => client.client_id,
         :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
         :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
       )
@@ -1442,7 +1564,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
           resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
           expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
           jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
-          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.subject_public_id}",
           sid: grant.public_id, auth_time: grant.oidc_auth_time,
         ),
       )
@@ -1498,17 +1620,18 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} redirect construction failure after commit renders the signed-out page" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       client = OidcClientRegistry.find!("core-#{realm}-jp")
       grant = config.fetch(:grant).create!(
-        :authentication_epoch => 0, config.fetch(:root) => root, :oidc_client_id => client.client_id,
+        :authentication_epoch => 0, config.fetch(:root) => root.id, :device_session_id => root.device_session_id,
+        :oidc_client_id => client.client_id,
         :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
         :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
       )
@@ -1519,7 +1642,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
           resource_type:, client:, nonce: grant.oidc_nonce, issued_at: Time.current,
           expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
           jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
-          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.principal_public_id}",
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{root.subject_public_id}",
           sid: grant.public_id, auth_time: grant.oidc_auth_time,
         ),
       )
@@ -1586,19 +1709,19 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
     end
 
     test "#{realm} confirmation stops both rotated roots and grants through the Visa OP" do
-      actor = { "app" => 1001, "org" => 1002 }.fetch(realm)
+      actor = { "app" => "logout-1001", "org" => "logout-1002" }.fetch(realm)
       predecessor = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       other_root = config.fetch(:token).create!(
         :authentication_epoch => 0, config.fetch(:owner) => actor,
         config.fetch(:kind) => config.fetch(:kind_value),
         :device_session => config.fetch(:device).create!(
-          config.fetch(:owner) => actor, :principal_public_id => "logout-#{actor}",
+          :subject_public_id => actor,
         ),
       )
       predecessor.rotate_refresh_token!
@@ -1611,7 +1734,8 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
 
       client = OidcClientRegistry.find!("core-#{realm}-jp")
       origin = config.fetch(:grant).create!(
-        :authentication_epoch => 0, config.fetch(:root) => current, :oidc_client_id => client.client_id,
+        :authentication_epoch => 0, config.fetch(:root) => current.id,
+        :device_session_id => current.device_session_id, :oidc_client_id => client.client_id,
         :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
         :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
       )
@@ -1622,13 +1746,14 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
           resource_type:, client:, nonce: origin.oidc_nonce, issued_at: Time.current,
           expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
           jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
-          subject: "#{OidcSubject.prefix_for(resource_type)}_#{current.principal_public_id}",
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{current.subject_public_id}",
           sid: origin.public_id, auth_time: origin.oidc_auth_time,
         ),
       )
       client = OidcClientRegistry.find!("warp-#{realm}-jp")
       sibling = config.fetch(:grant).create!(
-        :authentication_epoch => 0, config.fetch(:root) => current, :oidc_client_id => client.client_id,
+        :authentication_epoch => 0, config.fetch(:root) => current.id,
+        :device_session_id => current.device_session_id, :oidc_client_id => client.client_id,
         :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
         :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
       )
@@ -1639,13 +1764,14 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
           resource_type:, client:, nonce: sibling.oidc_nonce, issued_at: Time.current,
           expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
           jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
-          subject: "#{OidcSubject.prefix_for(resource_type)}_#{current.principal_public_id}",
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{current.subject_public_id}",
           sid: sibling.public_id, auth_time: sibling.oidc_auth_time,
         ),
       )
       client = OidcClientRegistry.find!("warp-#{realm}-jp")
       other_grant = config.fetch(:grant).create!(
-        :authentication_epoch => 0, config.fetch(:root) => other_root, :oidc_client_id => client.client_id,
+        :authentication_epoch => 0, config.fetch(:root) => other_root.id,
+        :device_session_id => other_root.device_session_id, :oidc_client_id => client.client_id,
         :oidc_scope => "openid profile", :oidc_jti => SecureRandom.uuid, :oidc_nonce => SecureRandom.hex(16),
         :oidc_auth_time => 1.minute.ago, :refresh_token_expires_at => 10.minutes.from_now,
       )
@@ -1656,7 +1782,7 @@ class OidcCurrentDeviceLogoutTest < ActionDispatch::IntegrationTest
           resource_type:, client:, nonce: other_grant.oidc_nonce, issued_at: Time.current,
           expires_at: 10.minutes.from_now, issuer: OidcIssuer.for_resource_type(resource_type),
           jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
-          subject: "#{OidcSubject.prefix_for(resource_type)}_#{other_root.principal_public_id}",
+          subject: "#{OidcSubject.prefix_for(resource_type)}_#{other_root.subject_public_id}",
           sid: other_grant.public_id, auth_time: other_grant.oidc_auth_time,
         ),
       )

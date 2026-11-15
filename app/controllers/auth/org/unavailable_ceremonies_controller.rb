@@ -15,7 +15,7 @@ module Auth
         scope: "auth_org_default_web",
         name: "default_web",
         store: rate_limit_store,
-        with: -> { head :too_many_requests },
+        with: -> { render_rate_limited(retry_after: 60) },
       )
 
       public
@@ -28,23 +28,7 @@ module Auth
         render_unavailable
       end
 
-      def edit
-        render_unavailable
-      end
-
       def create
-        render_unavailable
-      end
-
-      def update
-        render_unavailable
-      end
-
-      def destroy
-        render_unavailable
-      end
-
-      def reattempt
         render_unavailable
       end
 

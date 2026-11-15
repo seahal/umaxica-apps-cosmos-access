@@ -15,7 +15,10 @@ class AuthenticationSessionCommitter
     @controller = controller
   end
 
+  public
+
   def call(resource:, **)
     @controller.send(:establish_signed_in_session!, resource, **)
   end
+  public_class_method :call
 end

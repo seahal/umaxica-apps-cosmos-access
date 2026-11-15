@@ -6,12 +6,14 @@ require "test_helper"
 
 class ProsopiteSmokeTest < ActionDispatch::IntegrationTest
   test "prosopite raises for n+1 queries in integration tests" do
-    created_user_ids =
+    replay_ids =
       Prosopite.pause do
-        3.times.map do |i|
-          user = Client.create!(security_mode_id: SecurityModeConfigurable::NORMAL)
-          ClientEmail.create!(user: user, address: "prosopite-smoke-#{i}-#{SecureRandom.hex(4)}@example.com")
-          user.id
+        3.times.map do
+          TurnstileReplay.create!(
+            ceremony_id: SecureRandom.uuid,
+            token_digest: SecureRandom.hex(32),
+            expires_at: 1.hour.from_now,
+          ).id
         end
       end
 
@@ -21,8 +23,8 @@ class ProsopiteSmokeTest < ActionDispatch::IntegrationTest
           Prosopite.scan do
             # Query the same child table once per parent without lazy-loading an association, so
             # Prosopite remains observable while global strict loading stays enabled.
-            Client.where(id: created_user_ids).order(:id).each do |user|
-              ClientEmail.where(user_id: user.id).load
+            replay_ids.each do |replay_id|
+              TurnstileReplay.where(id: replay_id).load
             end
           end
         end

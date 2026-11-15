@@ -32,6 +32,8 @@ class IdentitySecretCredentialCeremonyCandidateStore
     new.delete(ref)
   end
 
+  public
+
   def store!(surface:, actor_ref:, session_ref:, transaction_id:, operation:, password_digest:, name:, enabled:,
              expires_at:)
     raise IdentitySecretCredentialCeremonyContract::Error,
@@ -114,4 +116,5 @@ class IdentitySecretCredentialCeremonyCandidateStore
     data = [surface, actor_ref, session_ref, transaction_id, operation, password_digest].map(&:to_s).join(":")
     OpenSSL::HMAC.hexdigest("SHA256", Rails.application.secret_key_base, data)
   end
+  public_class_method :store!, :fetch!, :consume!, :delete
 end

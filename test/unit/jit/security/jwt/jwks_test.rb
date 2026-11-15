@@ -11,7 +11,7 @@ module Jit
         self.fixture_table_names = []
 
         setup do
-          @key = OpenSSL::PKey::EC.generate("secp384r1")
+          @key = OpenSSL::PKey::RSA.generate(3_072)
           @public_jwk = JitSecurityJwtJwk.export_public(@key, kid: "kid-1")
         end
 
@@ -25,6 +25,16 @@ module Jit
           parsed = JitSecurityJwtJwks.parse_public_collection(JSON.generate([@public_jwk]))
 
           assert_equal @public_jwk, parsed.fetch("kid-1")
+        end
+
+        test "rejects ES384 EC keys for client assertions" do
+          ec_key = OpenSSL::PKey::EC.generate("secp384r1")
+          external_jwk = JWT::JWK.new(ec_key, kid: "governance-es384").export.stringify_keys
+            .except(*JitSecurityJwtJwk::PRIVATE_FIELDS).merge("alg" => "ES384", "use" => "sig")
+
+          assert_raises(JitSecurityJwtJwks::Error) do
+            JitSecurityJwtJwks.parse_public_collection(JSON.generate(keys: [external_jwk]))
+          end
         end
 
         test "rejects jwk set objects without keys array" do

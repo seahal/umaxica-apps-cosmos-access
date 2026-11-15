@@ -29,8 +29,8 @@ class SurfaceCredentialMappingAndKeyDecodingTest < ActiveSupport::TestCase
   end
 
   test "a well-formed key decodes back to the same public point" do
-    key = OpenSSL::PKey::EC.generate("secp384r1")
-    encoded = Base64.encode64(key.to_der)
+    key = OpenSSL::PKey::RSA.generate(3_072)
+    encoded = Base64.strict_encode64(key.private_to_der)
 
     assert_equal key.public_to_der, JitSecurityJwtKeyring.decode_key(encoded).public_to_der
   end

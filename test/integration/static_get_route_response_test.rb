@@ -3,9 +3,9 @@
 
 require "test_helper"
 
-# Published static GET routes must reach an HTTP boundary without an unhandled exception on the host
-# they are published for. Each route is requested on the first host its own host constraint lists,
-# so a 404 means the route no longer answers on its host rather than that it was sent elsewhere.
+# Published static GET routes must reach their declared HTTP boundary on the host they are
+# published for. Explicitly unavailable ceremony routes return 503; other routes must not return
+# an unhandled server error or routing miss.
 class StaticGetRouteResponseTest < ActionDispatch::IntegrationTest
   SKIP = %r{/(callback|oauth|social|action_mailbox|conductor|historical_location)\b}
 
@@ -17,9 +17,13 @@ class StaticGetRouteResponseTest < ActionDispatch::IntegrationTest
     failures = []
     routes.each do |host, paths|
       host! host
-      paths.each do |path|
+      paths.each do |path, controller|
         get(path)
-        failures << "GET #{path}: #{response.status}" if response.server_error? || response.not_found?
+        if controller.end_with?("unavailable_ceremonies")
+          failures << "GET #{path}: expected 503, received #{response.status}" unless response.status == 503
+        elsif response.server_error? || response.not_found?
+          failures << "GET #{path}: #{response.status}"
+        end
       rescue StandardError => e
         failures << "GET #{path}: #{e.class}: #{e.message}"
       end
@@ -33,10 +37,14 @@ class StaticGetRouteResponseTest < ActionDispatch::IntegrationTest
   def static_get_routes_by_host
     Rails.application.routes.routes
       .select { |route| route.verb == "GET" && route.constraints[:host].is_a?(Array) }
-      .map { |route| [route.constraints[:host].first, route.path.spec.to_s.sub(/\(\.:format\)\z/, "")] }
-      .reject { |_host, path| path.include?(":") || path.include?("*") || path.include?("(") || path.match?(SKIP) }
+      .map do |route|
+        [route.constraints[:host].first, route.path.spec.to_s.sub(/\(\.:format\)\z/, ""), route.defaults[:controller]]
+      end
+      .reject do |_host, path, _controller|
+        path.include?(":") || path.include?("*") || path.include?("(") || path.match?(SKIP)
+      end
       .uniq
       .group_by(&:first)
-      .transform_values { |pairs| pairs.map(&:last) }
+      .transform_values { |pairs| pairs.map { |_host, path, controller| [path, controller] } }
   end
 end

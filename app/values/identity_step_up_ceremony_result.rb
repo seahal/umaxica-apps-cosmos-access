@@ -39,6 +39,8 @@ class IdentityStepUpCeremonyResult
     new(payload, kid: header["kid"], now: now)
   end
 
+  public
+
   def [](key) = payload[key.to_s]
 
   def achieved_aal
@@ -81,4 +83,5 @@ class IdentityStepUpCeremonyResult
       "exp" => IdentityCeremonyNumericDate.value(attributes.fetch(:expires_at) { attributes.fetch("expires_at") }),
     }
   end
+  public_class_method :issue, :decode, :default_claims
 end

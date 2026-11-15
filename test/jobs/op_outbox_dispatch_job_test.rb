@@ -16,7 +16,7 @@ class OpOutboxDispatchJobTest < ActiveSupport::TestCase
       refresh_token_expires_at: 1.day.from_now,
     )
     OpAuthorityStopCommitter.stop_root(
-      root:, cause: "browser_logout", principal_public_id: @device.principal_public_id, authority_evidence_ref: "a",
+      root:, cause: "browser_logout", principal_public_id: @device.subject_public_id, authority_evidence_ref: "a",
     )
     @event = OpAppAuthorityStopParticipant.find_by!(sid: @grant.public_id)
   end
@@ -52,7 +52,7 @@ class OpOutboxDispatchJobTest < ActiveSupport::TestCase
     header = JitSecurityJwtKeyring.parse_header(token)
     signing_jwk = published_jwks.fetch(:keys).find { |jwk| jwk.fetch("kid") == header.fetch("kid") }
     claims, verified_header = JWT.decode(
-      token, JitSecurityJwtJwk.import_public_key(signing_jwk), true, { algorithms: ["ES384"] },
+      token, JitSecurityJwtJwk.import_public_key(signing_jwk), true, { algorithms: ["PS256"] },
     )
 
     assert_equal "logout+jwt", verified_header.fetch("typ")
@@ -62,14 +62,14 @@ class OpOutboxDispatchJobTest < ActiveSupport::TestCase
     assert_equal({ OpLogoutTokenIssuer::EVENT => {} }, claims.fetch("events"))
     assert_not claims.key?("nonce")
     id_token = OidcIdTokenIssuer.call(
-      resource_type: "client", subject: "cli_#{@device.principal_public_id}",
+      resource_type: "client", subject: "cli_#{@device.subject_public_id}",
       client: OidcClientRegistry.find!("core-app-jp"), nonce: "nonce", sid: @grant.public_id,
     )
     id_claims, id_header = decode_op_id_token_for_test(id_token, resource_type: "client")
 
     assert_equal "id-token+jwt", id_header.fetch("typ")
     assert_equal "nonce", id_claims.fetch("nonce")
-    assert_equal "cli_#{@device.principal_public_id}", id_claims.fetch("sub")
+    assert_equal "cli_#{@device.subject_public_id}", id_claims.fetch("sub")
 
     assert_equal @grant.public_id, id_claims.fetch("sid")
     assert_equal id_claims.fetch("sid"), claims.fetch("sid")

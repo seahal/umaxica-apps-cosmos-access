@@ -30,7 +30,10 @@ class TurnstileReplay < OpBaseAppRecord
     Digest::SHA256.hexdigest(token.to_s)
   end
 
+  public
+
   def expired?
     expires_at.present? && expires_at <= Time.current
   end
+  public_class_method :digest_token
 end

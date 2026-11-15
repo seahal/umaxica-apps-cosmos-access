@@ -23,6 +23,8 @@ class OidcIdTokenIssuer < ApplicationService
     @step_up_until = step_up_until
   end
 
+  public
+
   def call
     raise ArgumentError, "nonce is required" if nonce.blank?
     raise ArgumentError, "invalid id token time ordering" if issued_at > expires_at

@@ -8,22 +8,22 @@ class SignRiskEnforcer
 
     score =
       case root
-      when OperatorToken then SignRiskEngine.score(staff_id: root.staff_id)
-      when ClientToken then SignRiskEngine.score(user_id: root.user_id)
+      when OperatorToken then SignRiskEngine.score(staff_id: root.subject_public_id)
+      when ClientToken then SignRiskEngine.score(user_id: root.subject_public_id)
       end
 
     if score >= 100
-      revoke!(root)
+      stop_principal_roots!(root)
     elsif score >= 60
       require_step_up!(root)
     end
   end
 
-  def self.revoke!(root)
+  def self.stop_principal_roots!(root)
     with_principal_roots(root) do |roots, devices|
       roots.each do |target|
         OpAuthorityStopCommitter.stop_root(
-          root: target, cause: "risk", principal_public_id: root.principal_public_id,
+          root: target, cause: "risk", principal_public_id: root.subject_public_id,
           authority_evidence_ref: "sign_risk:#{root.public_id}",
         )
         raise OpAuthorityStopCommitter::Refused, "risk stop did not revoke its root" unless target.reload.revoked?
@@ -49,7 +49,7 @@ class SignRiskEnforcer
     owner, device_class = configuration_for(root)
     owner.connected_to(role: :writing) do
       owner.transaction do
-        devices = device_class.where(principal_public_id: root.principal_public_id).order(:id).lock.to_a
+        devices = device_class.where(principal_public_id: root.subject_public_id).order(:id).lock.to_a
         scope = root.class.where(device_session_id: devices.map(&:id))
         scope = scope.currently_usable_at(root.class.database_now) if usable_only
         roots = scope.order(:id).lock.to_a
@@ -74,4 +74,5 @@ class SignRiskEnforcer
   end
 
   private_class_method :with_principal_roots, :configuration_for
+  public_class_method :call, :stop_principal_roots!, :require_step_up!, :feature_enabled?
 end

@@ -14,7 +14,10 @@ class ApplicationService
   def initialize(*)
   end
 
+  public
+
   def call
     raise NotImplementedError, "#{self.class} #call is not implemented"
   end
+  public_class_method :call
 end

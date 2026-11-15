@@ -86,6 +86,26 @@ class EmailTest < ActiveSupport::TestCase
     assert transaction.verify_email_otp!(**binding)
     assert_not transaction.verify_email_otp!(**binding)
     assert transaction.email_otp_verified_evidence?(**binding)
+    assert transaction.email_registration_otp_evidence?(
+      code: code,
+      actor_ref: "original-actor",
+      session_ref: "original-browser",
+      candidate_ref: "original-candidate",
+    )
+    assert_not transaction.email_registration_otp_evidence?(
+      code: code,
+      actor_ref: "original-actor",
+      session_ref: "another-browser",
+      candidate_ref: "original-candidate",
+    )
+    transaction.consume_registration_result!
+
+    assert transaction.email_registration_otp_evidence?(
+      code: code,
+      actor_ref: "original-actor",
+      session_ref: "original-browser",
+      candidate_ref: "original-candidate",
+    )
     transaction.reload
 
     assert_nil transaction.otp_verifier

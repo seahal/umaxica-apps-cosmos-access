@@ -9,6 +9,8 @@ class IdentityTotpCeremonyTransactionPurger
     @retention_period = retention_period
   end
 
+  public
+
   def call
     MODELS.transform_values do |model|
       model.connection_owner.connected_to(role: :writing) do

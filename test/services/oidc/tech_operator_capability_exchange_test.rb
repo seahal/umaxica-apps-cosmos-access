@@ -29,17 +29,18 @@ class OidcTechOperatorCapabilityExchangeTest < ActiveSupport::TestCase
       authenticated: true, client:, step_up_claims_state: :none, step_up_expectation: nil,
     )
 
-    result = OidcClientRegistry.stub(:verify_client_assertion, assertion) do
-      OidcTokenExchangeCoordinator.call(
-        grant_type: "refresh_token",
-        refresh_token:,
-        client_id: client.client_id,
-        client_assertion_type: OidcClientAssertionJwt::ASSERTION_TYPE,
-        client_assertion: "verified-tech-assertion",
-        token_endpoint_uri: OidcIssuer.token_endpoint("operator"),
-        expected_resource_type: "operator",
-      )
-    end
+    result =
+      OidcClientRegistry.stub(:verify_client_assertion, assertion) do
+        OidcTokenExchangeCoordinator.call(
+          grant_type: "refresh_token",
+          refresh_token:,
+          client_id: client.client_id,
+          client_assertion_type: OidcClientAssertionJwt::ASSERTION_TYPE,
+          client_assertion: "verified-tech-assertion",
+          token_endpoint_uri: OidcIssuer.token_endpoint("operator"),
+          expected_resource_type: "operator",
+        )
+      end
 
     assert_not result.success?
     assert_equal "temporarily_unavailable", result.error

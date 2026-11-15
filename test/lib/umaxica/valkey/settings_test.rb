@@ -21,6 +21,8 @@ class UmaxicaValkeySettingsTest < ActiveSupport::TestCase
     assert_equal 5, settings.auth_state.db
     assert_equal "redis://valkey-kvs:6379/5", settings.auth_state.url
     assert_not_predicate settings.cache, :memory?
+    assert_equal settings.cache, settings[:cache]
+    assert_equal 13, settings.coverband.db
   end
 
   test "test uses MemoryStore for cache and even KVS databases for rate-limit and auth-state" do

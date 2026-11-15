@@ -4,7 +4,7 @@
 require_relative "../architecture_baseline"
 
 namespace :architecture do
-  desc "Regenerate the Umaxica architecture cop baseline (.rubocop_todo.yml and .rubocop/architecture_baseline.yml)"
+  desc "Regenerate the measured-debt ratchet for the Umaxica architecture cops"
   # No :environment dependency: the baseline is measured by a RuboCop subprocess, and requiring a
   # booted application (and therefore a reachable database) would make the task fail for reasons
   # unrelated to static analysis.

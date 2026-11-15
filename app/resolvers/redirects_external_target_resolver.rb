@@ -54,6 +54,8 @@ class RedirectsExternalTargetResolver
     @source = source
   end
 
+  public
+
   def call
     registry_key = normalize_key
     return failure(:unknown_key) unless REGISTRY.key?(registry_key)
@@ -136,4 +138,5 @@ class RedirectsExternalTargetResolver
   def failure(reason)
     RedirectsTargetResult.failure(kind: :external, source: source, reason: reason, unsafe_value: key)
   end
+  public_class_method :call, :url, :local_uri_allowed?, :normalized_origin
 end

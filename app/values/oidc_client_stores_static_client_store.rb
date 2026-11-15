@@ -68,6 +68,7 @@ module OidcClientStoresStaticClientStore
       name: "Base App Self RP",
       jwt_namespace: "BASE_RP_APP_WW",
       step_up_callback_path: AuthBoundaryAuthorityMap.step_up_callback_path_for("base-app-ww"),
+      authorization_response_type: "id_token",
     },
     "base-org" => {
       env_key: "PUBLIC_BASE_STAFF_URL",
@@ -75,6 +76,7 @@ module OidcClientStoresStaticClientStore
       name: "Base Org Self RP",
       jwt_namespace: "BASE_RP_ORG_WW",
       step_up_callback_path: AuthBoundaryAuthorityMap.step_up_callback_path_for("base-org-ww"),
+      authorization_response_type: "id_token",
     },
   }.freeze
 
@@ -97,7 +99,7 @@ module OidcClientStoresStaticClientStore
                      callback_path: AuthBoundaryAuthorityMap::CANONICAL_RP_CALLBACK_PATH,
                      step_up_callback_path: nil,
                      sign_out_path: AuthBoundaryAuthorityMap::CANONICAL_RP_SIGN_OUT_PATH,
-                     required_operator_capability: nil)
+                     required_operator_capability: nil, authorization_response_type: "code")
     callback_paths = [callback_path, step_up_callback_path].compact
     callback_paths.uniq!
     {
@@ -116,6 +118,7 @@ module OidcClientStoresStaticClientStore
       token_endpoint_auth_method: "private_key_jwt",
       jwt_namespace: jwt_namespace,
       required_operator_capability: required_operator_capability,
+      authorization_response_type: authorization_response_type,
     }
   end
 

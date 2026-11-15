@@ -39,6 +39,8 @@ module Security
       [Auth::App::UnavailableCeremoniesController, Auth::Org::UnavailableCeremoniesController].each do |controller|
         assert_equal :excluded, controller.sign_entry_classification_value
         assert_match(/unavailable/, controller.sign_entry_classification_reason)
+        assert_predicate controller, :sign_entry_classification_value?
+        assert_predicate controller, :sign_entry_classification_reason?
         assert_not_predicate controller, :sign_entry_standby_only?
       end
       assert_empty SignEntryClassification::STANDBY_ONLY_CONTROLLERS
@@ -49,12 +51,18 @@ module Security
         auth_controller_classes.filter_map do |controller_class|
           value = controller_class.sign_entry_classification_value
           next "#{controller_class.name}: undeclared" if value.nil?
+          unless controller_class.sign_entry_classification_value? == value.present?
+            next "#{controller_class.name}: classification predicate does not match its declaration"
+          end
 
           unless SignEntryClassification::CLASSIFICATIONS.include?(value)
             next "#{controller_class.name}: unsupported #{value.inspect}"
           end
 
           reason = controller_class.sign_entry_classification_reason
+          unless controller_class.sign_entry_classification_reason? == reason.present?
+            next "#{controller_class.name}: reason predicate does not match its declaration"
+          end
           if value == :excluded && reason.blank?
             next "#{controller_class.name}: excluded without a reason"
           end
@@ -169,6 +177,42 @@ module Security
 
       assert_equal :excluded, controller_class.sign_entry_classification_overrides[:show]
       assert_equal "health check", controller_class.sign_entry_classification_reason
+    end
+
+    test "a subclass inherits its class classification without inheriting parent action overrides" do
+      parent =
+        Class.new do
+          include SignEntryClassification
+
+          sign_entry_classification! :sign_in, reason: "parent entry", actions: { show: :excluded }
+        end
+      child = Class.new(parent)
+
+      assert_equal :sign_in, child.sign_entry_classification_value
+      assert_equal "parent entry", child.sign_entry_classification_reason
+      assert_empty child.sign_entry_classification_overrides
+      assert_not_predicate child, :sign_entry_standby_only?
+    end
+
+    test "a class without a declaration has no guessed sign entry classification" do
+      controller_class = Class.new { include SignEntryClassification }
+
+      assert_nil controller_class.sign_entry_classification_value
+      assert_nil controller_class.sign_entry_classification_reason
+      assert_empty controller_class.sign_entry_classification_overrides
+      assert_not_predicate controller_class, :sign_entry_standby_only?
+    end
+
+    test "a declaration does not expose mutable class attribute writers" do
+      controller_class =
+        Class.new do
+          include SignEntryClassification
+
+          sign_entry_classification! :sign_in, reason: "entry"
+        end
+
+      assert_raises(NoMethodError) { controller_class.sign_entry_classification_value = :excluded }
+      assert_not_respond_to controller_class, :sign_entry_classification!
     end
 
     private

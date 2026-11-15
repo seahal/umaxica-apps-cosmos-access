@@ -31,8 +31,7 @@ class OidcAuthorizationTransactionCoordinator < ApplicationService
           scope: params.fetch(:scope),
           state: params.fetch(:state),
           nonce: params.fetch(:nonce),
-          code_challenge: params.fetch(:code_challenge),
-          code_challenge_method: params.fetch(:code_challenge_method),
+          pkce: pkce_for(params),
           prompt: OidcAuthorizeRequestResolver.normalize_prompt(params[:prompt]),
           max_age: OidcAuthorizeRequestResolver.normalize_max_age(params[:max_age]),
           login_challenge: login_challenge,
@@ -74,6 +73,18 @@ class OidcAuthorizationTransactionCoordinator < ApplicationService
 
     private
 
+    # PKCE is read only for Code; the resolver already refused it for the Base id_token profile.
+    def pkce_for(params)
+      case params.fetch(:response_type)
+      when "code"
+        { code_challenge: params.fetch(:code_challenge), code_challenge_method: params.fetch(:code_challenge_method) }
+      when "id_token"
+        nil
+      else
+        raise ArgumentError, "unsupported authorization transaction response_type"
+      end
+    end
+
     def matching_admission_parent(model:, surface:, intent:, params:, base_browser_nonce:, base_token:, restart_of:)
       facts = {
         surface: surface,
@@ -84,14 +95,15 @@ class OidcAuthorizationTransactionCoordinator < ApplicationService
         scope: params.fetch(:scope),
         state: params.fetch(:state),
         nonce: params.fetch(:nonce),
-        code_challenge: params.fetch(:code_challenge),
-        code_challenge_method: params.fetch(:code_challenge_method),
         oidc_prompt: OidcAuthorizeRequestResolver.normalize_prompt(params[:prompt]),
         oidc_max_age: OidcAuthorizeRequestResolver.normalize_max_age(params[:max_age]),
         status_id: OidcAuthorizationTransactionable::STATUS_PENDING,
       }
       time = model.database_now
       parents = model.where(facts).where("expires_at > ? AND login_challenge_expires_at > ?", time, time)
+      pkce = pkce_for(params)
+      parents = parents.joins(:pkce_challenge).where(pkce_challenge: pkce) if pkce
+      parents = parents.where.missing(:pkce_challenge) unless pkce
       bindings = BaseAuthAdmissionCoordinator.admission_binding_model(surface).where(
         authorization_transaction_id: parents.select(:id), base_token_id: base_token&.id,
         status_id: AuthAdmissionBinding::ACTIVE_STATUS_IDS,

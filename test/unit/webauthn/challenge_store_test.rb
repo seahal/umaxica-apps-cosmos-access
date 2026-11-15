@@ -23,6 +23,20 @@ module Webauthn
       assert_equal "raw-challenge", @store.consume!(id, purpose: :authentication, **APP_BINDING)
     end
 
+    test "discard removes a challenge idempotently without changing another challenge" do
+      discarded = @store.issue!(challenge: "discarded", purpose: :authentication, **APP_BINDING)
+      retained = @store.issue!(challenge: "retained", purpose: :authentication, **APP_BINDING)
+
+      @store.discard(discarded)
+      @store.discard(discarded)
+      @store.discard("")
+
+      entries = @session.fetch(Webauthn::ChallengeStore::SESSION_KEY)
+
+      assert_not entries.key?(discarded)
+      assert_equal "retained", entries.fetch(retained).fetch("challenge")
+    end
+
     test "a challenge is one-time use" do
       id = @store.issue!(challenge: "raw-challenge", purpose: :authentication, **APP_BINDING)
       @store.consume!(id, purpose: :authentication, **APP_BINDING)

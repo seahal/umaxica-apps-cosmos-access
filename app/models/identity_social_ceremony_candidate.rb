@@ -4,6 +4,11 @@
 class IdentitySocialCeremonyCandidate < OpBaseAppRecord
   include IdentityCeremonyCandidateRecord
 
+  scope :active_at, ->(time) { where(arel_table[:expires_at].gt(time), consumed_at: nil) }
+
+  validates :ref, :digest, :surface, :actor_ref, :session_ref, :expires_at, presence: true
+  validates :ref, uniqueness: true
+
   NANOID_REFERENCE_PATTERN = /\A[A-Za-z0-9_-]{21}\z/.freeze
   LEGACY_UUID_REFERENCE_PATTERN =
     /\A[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i.freeze

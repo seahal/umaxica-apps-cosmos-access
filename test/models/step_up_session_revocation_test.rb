@@ -24,7 +24,7 @@ class StepUpSessionRevocationTest < ActiveSupport::TestCase
             end
           token.rotate_refresh_token!
           transaction = transaction_model.create_transaction!(
-            actor_ref: device.principal_public_id, session_ref: token.public_id, required_scope: "settings_passkey",
+            actor_ref: device.subject_public_id, session_ref: token.public_id, required_scope: "settings_passkey",
             allowed_methods: ["passkey"], return_to: "/identity/passkeys",
           )
           record = session_model.create!(

@@ -4,6 +4,8 @@
 class AnalyticsConsentGuard
   # Prepended module that guards ActiveSupport::EventReporter#notify.
   module EventReporterPatch
+    public
+
     def notify(name, ...)
       unless AnalyticsConsentGuard.permit?(name)
         Rails.logger.debug { "[AnalyticsConsentGuard] Dropped event '#{name}' (missing performant consent)" }
@@ -30,4 +32,5 @@ class AnalyticsConsentGuard
 
     preference&.cookie&.performant? || false
   end
+  public_class_method :permit?
 end

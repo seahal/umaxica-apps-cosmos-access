@@ -65,6 +65,8 @@ class CspViolationReportIntake
     @user_agent = user_agent.to_s.presence
   end
 
+  public
+
   def call
     return Result.new(status: :too_large, reports_count: 0) if raw_body.bytesize > MAX_BODY_BYTES
 
@@ -216,4 +218,5 @@ class CspViolationReportIntake
   def underscore(value)
     value.tr("-", "_").to_sym
   end
+  public_class_method :call
 end

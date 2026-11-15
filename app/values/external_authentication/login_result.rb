@@ -21,6 +21,8 @@ module ExternalAuthentication
       super
     end
 
+    public
+
     def authenticated? = status == :authenticated
 
     def signup_required? = status == :signup_required

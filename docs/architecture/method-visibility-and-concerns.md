@@ -82,17 +82,11 @@ detail; move it to the public behavior. See `.agents/harnesses/rules/generic/no-
 
 ## Baseline and ratchet
 
-Existing violations are technical debt, not permission.
+Existing violations are technical debt, not permission. `.rubocop_todo.yml` is removed;
+`bin/rubocop` reports every finding without per-file exclusions.
+`.rubocop/architecture_baseline.yml` records per-file counts for
+`test/tooling/architecture_baseline_test.rb`, which rejects any increase and stale file entry. Use
+`bin/rails architecture:baseline` only to record a reduction. The task updates the count file only
+and never recreates exclusion lists.
 
-- `.rubocop_todo.yml` — per-cop `Exclude` lists, so `bin/rubocop` (CI step "Style: Ruby") stays
-  green while rejecting any violation in a file that is not already in debt.
-- `.rubocop/architecture_baseline.yml` — per-file offense counts.
-  `test/tooling/architecture_baseline_test.rb` (CI step "Tests: Rails") re-measures the repository
-  with the excludes ignored and fails if any file exceeds its recorded count, or if the baseline
-  still lists a file that is now clean.
-
-Both artifacts are generated together by `bin/rails architecture:baseline`. Regenerate it only to
-record a reduction. Regenerating it to absorb a violation you just introduced defeats the mechanism
-and will show up as a growing count in review.
-
-When you touch a file that carries debt, prefer clearing its entries over preserving them.
+When you touch a file that carries debt, clear its findings instead of preserving them.

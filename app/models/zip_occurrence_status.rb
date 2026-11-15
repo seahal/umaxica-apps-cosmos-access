@@ -11,6 +11,8 @@
 
 class ZipOccurrenceStatus < OccurrenceRecord
   include ReferenceRecord
+
+  self.record_timestamps = false
   include OccurrenceStatus
 
   # Fixed IDs - do not modify these values
@@ -25,4 +27,5 @@ class ZipOccurrenceStatus < OccurrenceRecord
   def self.ensure_defaults!
     insert_missing_fixed_ids!(DEFAULTS)
   end
+  public_class_method :ensure_defaults!
 end

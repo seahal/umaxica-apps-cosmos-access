@@ -86,17 +86,17 @@ class BranchCoverageBatch27ValuesLibEasyArmsTest < ActiveSupport::TestCase
       surface: "app",
       participant: "guardrail",
       state: "STARTED",
-      actor_type: "Client",
+      actor_type: "ClientToken",
       actor_id: "1",
       expires_at: 1.hour.from_now.iso8601,
     )
 
     assert_not seq.valid_for?(
-      surface: "com", actor: Client.new(security_mode_id: SecurityModeConfigurable::NORMAL),
+      surface: "com", actor: Object.new,
       participant: "guardrail",
     )
     assert_not seq.valid_for?(
-      surface: "app", actor: Client.new(security_mode_id: SecurityModeConfigurable::NORMAL),
+      surface: "app", actor: Object.new,
       participant: "checkpoint",
     )
     assert_not seq.actor_matches?(nil)
@@ -142,7 +142,7 @@ class BranchCoverageBatch27ValuesLibEasyArmsTest < ActiveSupport::TestCase
 
   test "BlindIndexUniquenessValidator and AssociatedRecordLimitValidator edges" do
     validator = BlindIndexUniquenessValidator.new(attributes: [:email])
-    record = ClientEmail.new
+    record = Object.new
 
     assert_nil validator.validate_each(record, :email, nil)
   end

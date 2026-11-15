@@ -8,4 +8,5 @@ class DpopProofStateStore
     else ClientDpopProofState
     end
   end
+  public_class_method :for
 end

@@ -20,6 +20,8 @@ module Auth
 
           before_action :refuse_unless_machine_json_acceptable
 
+          public
+
           def show
             render_health_status(
               liveness: ::Health::LivenessCheck.call(profile: health_profile),

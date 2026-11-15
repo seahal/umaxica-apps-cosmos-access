@@ -119,7 +119,7 @@ class VisaGovernanceRevocationCommandsControllerTest < ActionDispatch::Integrati
           assert_not receipt_class.lease_connection.transaction_open?
           header = JitSecurityJwtKeyring.parse_header(response.body)
           public_key = JitSecurityJwtKeyring.public_key_for(header.fetch("kid"), issuer_id:)
-          acknowledgement, = JWT.decode(response.body, public_key, true, algorithms: ["ES384"])
+          acknowledgement, = JWT.decode(response.body, public_key, true, algorithms: ["PS256"])
 
           assert_equal "governance-revocation-ack+jwt", header.fetch("typ")
           assert_equal command_id, acknowledgement.fetch("command_id")

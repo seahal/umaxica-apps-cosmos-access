@@ -13,8 +13,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     host! host
     https!
     root = ClientToken.create!(
-      authentication_epoch: 0, user_id: 9_700_001, device_session: ClientDeviceSession.create!(
-        user_id: 9_700_001, principal_public_id: "existing-client-one",
+      authentication_epoch: 0, subject_public_id: "existing-client-one", device_session: ClientDeviceSession.create!(
+        subject_public_id: "existing-client-one",
       ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
@@ -27,8 +27,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     other_realm_root = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
-        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      authentication_epoch: 0, subject_public_id: "existing-operator-one", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "existing-operator-one",
       ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
@@ -77,8 +77,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     host! host
     https!
     root = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
-        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      authentication_epoch: 0, subject_public_id: "existing-operator-one", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "existing-operator-one",
       ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
@@ -91,8 +91,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     other_realm_root = ClientToken.create!(
-      authentication_epoch: 0, user_id: 9_700_002, device_session: ClientDeviceSession.create!(
-        user_id: 9_700_002, principal_public_id: "existing-client-two",
+      authentication_epoch: 0, subject_public_id: "existing-client-two", device_session: ClientDeviceSession.create!(
+        subject_public_id: "existing-client-two",
       ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
@@ -143,8 +143,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     endpoint = OidcIssuer.revocation_endpoint("client")
     token_endpoint = OidcIssuer.token_endpoint("client")
     root = ClientToken.create!(
-      authentication_epoch: 0, user_id: 9_700_001, device_session: ClientDeviceSession.create!(
-        user_id: 9_700_001, principal_public_id: "existing-client-one",
+      authentication_epoch: 0, subject_public_id: "existing-client-one", device_session: ClientDeviceSession.create!(
+        subject_public_id: "existing-client-one",
       ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
@@ -245,8 +245,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     https!
     endpoint = OidcIssuer.revocation_endpoint("operator")
     root = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
-        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      authentication_epoch: 0, subject_public_id: "existing-operator-one", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "existing-operator-one",
       ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
@@ -397,8 +397,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     https!
     endpoint = OidcIssuer.revocation_endpoint("operator")
     root = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
-        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      authentication_epoch: 0, subject_public_id: "existing-operator-one", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "existing-operator-one",
       ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
@@ -594,8 +594,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     host! host
     https!
     root = ClientToken.create!(
-      authentication_epoch: 0, user_id: 9_700_001, device_session: ClientDeviceSession.create!(
-        user_id: 9_700_001, principal_public_id: "existing-client-one",
+      authentication_epoch: 0, subject_public_id: "existing-client-one", device_session: ClientDeviceSession.create!(
+        subject_public_id: "existing-client-one",
       ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
@@ -608,8 +608,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     other_realm_root = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
-        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      authentication_epoch: 0, subject_public_id: "existing-operator-one", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "existing-operator-one",
       ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
@@ -626,7 +626,7 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
            base_session_public_id: root.public_id, oidc_sid: target.public_id, oidc_jti: SecureRandom.uuid,
            expires_at: 1.minute.from_now, scopes: ["openid"], issuer: OidcIssuer.for_client(client),
            audiences: [client.aud], jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(client),
-           subject: "cli_#{root.device_session.principal_public_id}", client_id: APP_CLIENT_ID,
+           subject: "cli_#{root.device_session.subject_public_id}", client_id: APP_CLIENT_ID,
     )
     invalid_targets = [
       target.public_id, "#{target.public_id}:wrong-verifier", sibling_refresh, other_realm_refresh,
@@ -659,8 +659,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     host! host
     https!
     root = ClientToken.create!(
-      authentication_epoch: 0, user_id: 9_700_001, device_session: ClientDeviceSession.create!(
-        user_id: 9_700_001, principal_public_id: "existing-client-one",
+      authentication_epoch: 0, subject_public_id: "existing-client-one", device_session: ClientDeviceSession.create!(
+        subject_public_id: "existing-client-one",
       ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
@@ -711,8 +711,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     host! host
     https!
     root = ClientToken.create!(
-      authentication_epoch: 0, user_id: 9_700_001, device_session: ClientDeviceSession.create!(
-        user_id: 9_700_001, principal_public_id: "existing-client-one",
+      authentication_epoch: 0, subject_public_id: "existing-client-one", device_session: ClientDeviceSession.create!(
+        subject_public_id: "existing-client-one",
       ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
@@ -765,8 +765,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     host! host
     https!
     root = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
-        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      authentication_epoch: 0, subject_public_id: "existing-operator-one", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "existing-operator-one",
       ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
@@ -779,8 +779,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
       oidc_jti: SecureRandom.uuid, refresh_token_expires_at: 1.day.from_now,
     )
     app_root = ClientToken.create!(
-      authentication_epoch: 0, user_id: 9_700_002, device_session: ClientDeviceSession.create!(
-        user_id: 9_700_002, principal_public_id: "existing-client-two",
+      authentication_epoch: 0, subject_public_id: "existing-client-two", device_session: ClientDeviceSession.create!(
+        subject_public_id: "existing-client-two",
       ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
@@ -802,7 +802,7 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
       issuer: OidcIssuer.for_client(client),
       audiences: [client.aud],
       jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(client),
-      subject: "opr_#{root.device_session.principal_public_id}",
+      subject: "opr_#{root.device_session.subject_public_id}",
       client_id: ORG_CLIENT_ID,
     )
     target_refresh = target.issue_refresh_token!
@@ -945,8 +945,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     host! host
     https!
     root = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
-        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      authentication_epoch: 0, subject_public_id: "existing-operator-one", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "existing-operator-one",
       ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
@@ -1018,8 +1018,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "injected assertion store failure"
 
     root = ClientToken.create!(
-      authentication_epoch: 0, user_id: 9_700_001, device_session: ClientDeviceSession.create!(
-        user_id: 9_700_001, principal_public_id: "existing-client-one",
+      authentication_epoch: 0, subject_public_id: "existing-client-one", device_session: ClientDeviceSession.create!(
+        subject_public_id: "existing-client-one",
       ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )
@@ -1084,8 +1084,8 @@ class VisaOauthRevocationsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "injected assertion store failure"
 
     root = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: 9_800_001, device_session: OperatorDeviceSession.create!(
-        staff_id: 9_800_001, principal_public_id: "existing-operator-one",
+      authentication_epoch: 0, subject_public_id: "existing-operator-one", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "existing-operator-one",
       ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: 2.days.from_now,
     )

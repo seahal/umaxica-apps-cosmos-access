@@ -15,6 +15,8 @@ class IdentityEmailCeremonyReplayStore
     @model_class = model_class
   end
 
+  public
+
   def create_transaction!(**attributes)
     model_class.create_transaction!(**attributes)
   end
@@ -28,4 +30,6 @@ class IdentityEmailCeremonyReplayStore
   private
 
   attr_reader :model_class
+
+  public_class_method :for
 end

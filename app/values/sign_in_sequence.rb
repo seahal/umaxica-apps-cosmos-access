@@ -34,6 +34,8 @@ class SignInSequence
 
   delegate :present?, to: :id
 
+  public
+
   def id = payload["id"]
 
   def surface = payload["surface"]
@@ -99,4 +101,5 @@ class SignInSequence
   rescue ArgumentError, TypeError
     nil
   end
+  public_class_method :missing
 end

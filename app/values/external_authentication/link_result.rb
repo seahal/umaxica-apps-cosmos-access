@@ -10,6 +10,8 @@ module ExternalAuthentication
       super
     end
 
+    public
+
     def linked? = status == :linked
   end
 end

@@ -12,6 +12,8 @@ end
 ConfigValuesHostFamilyValues = ConfigValues::HostFamilyValues
 
 class << ConfigValues::HostFamilyValues
+  public
+
   def build(env:, production:)
     ConfigValues::HostFamilyValues.new(
       auth_service: origin(env, "PUBLIC_AUTH_SERVICE_URL", production:),

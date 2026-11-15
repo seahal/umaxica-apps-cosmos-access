@@ -54,4 +54,5 @@ class AuthenticationSecurityEventEmitter
       ),
     )
   end
+  public_class_method :emit
 end

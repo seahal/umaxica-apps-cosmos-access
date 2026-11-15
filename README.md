@@ -15,6 +15,12 @@ This Rails process draws only Auth, Visa, and those six development tools. It ha
 (RP) surface; unregistered and retired hosts receive the non-disclosing JSON 404. OIDC client
 registrations for RPs in other repositories remain part of Access's OP configuration.
 
+Visa App and Org accept validated `GET` and `POST /oauth/authorize` starts, persist a pending
+authorization/admission handoff, and return a `303` through Jump to the matching Auth sign-in
+sentry. Auth sentries and credential ceremonies remain unavailable; authorization result,
+cancellation and switching are not enabled, so this start does not authenticate a subject or issue
+an authorization code.
+
 ## Stack
 
 ### Backend
@@ -67,7 +73,7 @@ bin/rails assets:clobber        # Remove compiled assets
 - Docker Compose, or rootless Podman with `podman-compose`
 - Ruby `4.0.x`
 - Bundler
-- Node.js `24.20.0` (pinned in `.node-version`; `package.json` accepts `>=24.19.0 <25`)
+- Node.js `26.13.1` (pinned in `.node-version`; `package.json` accepts `>=26.13.1 <27`)
 - Bun `1.4.0`
 
 ### Credentials and secrets

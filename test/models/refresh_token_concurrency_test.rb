@@ -9,15 +9,14 @@ class RefreshTokenConcurrencyTest < ActiveSupport::TestCase
   test "concurrent refresh attempts cannot both rotate the same client token" do
     user_id = 1_000_000_000_000 + SecureRandom.random_number(1_000_000_000)
     device_session = ClientDeviceSession.create!(
-      user_id: user_id,
-      principal_public_id: PublicId.generate,
+      subject_public_id: PublicId.generate,
       public_id: PublicId.generate,
       status_id: DeviceSessionable::STATUS_ACTIVE,
     )
     token = ClientToken.create!(
       authentication_epoch: 0,
       device_session: device_session,
-      user_id: user_id,
+      subject_public_id: device_session.subject_public_id,
       discard_at: 1.day.from_now,
       purge_eligible_at: 2.days.from_now,
     )

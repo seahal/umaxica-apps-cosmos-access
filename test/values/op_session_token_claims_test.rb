@@ -67,4 +67,47 @@ class OpSessionTokenClaimsTest < ActiveSupport::TestCase
       assert_equal "existing-grant", claims.fetch("sid")
     end
   end
+
+  test "ID tokens issue and verify with PS256 and refuse an ES384 signature" do
+    resource_type = "client"
+    client = OidcClientRegistry.find!("core-app-jp")
+    issuer = OidcIssuer.for_resource_type(resource_type)
+    token = OidcIdTokenIssuer.call(
+      resource_type:,
+      client:,
+      nonce: "existing-nonce",
+      issuer:,
+      subject: "cli_existing-principal",
+      sid: "existing-grant",
+    )
+    payload, header = JWT.decode(token, nil, false)
+
+    assert_equal "PS256", header.fetch("alg")
+    assert_equal "id-token+jwt", header.fetch("typ")
+    assert_equal "cli_existing-principal", payload.fetch("sub")
+    assert SecurityJwtOidcIdTokenCodec.decode(
+      id_token: token,
+      client_id: client.client_id,
+      resource_type:,
+      jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+      issuer:,
+    )
+
+    legacy_token = JWT.encode(
+      payload,
+      OpenSSL::PKey::EC.generate("secp384r1"),
+      "ES384",
+      header.merge("alg" => "ES384"),
+    )
+
+    assert_raises(JWT::DecodeError) do
+      SecurityJwtOidcIdTokenCodec.decode(
+        id_token: legacy_token,
+        client_id: client.client_id,
+        resource_type:,
+        jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+        issuer:,
+      )
+    end
+  end
 end

@@ -13,6 +13,8 @@ module ExternalAuthentication
   # callback (Auth::Org::Omniauth::OmniauthCallbacksController#omniauth),
   # so the :social_ceremony_org_entra Flipper kill switch is operational today.
   module ProviderAvailabilityPort
+    public
+
     def start_decision(provider:, operation:, context:)
       raise NotImplementedError
     end

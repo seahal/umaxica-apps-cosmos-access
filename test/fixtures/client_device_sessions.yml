@@ -2,7 +2,7 @@
 #
 #  id                       :bigint           not null, primary key
 #  public_id                :string(21)       not null
-#  user_id                  :bigint           not null
+#  subject_public_id        :string           not null
 #  status_id                :bigint           default(1), not null
 #  current_refresh_token_id :bigint
 #  refresh_token_family_id  :string
@@ -14,8 +14,7 @@
 one:
   id: <%= ActiveRecord::FixtureSet.identify(:one) %>
   public_id: "client-device-onexxxx"
-  user_id: <%= ActiveRecord::FixtureSet.identify(:one) %>
-  principal_public_id: "one_idxxxxxxxxxxxxxxx"
+  subject_public_id: "one_idxxxxxxxxxxxxxxx"
   status_id: 1
   current_refresh_token_id: <%= ActiveRecord::FixtureSet.identify(:one) %>
   created_at: <%= Time.current %>
@@ -24,8 +23,7 @@ one:
 two:
   id: <%= ActiveRecord::FixtureSet.identify(:two) %>
   public_id: "client-device-twoxxxx"
-  user_id: <%= ActiveRecord::FixtureSet.identify(:two) %>
-  principal_public_id: "two_idxxxxxxxxxxxxxxx"
+  subject_public_id: "two_idxxxxxxxxxxxxxxx"
   status_id: 1
   current_refresh_token_id: <%= ActiveRecord::FixtureSet.identify(:two) %>
   created_at: <%= Time.current %>

@@ -13,6 +13,8 @@ class DbscRegistrationService < ApplicationService
     @expected_audience = expected_audience
   end
 
+  public
+
   def call
     return failure("record_missing") if record.blank?
 

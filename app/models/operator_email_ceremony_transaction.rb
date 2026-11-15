@@ -34,6 +34,33 @@
 #
 class OperatorEmailCeremonyTransaction < OpBaseOrgRecord
   include EmailCeremonyTransactionable
+
+  validates :evp_outcome, inclusion: { in: EmailVerificationChallengeable::OUTCOMES }, allow_nil: true
+  validates :evp_failure_reason, inclusion: { in: EmailVerificationChallengeable::FAILURE_REASONS }, allow_nil: true
+  validates :evp_attempt_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validate :evp_challenge_metadata_is_consistent
+  scope :expired_at, ->(time) { where(arel_table[:expires_at].lteq(time)) }
+  scope :consumed, -> { where.not(consumed_at: nil).or(where(status: EmailCeremonyTransactionable::STATUS_CONSUMED)) }
+  scope :active_at, ->(time) {
+    where(arel_table[:expires_at].gt(time)).where(consumed_at: nil, status: EmailCeremonyTransactionable::STATUS_PENDING)
+  }
+  scope :pending, -> { where(status: EmailCeremonyTransactionable::STATUS_PENDING, consumed_at: nil) }
+  scope :purgeable_at, lambda { |time, retention_period: EmailCeremonyTransactionable::RETENTION_PERIOD|
+    cutoff = time - retention_period
+    where(arel_table[:expires_at].lteq(cutoff))
+      .or(where(arel_table[:consumed_at].lteq(cutoff)))
+  }
+
+  validates :transaction_id, :surface, :actor_ref, :session_ref, :operation, :status, :grant_jti, :expires_at,
+            presence: true
+  validates :transaction_id, uniqueness: true
+  validates :grant_jti, uniqueness: true
+  validates :result_jti, uniqueness: true, allow_nil: true
+  validates :surface, inclusion: { in: IdentityEmailCeremonyContract::SURFACES }
+  validates :operation, inclusion: { in: EmailCeremonyTransactionable::OPERATIONS }
+  validates :status, inclusion: { in: EmailCeremonyTransactionable::STATUSES }
+  validate :surface_matches_transaction_class
+  validate :consumed_transaction_has_result
   include EmailCeremonyOtp
 
   validates :evp_nonce_digest, :evp_token_digest, uniqueness: true, allow_nil: true

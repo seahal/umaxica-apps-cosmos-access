@@ -79,6 +79,8 @@ class LogoutTransaction < OpBaseAppRecord
     Result.new(:invalid)
   end
 
+  public
+
   def expired?(now: Time.current)
     expires_at <= now
   end
@@ -153,4 +155,5 @@ class LogoutTransaction < OpBaseAppRecord
   def consumption_result(status)
     Result.new(status)
   end
+  public_class_method :issue!, :consume_one_time_url_token!
 end

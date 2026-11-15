@@ -9,6 +9,8 @@ class IdentityPasskeyCeremonyResultConsumer
     @now = now
   end
 
+  public
+
   def call(token)
     result = IdentityPasskeyCeremonyResult.decode(
       token,

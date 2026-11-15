@@ -225,7 +225,7 @@ class JumpRtReturnPolicyTest < ActiveSupport::TestCase
       issuer = JitSecurityJwtRegistry.surface(namespace)
       payload, = JWT.decode(
         token, JitSecurityJwtRegistry.public_key_for(issuer.id, issuer.current_kid), true,
-        algorithms: ["ES384"], verify_iss: true, iss: source, verify_aud: true,
+        algorithms: ["PS256"], verify_iss: true, iss: source, verify_aud: true,
         aud: Rails.configuration.x.boot_config.fetch(:jump).audience,
       )
 

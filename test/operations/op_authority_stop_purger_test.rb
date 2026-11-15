@@ -8,8 +8,8 @@ class OpAuthorityStopPurgerTest < ActiveSupport::TestCase
 
   setup do
     @principal_public_id = PublicId.generate
-    @device = ClientDeviceSession.create!(user_id: 9_300_011, principal_public_id: @principal_public_id)
-    @root = ClientToken.create!(authentication_epoch: 0, device_session: @device, user_id: @device.user_id)
+    @device = ClientDeviceSession.create!(subject_public_id: @principal_public_id)
+    @root = ClientToken.create!(authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id)
     @grant = OpAppGrant.create!(
       authentication_epoch: 0,
       client_token_id: @root.id, device_session_id: @root.device_session_id,
@@ -42,10 +42,16 @@ class OpAuthorityStopPurgerTest < ActiveSupport::TestCase
   end
 
   test "an all-roots stop stays until every target root reaches its own retention deadline" do
-    first_device = ClientDeviceSession.create!(user_id: @device.user_id, principal_public_id: @principal_public_id)
-    second_device = ClientDeviceSession.create!(user_id: @device.user_id, principal_public_id: @principal_public_id)
-    first_root = ClientToken.create!(authentication_epoch: 0, device_session: first_device, user_id: first_device.user_id)
-    second_root = ClientToken.create!(authentication_epoch: 0, device_session: second_device, user_id: second_device.user_id)
+    first_device = ClientDeviceSession.create!(subject_public_id: @principal_public_id)
+    second_device = ClientDeviceSession.create!(subject_public_id: @principal_public_id)
+    first_root = ClientToken.create!(
+      authentication_epoch: 0, device_session: first_device,
+      subject_public_id: first_device.subject_public_id,
+    )
+    second_root = ClientToken.create!(
+      authentication_epoch: 0, device_session: second_device,
+      subject_public_id: second_device.subject_public_id,
+    )
     first_grant = OpAppGrant.create!(
       authentication_epoch: 0,
       client_token_id: first_root.id, device_session_id: first_root.device_session_id,

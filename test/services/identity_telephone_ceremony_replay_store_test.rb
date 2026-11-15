@@ -15,4 +15,16 @@ class IdentityTelephoneCeremonyReplayStoreTest < ActiveSupport::TestCase
       IdentityTelephoneCeremonyReplayStore.for(:invalid)
     end
   end
+
+  test "creates, finds, and checks an app transaction by its result reference" do
+    store = IdentityTelephoneCeremonyReplayStore.for(:app)
+    transaction = store.create_transaction!(
+      actor_ref: "actor-telephone-store",
+      session_ref: "session-telephone-store",
+      operation: "registration",
+    )
+
+    assert_equal transaction, store.find_transaction!(transaction.transaction_id)
+    assert_not store.consumed?("not-yet-issued-result")
+  end
 end

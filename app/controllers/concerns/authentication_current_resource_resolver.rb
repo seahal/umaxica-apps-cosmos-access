@@ -32,6 +32,8 @@ class AuthenticationCurrentResourceResolver
     @track_session_activity = track_session_activity
   end
 
+  public
+
   def call
     return failure(:blank_access_token) if @access_token.blank?
 
@@ -269,19 +271,17 @@ class AuthenticationCurrentResourceResolver
   end
 
   def token_actor_matches?(token_record, resource)
-    token_actor_id =
-      case @resource_type.to_s
-      when "client" then token_record_attribute(token_record, :user_id)
-      when "operator" then token_record_attribute(token_record, :staff_id)
-      else raise FlowConfigurationError, "unsupported authentication resource type"
-      end
-    return false unless token_actor_id == resource.id
+    raise FlowConfigurationError, "unsupported authentication resource type" unless
+      %w(client operator).include?(@resource_type.to_s)
+
+    token_actor_id = token_record_attribute(token_record, :subject_public_id)
+    return false unless token_actor_id == resource.public_id
     return true if token_record_attribute(token_record, :device_session_id).blank?
 
     device_session = token_record.device_session_record
     case [@resource_type.to_s, device_session]
-    in ["client", ClientDeviceSession] then device_session.user_id == resource.id
-    in ["operator", OperatorDeviceSession] then device_session.staff_id == resource.id
+    in ["client", ClientDeviceSession] then device_session.subject_public_id == resource.public_id
+    in ["operator", OperatorDeviceSession] then device_session.subject_public_id == resource.public_id
     else false
     end
   end
@@ -324,6 +324,8 @@ class AuthenticationCurrentResourceResolver
   end
 
   class << self
+    public
+
     def administratively_locked?(resource)
       resource.respond_to?(:admin_locked?) && resource.admin_locked?
     end

@@ -3,6 +3,8 @@
 class OperatorAuthCeremonySessionStatus < OpBaseOrgRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   ISSUED = AuthCeremonySession::STATUS_ISSUED
   ADMITTED = AuthCeremonySession::STATUS_ADMITTED
   EVIDENCE_RECORDED = AuthCeremonySession::STATUS_EVIDENCE_RECORDED

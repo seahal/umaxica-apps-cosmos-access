@@ -13,7 +13,7 @@ module Visa
         scope: "visa_org_authority_default_web",
         name: "default_web",
         store: rate_limit_store,
-        with: -> { head :too_many_requests },
+        with: -> { render_rate_limited(retry_after: 60) },
       )
 
       public

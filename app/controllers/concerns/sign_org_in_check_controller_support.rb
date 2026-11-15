@@ -6,6 +6,8 @@
 module SignOrgInCheckControllerSupport
   extend ActiveSupport::Concern
 
+  public
+
   def show
     @checkpoint_items ||= []
   end

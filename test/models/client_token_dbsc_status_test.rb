@@ -63,6 +63,24 @@ class ClientTokenDbscStatusTest < ActiveSupport::TestCase
     end
   end
 
+  test "an incomplete registration downgrade preserves the legacy binding method" do
+    token = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
+    token.update!(
+      user_token_binding_method_id: ClientTokenBindingMethod::LEGACY,
+      user_token_dbsc_status_id: ClientTokenDbscStatus::PENDING,
+    )
+
+    token.downgrade_dbsc_status_to_nothing!
+
+    assert_equal ClientTokenBindingMethod::LEGACY, token.reload.user_token_binding_method_id
+    assert_equal ClientTokenDbscStatus::NOTHING, token.user_token_dbsc_status_id
+
+    updated_at = token.reload.updated_at
+    token.downgrade_dbsc_status_to_nothing!
+
+    assert_equal updated_at, token.reload.updated_at
+  end
+
   test "client_tokens association works with dependent restrict" do
     status = ClientTokenDbscStatus.find(ClientTokenDbscStatus::NOTHING)
     user_token = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))

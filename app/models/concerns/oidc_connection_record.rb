@@ -4,16 +4,9 @@
 module OidcConnectionRecord
   extend ActiveSupport::Concern
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    include ::PublicId
+  include ::PublicId
 
-    validates :client_id, presence: true
-    validates :client_id, length: { maximum: 64 }
-
-    scope :recent_first, -> { order(Arel.sql("COALESCE(last_used_at, updated_at, created_at) DESC")) }
-    scope :active, -> { where(revoked_at: nil) }
-  end
+  public
 
   def active?
     revoked_at.blank?

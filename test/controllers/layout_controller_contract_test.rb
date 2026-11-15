@@ -7,17 +7,13 @@ class LayoutControllerContractTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
   CONTROLLERS = {
-    "app/controllers/auth/app/application_controller.rb" => ["Auth::App::ApplicationController",
-                                                             "auth/app/application",],
-    "app/controllers/auth/org/application_controller.rb" => ["Auth::Org::ApplicationController",
-                                                             "auth/org/application",],
     "app/controllers/visa/app/authority_controller.rb" => ["Visa::App::AuthorityController",
                                                            "visa/app/application",],
     "app/controllers/visa/org/authority_controller.rb" => ["Visa::Org::AuthorityController",
                                                            "visa/org/application",],
   }.freeze
 
-  test "Auth application and Visa authority controllers declare literal layouts" do
+  test "Visa authority controllers declare literal layouts" do
     CONTROLLERS.each do |path, (controller_name, layout_name)|
       contents = Rails.root.join(path).read
       controller = controller_name.safe_constantize

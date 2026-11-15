@@ -42,6 +42,23 @@ describe("NavList", () => {
     expect(screen.getByText("Recovery code")).toBeTruthy();
   });
 
+  it("keeps a description visible when a row has no destination", () => {
+    render(
+      <NavList
+        items={[
+          {
+            label: "Unavailable ceremony",
+            href: null,
+            description: "This step is not available on this surface.",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.getByText("This step is not available on this surface.")).toBeTruthy();
+  });
+
   it("keeps the description out of the link's accessible name only when absent", () => {
     render(
       <NavList

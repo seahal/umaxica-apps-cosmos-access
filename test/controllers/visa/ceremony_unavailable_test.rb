@@ -6,11 +6,19 @@ require "test_helper"
 class VisaCeremonyUnavailableTest < ActionDispatch::IntegrationTest
   self.fixture_table_names = []
 
-  test "authorization and its browser continuations refuse new ceremonies in both realms" do
+  test "authorization start validates locally while result and cancellation remain unavailable" do
     ["PUBLIC_VISA_SERVICE_URL", "PUBLIC_VISA_STAFF_URL"].each do |host_key|
       host! ENV.fetch(host_key)
       https!
-      %w(/oauth/authorize /oidc/result /oidc/cancellation).each do |path|
+      get "/oauth/authorize", params: { client_id: "untrusted", request_uri: "untrusted" }
+
+      assert_response :bad_request
+      assert_equal "invalid_request", response.parsed_body.fetch("error")
+      assert_nil response.location
+      assert_equal "no-referrer", response.headers["Referrer-Policy"]
+      assert_includes response.headers.fetch("Cache-Control"), "no-store"
+
+      %w(/oidc/result /oidc/cancellation).each do |path|
         get path, params: { client_id: "untrusted", request_uri: "untrusted" }
 
         assert_response :service_unavailable
@@ -21,9 +29,10 @@ class VisaCeremonyUnavailableTest < ActionDispatch::IntegrationTest
       end
       post "/oauth/authorize", params: { client_id: "untrusted", consent: "accept" }
 
-      assert_response :service_unavailable
-      assert_equal "Service unavailable", response.body
-      assert_nil response.headers["Location"]
+      assert_response :bad_request
+      assert_equal "invalid_request", response.parsed_body.fetch("error")
+      assert_nil response.location
+      assert_equal "no-referrer", response.headers["Referrer-Policy"]
     end
     host! ENV.fetch("PUBLIC_VISA_SERVICE_URL")
     get "/oidc/switch"
@@ -54,6 +63,20 @@ class VisaCeremonyUnavailableTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "Auth App and Org sign-in sentries remain explicitly unavailable" do
+    ["PUBLIC_AUTH_SERVICE_URL", "PUBLIC_AUTH_STAFF_URL"].each do |host_key|
+      host! ENV.fetch(host_key)
+      https!
+      get "/sign/in/sentry", params: { entry_ref: "untrusted", ri: "jp" }
+
+      assert_response :service_unavailable
+      assert_equal "Service unavailable", response.body
+      assert_nil response.location
+      assert_nil response.headers["Set-Cookie"]
+      assert_equal "no-referrer", response.headers["Referrer-Policy"]
+    end
+  end
+
   test "Visa discovery and JWKS remain public in both realms" do
     ["PUBLIC_VISA_SERVICE_URL", "PUBLIC_VISA_STAFF_URL"].each do |host_key|
       host! ENV.fetch(host_key)
@@ -70,8 +93,8 @@ class VisaCeremonyUnavailableTest < ActionDispatch::IntegrationTest
   end
 
   test "unsafe Visa refusal retains the Rails origin and CSRF boundary" do
-    original = Visa::Org::UnavailableCeremoniesController.allow_forgery_protection
-    Visa::Org::UnavailableCeremoniesController.allow_forgery_protection = true
+    original = Visa::Org::Oauth::AuthorizationsController.allow_forgery_protection
+    Visa::Org::Oauth::AuthorizationsController.allow_forgery_protection = true
     host!(ENV.fetch("PUBLIC_VISA_STAFF_URL"))
     https!
     post("/oauth/authorize", headers: { "Origin" => "https://attacker.example" })
@@ -79,6 +102,6 @@ class VisaCeremonyUnavailableTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_content
     assert_not_equal "Service unavailable", response.body
   ensure
-    Visa::Org::UnavailableCeremoniesController.allow_forgery_protection = original
+    Visa::Org::Oauth::AuthorizationsController.allow_forgery_protection = original
   end
 end

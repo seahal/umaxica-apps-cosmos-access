@@ -32,6 +32,8 @@ module Auth
           with: -> { head :too_many_requests },
         )
 
+        public
+
         def create
           return head :unsupported_media_type unless request.media_type == "application/json"
           return head :content_too_large if content_length_exceeds_limit?

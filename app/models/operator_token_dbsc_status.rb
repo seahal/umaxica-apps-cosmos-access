@@ -11,6 +11,8 @@
 class OperatorTokenDbscStatus < OpBaseOrgRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   NOTHING = 0
   ACTIVE = 1
   PENDING = 2
@@ -32,4 +34,5 @@ class OperatorTokenDbscStatus < OpBaseOrgRecord
   def self.ensure_defaults!
     insert_missing_fixed_ids!(DEFAULTS)
   end
+  public_class_method :ensure_defaults!
 end

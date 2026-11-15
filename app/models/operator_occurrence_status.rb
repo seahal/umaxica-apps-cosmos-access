@@ -13,6 +13,8 @@
 class OperatorOccurrenceStatus < OccurrenceRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   include OccurrenceStatus
 
   # Fixed IDs - do not modify these values

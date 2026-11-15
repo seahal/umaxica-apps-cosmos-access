@@ -80,7 +80,7 @@ class OidcTokenRevokerCoverageTest < ActiveSupport::TestCase
       authentication_epoch: 0, client_token_id: root.id,
       device_session_id: root.device_session_id, oidc_client_id: "core-app-jp",
       oidc_scope: "openid", last_used_at: Time.current,
-      refresh_token_expires_at: 1.day.from_now,
+      refresh_token_expires_at: root.discard_at,
     )
     refresh_token = token.issue_refresh_token!
     service = ::OidcTokenRevoker.new(

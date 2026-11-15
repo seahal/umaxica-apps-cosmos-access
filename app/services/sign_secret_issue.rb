@@ -49,6 +49,8 @@ class SignSecretIssue
     @raw_secret_credential = raw_secret_credential
   end
 
+  public
+
   def call
     raise ArgumentError, "limited_session issuance is not enabled yet" if @usage_policy.to_s == "limited_session"
 
@@ -95,4 +97,5 @@ class SignSecretIssue
 
     Result.new(secret_credential: secret_credential, raw_secret_credential: raw_secret_credential)
   end
+  public_class_method :call
 end

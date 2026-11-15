@@ -23,6 +23,8 @@ module OidcLogoutRequest
   REPLAY_TRACKING_TTL = TTL + 30.seconds
 
   class << self
+    public
+
     def issue(client_id:, ri:)
       verifier.generate(
         {

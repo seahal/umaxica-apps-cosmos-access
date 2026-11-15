@@ -8,10 +8,13 @@ class SecurityJwtAuthAccessTokenCodecCoverageTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
   test "encode rejects blank inputs and accepts a stubbed success path" do
-    assert_nil SecurityJwtAuthAccessTokenCodec.encode(nil, host: "app.example.test")
+    assert_nil SecurityJwtAuthAccessTokenCodec.encode(nil, host: "app.example.test", resource_type: "client")
+    client_resource = Struct.new(:id, :security_mode_id).new(nil, SecurityModeConfigurable::NORMAL)
+
     assert_nil SecurityJwtAuthAccessTokenCodec.encode(
-      Client.new(security_mode_id: SecurityModeConfigurable::NORMAL),
+      client_resource,
       host: "",
+      resource_type: "client",
     )
 
     payload = { "sub" => "123", "scope" => "domain:client" }
@@ -20,7 +23,7 @@ class SecurityJwtAuthAccessTokenCodecCoverageTest < ActiveSupport::TestCase
       JitSecurityJwtKeyring.stub(:encode, "encoded.jwt") do
         result =
           SecurityJwtAuthAccessTokenCodec.encode(
-            Client.new(security_mode_id: SecurityModeConfigurable::NORMAL, id: 123),
+            Struct.new(:id, :security_mode_id).new(123, SecurityModeConfigurable::NORMAL),
             host: "app.example.test",
             resource_type: "client",
             session_public_id: "session-public-id",
@@ -32,7 +35,7 @@ class SecurityJwtAuthAccessTokenCodecCoverageTest < ActiveSupport::TestCase
   end
 
   test "signed operator access tokens preserve identical scopes for normal and standby" do
-    signing_key = OpenSSL::PKey::EC.generate("secp384r1")
+    signing_key = OpenSSL::PKey::RSA.generate(3_072)
     encode_with_test_key =
       lambda do |payload, typ:, issuer_id:|
         JWT.encode(
@@ -56,7 +59,7 @@ class SecurityJwtAuthAccessTokenCodecCoverageTest < ActiveSupport::TestCase
       %w(normal standby).map do |context|
         JitSecurityJwtKeyring.stub(:encode, encode_with_test_key) do
           SecurityJwtAuthAccessTokenCodec.encode(
-            Operator.new(id: 42),
+            Struct.new(:id).new(42),
             **token_arguments,
             authentication_context: context,
           )
@@ -177,7 +180,7 @@ class SecurityJwtAuthAccessTokenCodecCoverageTest < ActiveSupport::TestCase
   end
 
   test "rejects a correctly signed token when iat is missing" do
-    private_key = OpenSSL::PKey::EC.generate("secp384r1")
+    private_key = OpenSSL::PKey::RSA.generate(3_072)
     payload = {
       "iss" => "issuer",
       "aud" => "audience",
@@ -190,7 +193,7 @@ class SecurityJwtAuthAccessTokenCodecCoverageTest < ActiveSupport::TestCase
       "acr" => "aal1",
       "scope" => "authenticated domain:client",
     }
-    token = JWT.encode(payload, private_key, "ES384", { "typ" => "at+jwt", "kid" => "kid" })
+    token = JWT.encode(payload, private_key, "PS256", { "typ" => "at+jwt", "kid" => "kid" })
 
     JitSecurityJwtKeyring.stub(:public_key_for, private_key.public_key) do
       assert_nil SecurityJwtAuthAccessTokenCodec.decode(

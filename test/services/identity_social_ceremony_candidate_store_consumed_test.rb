@@ -60,4 +60,34 @@ class IdentitySocialCeremonyCandidateStoreConsumedTest < ActiveSupport::TestCase
     end
     assert_nil IdentitySocialCeremonyCandidate.find_by!(ref: candidate.ref).consumed_at
   end
+
+  test "active candidate lookup returns the verified principal and deletion retires it" do
+    principal = ExternalAuthentication::VerifiedPrincipal.new(
+      provider: "google",
+      subject: "active-candidate-subject",
+      issuer: "https://accounts.google.com",
+      audience: "google-client-id",
+      verified_at: IdentitySocialCeremonyCandidate.database_now,
+      verification_authority: "test-provider-contract",
+    )
+    candidate = IdentitySocialCeremonyCandidateStore.store!(
+      surface: "app",
+      actor_ref: "active-candidate-actor",
+      session_ref: "active-candidate-session",
+      transaction_id: SecureRandom.uuid,
+      operation: "login",
+      provider: "google",
+      callback_result: ExternalAuthentication::CallbackResult.verified(principal:),
+      expires_at: IdentitySocialCeremonyCandidate.database_now + 5.minutes,
+    )
+
+    fetched = IdentitySocialCeremonyCandidateStore.fetch!(candidate.ref)
+
+    assert_equal "active-candidate-subject", fetched.callback_result.principal.subject
+    assert_equal candidate.ref, fetched.ref
+    assert IdentitySocialCeremonyCandidateStore.delete(candidate.ref)
+    assert_raises(IdentitySocialCeremonyContract::Error) do
+      IdentitySocialCeremonyCandidateStore.fetch!(candidate.ref)
+    end
+  end
 end

@@ -10,7 +10,7 @@ class ClientEmergencyOperationRetentionTest < ActiveSupport::TestCase
     operation = ClientEmergencySignInOperation.create!(
       client_token: token, operation_id: SecureRandom.uuid, credential_public_id: PublicId.generate,
     )
-    token = ClientToken.includes(:client_sign_up_flows, :op_app_grants, :client_verifications, :step_up_session)
+    token = ClientToken.includes(:client_sign_up_flows, :client_verifications, :step_up_session)
       .find(token.id)
 
     ClientToken.transaction(requires_new: true) { assert_not token.destroy }

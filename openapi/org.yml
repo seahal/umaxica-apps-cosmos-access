@@ -11,22 +11,16 @@ info:
     OAuth 2.0, OIDC, WebAuthn, DBSC, and .well-known endpoints are intentionally absent. Their
     protocol contracts are documented separately.
 
-    The preference endpoints are Auth org's same-origin browser preference API. The text operational
-    endpoints are absent because they render text/plain; only the JSON health and revision routes are
-    described here. Health and revision have no server because they are blocked at the edge.
+    The text operational endpoints are absent because they render text/plain; only the JSON health
+    and revision routes are described here. Health and revision have no server because they are
+    blocked at the edge.
 
 tags:
   - name: Health
     description: Machine-readable health aggregate and deployment revision.
-  - name: Preferences
-    description: Cookie-consent and color-theme JSON endpoints.
 
 paths:
   /api/v0/health.json:
     $ref: "shared/paths/api-v0-health.yml"
   /api/v0/revision.json:
     $ref: "shared/paths/api-v0-revision.yml"
-  /api/v0/preferences/cookie:
-    $ref: "org/paths/preferences-cookie.yml"
-  /api/v0/preferences/theme:
-    $ref: "org/paths/preferences-theme.yml"

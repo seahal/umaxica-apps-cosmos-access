@@ -30,12 +30,11 @@ module VisaOrgOidcLogoutEndpoint
     "#{request.path}?#{options.compact.to_query}"
   end
 
-  def sign_out_home_path(**) = visa_org_oidc_logout_completion_path(**)
+  def sign_out_confirmation_form_path
+    visa_org_oidc_logout_confirmation_path(ri: params[:ri])
+  end
 
-  # The ERB template this action rendered was a two-line wrapper around the shared sign-out
-  # confirmation, so both the confirmation and the completion path render the same Inertia
-  # page here. The override stays on this controller because the other surfaces still render
-  # the shared ERB through the same concern.
+  # APP and ORG own separate Inertia logout pages; this renderer stays on the ORG boundary.
   def render_oidc_end_session_confirmation
     # The confirmation answers with a redirect through Jump to the RP's post-logout URI.
     allow_registered_rp_form_targets!(realm: "operator", uri_kind: :post_logout)

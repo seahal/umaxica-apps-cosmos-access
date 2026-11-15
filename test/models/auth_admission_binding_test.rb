@@ -6,6 +6,13 @@ require "test_helper"
 class AuthAdmissionBindingTest < ActiveSupport::TestCase
   fixtures :client_tokens
 
+  test "APP and ORG bindings retain their realm and root-token owners" do
+    assert_equal "app", ClientAuthAdmissionBinding.auth_admission_surface_name
+    assert_equal ClientToken, ClientAuthAdmissionBinding.auth_admission_base_token_class
+    assert_equal "org", OperatorAuthAdmissionBinding.auth_admission_surface_name
+    assert_equal OperatorToken, OperatorAuthAdmissionBinding.auth_admission_base_token_class
+  end
+
   test "attachment and confirmation predicates follow lifecycle status in each realm" do
     [ClientAuthAdmissionBinding, OperatorAuthAdmissionBinding].each do |binding_model|
       expected = {
@@ -218,8 +225,7 @@ class AuthAdmissionBindingTest < ActiveSupport::TestCase
               scope: "openid",
               state: SecureRandom.urlsafe_base64(16),
               nonce: SecureRandom.urlsafe_base64(16),
-              code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
-              code_challenge_method: "S256",
+              pkce: { code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", code_challenge_method: "S256" },
               login_challenge: fv5024,
               login_challenge_expires_at: fv5023 + 10.minutes,
               expires_at: fv5023 + 10.minutes,
@@ -352,8 +358,7 @@ class AuthAdmissionBindingTest < ActiveSupport::TestCase
           scope: "openid",
           state: SecureRandom.urlsafe_base64(16),
           nonce: SecureRandom.urlsafe_base64(16),
-          code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
-          code_challenge_method: "S256",
+          pkce: { code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", code_challenge_method: "S256" },
           login_challenge: fv5019,
           login_challenge_expires_at: fv5018 + 10.minutes,
           expires_at: fv5018 + 10.minutes,
@@ -449,8 +454,7 @@ class AuthAdmissionBindingTest < ActiveSupport::TestCase
               scope: "openid",
               state: SecureRandom.urlsafe_base64(16),
               nonce: SecureRandom.urlsafe_base64(16),
-              code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
-              code_challenge_method: "S256",
+              pkce: { code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", code_challenge_method: "S256" },
               login_challenge: fv5014,
               login_challenge_expires_at: fv5013 + 10.minutes,
               expires_at: fv5013 + 10.minutes,
@@ -500,8 +504,7 @@ class AuthAdmissionBindingTest < ActiveSupport::TestCase
           scope: "openid",
           state: SecureRandom.urlsafe_base64(16),
           nonce: SecureRandom.urlsafe_base64(16),
-          code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
-          code_challenge_method: "S256",
+          pkce: { code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", code_challenge_method: "S256" },
           login_challenge: fv5009,
           login_challenge_expires_at: fv5008 + 10.minutes,
           expires_at: fv5008 + 10.minutes,
@@ -565,8 +568,7 @@ class AuthAdmissionBindingTest < ActiveSupport::TestCase
               scope: "openid",
               state: SecureRandom.urlsafe_base64(16),
               nonce: SecureRandom.urlsafe_base64(16),
-              code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
-              code_challenge_method: "S256",
+              pkce: { code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", code_challenge_method: "S256" },
               login_challenge: fv5004,
               login_challenge_expires_at: fv5003 + 10.minutes,
               expires_at: fv5003 + 10.minutes,

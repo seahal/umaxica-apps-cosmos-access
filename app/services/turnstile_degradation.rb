@@ -22,6 +22,8 @@ class TurnstileDegradation
     @flipper = flipper
   end
 
+  public
+
   def apply(result)
     return result if result["success"]
     return result unless result["unavailable"]
@@ -32,4 +34,5 @@ class TurnstileDegradation
     Rails.logger.warn(JitLogEvent.format("turnstile.degraded", error: result["error"]))
     { "success" => true, "degraded" => true }
   end
+  public_class_method :apply
 end

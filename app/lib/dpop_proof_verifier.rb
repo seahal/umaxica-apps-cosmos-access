@@ -29,6 +29,8 @@ class DpopProofVerifier
     @record_jti = record_jti
   end
 
+  public
+
   def call
     header, payload, jwk = decode_and_authenticate_header
     return header if header.is_a?(Result)

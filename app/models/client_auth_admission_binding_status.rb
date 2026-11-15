@@ -4,6 +4,8 @@
 class ClientAuthAdmissionBindingStatus < OpBaseAppRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   ISSUED = AuthAdmissionBinding::ISSUED_STATUS_ID
   ATTACHED = AuthAdmissionBinding::ATTACHED_STATUS_ID
   BASE_CONFIRMED = AuthAdmissionBinding::BASE_CONFIRMED_STATUS_ID

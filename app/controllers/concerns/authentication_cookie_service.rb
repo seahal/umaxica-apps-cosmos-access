@@ -9,6 +9,8 @@ class AuthenticationCookieService
     @request = request
   end
 
+  public
+
   def set_auth_cookies(access_token:, refresh_token:, access_ttl:, refresh_ttl:)
     cookies[access_cookie_key] = cookie_options(expires: access_ttl.from_now).merge(value: access_token)
     cookies[refresh_cookie_key] = cookie_options(expires: refresh_ttl.from_now).merge(value: refresh_token)

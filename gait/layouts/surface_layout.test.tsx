@@ -51,6 +51,19 @@ describe("SurfaceLayout", () => {
     expect(document.body.textContent).toContain("(c) Umaxica");
   });
 
+  test("renders a brand without a destination as text rather than inventing a link", () => {
+    page.props.chrome = { ...minimalChrome, brand: { name: "Umaxica", href: null } };
+
+    render(
+      <SurfaceLayout>
+        <p>page body</p>
+      </SurfaceLayout>,
+    );
+
+    expect(screen.getByText("Umaxica").tagName).toBe("SPAN");
+    expect(screen.queryByRole("link", { name: "Umaxica" })).toBeNull();
+  });
+
   test("renders the family label only when present", () => {
     page.props.chrome = { ...minimalChrome, family_label: "Auth" };
 

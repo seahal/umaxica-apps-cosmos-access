@@ -16,27 +16,20 @@ class JumpRtIssuerJwksAuthorityTest < ActionDispatch::IntegrationTest
     issuers = {
       "AUTH_APP" => "https://auth.umaxica.app",
       "AUTH_ORG" => "https://auth.umaxica.org",
-      "BASE_APP" => "https://www.umaxica.app",
-      "BASE_ORG" => "https://www.umaxica.org",
       "VISA_APP" => "https://visa.umaxica.app",
       "VISA_ORG" => "https://visa.umaxica.org",
-      "CORE_APP" => "https://jp.umaxica.app",
-      "CORE_ORG" => "https://jp.umaxica.org",
-      "WARP_APP" => "https://www-jp.umaxica.app",
-      "WARP_ORG" => "https://www-jp.umaxica.org",
-      "PALM_APP" => "https://palm-jp.umaxica.app",
     }
 
     assert_equal issuers.keys.sort, JumpRtSurface::ISSUER_NAMESPACES.sort
     published_keys = {}
     issuers.each do |namespace, origin|
       tld = namespace.split("_").last.downcase
-      peer = namespace.start_with?("BASE_") ? "auth" : "www"
+      peer = namespace.start_with?("VISA_") ? "auth" : "www"
       token = JumpRtIssuer.call(namespace: namespace, url: "https://#{peer}.umaxica.#{tld}/", dst: "internal")
       claims, header = JWT.decode(token, nil, false)
 
       assert_equal origin, claims.fetch("iss"), namespace
-      assert_equal "ES384", header.fetch("alg"), namespace
+      assert_equal "PS256", header.fetch("alg"), namespace
       assert_equal "reuse", claims.fetch("rpl"), namespace
       host!(URI.parse(origin).host)
       https!
@@ -53,16 +46,15 @@ class JumpRtIssuerJwksAuthorityTest < ActionDispatch::IntegrationTest
                       namespace
       assert_equal keys.size, keys.pluck("kid").uniq.size, namespace
       keys.each do |key|
-        assert_equal "ES384", key.fetch("alg"), namespace
+        assert_equal "PS256", key.fetch("alg"), namespace
         assert_equal "sig", key.fetch("use"), namespace
-        assert_equal "EC", key.fetch("kty"), namespace
-        assert_equal "P-384", key.fetch("crv"), namespace
+        assert_equal "RSA", key.fetch("kty"), namespace
       end
       assert_includes keys.pluck("kid"), header.fetch("kid"), namespace
       assert_empty keys.flat_map(&:keys) & JitSecurityJwtJwk::PRIVATE_FIELDS, namespace
       published_keys[namespace] = keys
       verified, = JWT.decode(
-        token, nil, true, algorithms: ["ES384"],
+        token, nil, true, algorithms: ["PS256"],
                           jwks: JWT::JWK::Set.new(published),
                           verify_iss: true, iss: origin, verify_aud: true, aud: "https://jump.umaxica.net",
       )
@@ -71,12 +63,12 @@ class JumpRtIssuerJwksAuthorityTest < ActionDispatch::IntegrationTest
     end
 
     %w(APP ORG).each do |realm|
-      base_keys = published_keys.fetch("BASE_#{realm}")
+      auth_keys = published_keys.fetch("AUTH_#{realm}")
       visa_keys = published_keys.fetch("VISA_#{realm}")
-      base_public_material = base_keys.map { |key| key.slice("kty", "crv", "x", "y") }
-      visa_public_material = visa_keys.map { |key| key.slice("kty", "crv", "x", "y") }
+      auth_public_material = auth_keys.map { |key| key.slice("kty", "n", "e") }
+      visa_public_material = visa_keys.map { |key| key.slice("kty", "n", "e") }
 
-      assert_empty base_public_material & visa_public_material, "BASE_#{realm} and VISA_#{realm} JWKS overlap"
+      assert_empty auth_public_material & visa_public_material, "AUTH_#{realm} and VISA_#{realm} JWKS overlap"
     end
   end
 end

@@ -7,8 +7,8 @@ class OpAuthorityStopIdentityUniquenessTest < ActiveSupport::TestCase
 
   test "a binary idempotency digest identifies one stop within its realm" do
     [
-      ["app", client_tokens(:one).device_session.principal_public_id, OpAppAuthorityStop],
-      ["org", operator_tokens(:one).device_session.principal_public_id, OpOrgAuthorityStop],
+      ["app", client_tokens(:one).device_session.subject_public_id, OpAppAuthorityStop],
+      ["org", operator_tokens(:one).device_session.subject_public_id, OpOrgAuthorityStop],
     ].each do |realm, principal_public_id, model|
       result = OpAuthorityStopCommitter.stop_principal(
         realm: realm, roots: [], cause: "identity_stop", principal_public_id: principal_public_id,
@@ -49,8 +49,8 @@ class OpAuthorityStopIdentityUniquenessTest < ActiveSupport::TestCase
   test "binary digest bytes are preserved and independently owned by each realm database" do
     bytes = "\x00\xff".b * 16
     [
-      ["app", client_tokens(:one).device_session.principal_public_id, OpAppAuthorityStop],
-      ["org", operator_tokens(:one).device_session.principal_public_id, OpOrgAuthorityStop],
+      ["app", client_tokens(:one).device_session.subject_public_id, OpAppAuthorityStop],
+      ["org", operator_tokens(:one).device_session.subject_public_id, OpOrgAuthorityStop],
     ].each do |realm, principal_public_id, _model|
       stop = OpAuthorityStopCommitter.stop_principal(
         realm: realm, roots: [], cause: "identity_stop", principal_public_id: principal_public_id,
@@ -72,8 +72,8 @@ class OpAuthorityStopIdentityUniquenessTest < ActiveSupport::TestCase
 
   test "database uniqueness rejects duplicate public identities and binary digest keys independently" do
     [
-      ["app", client_tokens(:one).device_session.principal_public_id, OpAppAuthorityStop],
-      ["org", operator_tokens(:one).device_session.principal_public_id, OpOrgAuthorityStop],
+      ["app", client_tokens(:one).device_session.subject_public_id, OpAppAuthorityStop],
+      ["org", operator_tokens(:one).device_session.subject_public_id, OpOrgAuthorityStop],
     ].each do |realm, principal_public_id, model|
       stop = OpAuthorityStopCommitter.stop_principal(
         realm: realm, roots: [], cause: "identity_stop", principal_public_id: principal_public_id,

@@ -13,30 +13,45 @@ for gaps. Older Acme vocabulary in cited decisions is retained as protocol histo
 Source of truth: `app/values/oidc_discovery_document.rb`, `app/values/oidc_issuer.rb`, and
 `app/values/oidc_client_registry.rb`.
 
-## ES384-only is a private profile, not strict OIDC conformance
+Discovery continues to advertise `response_types_supported: ["code"]` and
+`code_challenge_methods_supported: ["S256"]`. The two explicitly registered first-party Base clients
+(`base-app-ww` and `base-org-ww`) have a separate `response_type=id_token` sign-in/sign-up profile
+under the
+[accepted amendment](../../adr/oidc-authorization-code-only-implicit-and-hybrid-non-adoption.md).
+That registration-scoped exception is intentionally not advertised as a generally supported response
+type. Other clients remain on Code with PKCE S256.
+
+## PS256-only ID tokens and client assertions
 
 `id_token_signing_alg_values_supported` and `token_endpoint_auth_signing_alg_values_supported` are
-both `["ES384"]`. The OpenID Connect Core conformance profiles expect `RS256` support; Visa
-**intentionally does not** offer `RS256`.
+managed separately: ID tokens and token endpoint client assertions each advertise `["PS256"]`. The
+OpenID Connect Core conformance profiles expect `RS256` support; Visa **intentionally does not**
+offer `RS256`.
 
 Auth access JWTs follow RFC 9068 in token structure, claims, semantics, and validation requirements.
-ES384 is the sole supported signing algorithm. UMAXICA intentionally does not implement the RFC 9068
-§2.1 requirement that conforming authorization servers and resource servers include RS256 among
-their supported signature algorithms. ES384 itself is permitted by RFC 9068; the deviation is the
-absence of RS256 support. Preference JWTs use a separate realm shape and keyring; see
-`adr/preference-realm-jwt-and-host-bound-browser-binding.md` and
-`adr/rfc9068-access-token-profile.md`.
+PS256 is the sole supported first-party signing algorithm, using RSA keys of at least 3072 bits.
+UMAXICA intentionally does not implement the RFC 9068 §2.1 requirement that conforming authorization
+servers and resource servers include RS256 among their supported signature algorithms. PS256 itself
+is permitted by RFC 9068; the deviation is the absence of RS256 support. Preference JWTs use a
+separate realm shape and keyring; see `adr/preference-realm-jwt-and-host-bound-browser-binding.md`
+and `adr/rfc9068-access-token-profile.md`.
 
 This is a deliberate private profile:
 
-- All ID Tokens and client assertions are EC P-384 / ES384.
-- JWKS publishes only EC P-384 keys (`kty=EC`, `crv=P-384`, `alg=ES384`, `use=sig`).
-- Retained external clients are configured for this private profile; their callback implementations
-  remain with the external RP owners.
+- Access signs ID Tokens and outbound client assertions with PS256.
+- Access publishes only public RSA PS256 JWKs (`kty=RSA`, `alg=PS256`, `use=sig`).
+- Access accepts only PS256 client assertions and requires RSA keys with moduli of at least 3072
+  bits. Governance, Sphere and Press now sign PS256 assertions; their signing implementations and
+  key material remain with the respective RP owners.
 
 The logout completion URI is not part of discovery. Discovery publishes `end_session_endpoint` on
 the matching Visa APP or ORG host. Any registered RP completion URI is validated against that
 client's Visa registration and served by the external RP owner.
+
+Access refuses ES384 for first-party ID, access, logout, ceremony and Jump token verification. The
+Edge Jump receiver's published contract still specifies ES384; Jump must migrate before live return
+tokens interoperate with this Access cut-over. Live verification is currently unavailable while the
+deployed Jump JWKS returns 503.
 
 If `RS256` is ever required, it must be implemented end to end (key rotation, JWKS publication, ID
 token signing selection, client-assertion verification, and tests) rather than advertised in

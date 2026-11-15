@@ -1,8 +1,6 @@
 # typed: false
 # frozen_string_literal: true
 
-# rubocop:disable ThreadSafety/ClassAndModuleAttributes
-
 class FlowError < StandardError; end
 
 class FlowConfigurationError < FlowError; end
@@ -15,16 +13,12 @@ module FlowBase
   class ExpiryPending < FlowError; end
   private_constant :ExpiryPending
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    class_attribute :cycle_status_column_name, instance_accessor: false
-  end
-
   class_methods do
     public
 
     def cycle_status_column(column_name)
-      self.cycle_status_column_name = column_name.to_sym
+      const_set(:CYCLE_STATUS_COLUMN_NAME, column_name.to_sym)
+      private_constant(:CYCLE_STATUS_COLUMN_NAME)
     end
   end
 
@@ -141,7 +135,12 @@ module FlowBase
   end
 
   def configured_cycle_status_column
-    column = self.class.cycle_status_column_name
+    column =
+      begin
+        self.class.const_get(:CYCLE_STATUS_COLUMN_NAME)
+      rescue NameError
+        raise FlowConfigurationError, "#{self.class.name} must configure cycle_status_column"
+      end
     raise FlowConfigurationError, "#{self.class.name} must configure cycle_status_column" if column.blank?
 
     ensure_cycle_column!(column)
@@ -270,5 +269,3 @@ module FlowBase
     value.respond_to?(:infinite?) && value.infinite?
   end
 end
-
-# rubocop:enable ThreadSafety/ClassAndModuleAttributes

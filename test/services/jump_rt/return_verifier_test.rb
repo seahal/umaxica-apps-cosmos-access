@@ -32,11 +32,8 @@ class JumpRtReturnVerifierTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
   setup do
-    @private_key = OpenSSL::PKey::EC.generate("secp384r1")
-    @public_jwk = JWT::JWK.new(@private_key, kid: "jump-test").export.stringify_keys.except("d").merge(
-      "alg" => "ES384",
-      "use" => "sig",
-    )
+    @private_key = OpenSSL::PKey::RSA.generate(3_072)
+    @public_jwk = JitSecurityJwtJwk.export_public(@private_key, kid: "jump-test")
     @now = Time.current.change(usec: 0)
     @previous_cache = Rails.cache
     Rails.cache = ActiveSupport::Cache::MemoryStore.new
@@ -158,25 +155,30 @@ class JumpRtReturnVerifierTest < ActiveSupport::TestCase
   end
 
   test "rejects the same kid signed with a different private key" do
-    other_key = OpenSSL::PKey::EC.generate("secp384r1")
+    other_key = OpenSSL::PKey::RSA.generate(3_072)
     token = sign_return_token_with(other_key)
 
     assert_equal "invalid_signature", verify(token).error
   end
 
-  test "rejects none es256 and rs256 algorithms" do
+  test "rejects none ES384 ES256 RS256 PS384 and undersized RSA algorithms" do
     payload = return_payload
     none_header = Base64.urlsafe_encode64({ typ: "JWT", alg: "none", kid: "jump-test" }.to_json, padding: false)
     none_payload = Base64.urlsafe_encode64(JSON.generate(payload), padding: false)
     none = "#{none_header}.#{none_payload}.e30"
+    es384_key = OpenSSL::PKey::EC.generate("secp384r1")
+    es384 = JWT.encode(payload, es384_key, "ES384", { typ: "JWT", kid: "jump-test" })
     es256_key = OpenSSL::PKey::EC.generate("prime256v1")
     es256 = JWT.encode(payload, es256_key, "ES256", { typ: "JWT", kid: "jump-test" })
-    rsa_key = OpenSSL::PKey::RSA.generate(2048)
-    rs256 = JWT.encode(payload, rsa_key, "RS256", { typ: "JWT", kid: "jump-test" })
+    undersized_rsa_key = OpenSSL::PKey::RSA.generate(2_048)
+    rs256 = JWT.encode(payload, undersized_rsa_key, "RS256", { typ: "JWT", kid: "jump-test" })
+    ps384 = JWT.encode(payload, @private_key, "PS384", { typ: "JWT", kid: "jump-test" })
 
     assert_equal "invalid_header", verify(none).error
+    assert_equal "invalid_header", verify(es384).error
     assert_equal "invalid_header", verify(es256).error
     assert_equal "invalid_header", verify(rs256).error
+    assert_equal "invalid_header", verify(ps384).error
   end
 
   test "rejects wrong source for destination origin" do
@@ -399,7 +401,7 @@ class JumpRtReturnVerifierTest < ActiveSupport::TestCase
       test "rejects a #{label} #{claim} claim" do
         payload = return_payload.merge(claim => convert.call(return_payload.fetch(claim)))
         jwt = JWT::Token.new(payload: payload, header: { "typ" => "JWT", "kid" => "jump-test" })
-        jwt.sign!(algorithm: "ES384", key: @private_key)
+        jwt.sign!(algorithm: "PS256", key: @private_key)
 
         result = verify(jwt.jwt)
 
@@ -688,7 +690,7 @@ class JumpRtReturnVerifierTest < ActiveSupport::TestCase
 
   def compact_token_with_size(target_bytes)
     header = Base64.urlsafe_encode64(
-      { typ: "JWT", alg: "ES384", kid: "jump-test" }.to_json,
+      { typ: "JWT", alg: "PS256", kid: "jump-test" }.to_json,
       padding: false,
     )
     (0..512).each do |payload_padding|
@@ -719,11 +721,11 @@ class JumpRtReturnVerifierTest < ActiveSupport::TestCase
   end
 
   def sign_return_token(overrides = {})
-    JWT.encode(return_payload.merge(overrides), @private_key, "ES384", { typ: "JWT", kid: "jump-test" })
+    JWT.encode(return_payload.merge(overrides), @private_key, "PS256", { typ: "JWT", kid: "jump-test" })
   end
 
   def sign_return_token_with(private_key, overrides = {})
-    JWT.encode(return_payload.merge(overrides), private_key, "ES384", { typ: "JWT", kid: "jump-test" })
+    JWT.encode(return_payload.merge(overrides), private_key, "PS256", { typ: "JWT", kid: "jump-test" })
   end
 
   def return_payload
@@ -745,6 +747,6 @@ class JumpRtReturnVerifierTest < ActiveSupport::TestCase
   end
 
   def sign_return_token_without(claim)
-    JWT.encode(return_payload.except(claim), @private_key, "ES384", { typ: "JWT", kid: "jump-test" })
+    JWT.encode(return_payload.except(claim), @private_key, "PS256", { typ: "JWT", kid: "jump-test" })
   end
 end

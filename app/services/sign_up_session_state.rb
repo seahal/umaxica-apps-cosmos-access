@@ -39,6 +39,8 @@ class SignUpSessionState
       end
   end
 
+  public
+
   def cycle_payload
     @session[@keys.fetch(:cycle_locator)]
   end
@@ -111,4 +113,5 @@ class SignUpSessionState
   def clear_all!
     @keys.each_value { |k| @session.delete(k) }
   end
+  public_class_method :for
 end

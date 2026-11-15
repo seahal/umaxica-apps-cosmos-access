@@ -3,7 +3,11 @@
 require "test_helper"
 
 class OpExistingSessionRefreshTest < ActiveSupport::TestCase
-  self.fixture_table_names = %w(client_tokens operator_tokens client_device_sessions operator_device_sessions)
+  self.fixture_table_names = %w(
+    client_token_binding_methods client_token_dbsc_statuses client_token_kinds client_token_statuses
+    operator_token_binding_methods operator_token_dbsc_statuses operator_token_kinds operator_token_statuses
+    client_device_sessions operator_device_sessions client_tokens operator_tokens
+  )
 
   test "each realm refreshes an existing session using only OP-owned identity evidence" do
     [["client", ClientToken, OpAppGrant],
@@ -55,7 +59,7 @@ class OpExistingSessionRefreshTest < ActiveSupport::TestCase
         issuer: OidcIssuer.for_resource_type(type),
       )
 
-      assert_equal "#{OidcSubject.prefix_for(type)}_#{root.device_session.principal_public_id}", claims.fetch("sub")
+      assert_equal "#{OidcSubject.prefix_for(type)}_#{root.device_session.subject_public_id}", claims.fetch("sub")
       assert_equal type, claims.fetch("act")
       assert_not_equal refresh, result.token_response.fetch(:refresh_token)
       assert_operator grant.reload.refresh_generation, :>, 0

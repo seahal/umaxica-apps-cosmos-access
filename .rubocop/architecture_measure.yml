@@ -1,5 +1,5 @@
-# Config used by `ArchitectureBaseline.measure`: the two architecture cops only, with the
-# `.rubocop_todo.yml` excludes deliberately absent so debt files are still measured.
+# Config used by `ArchitectureBaseline.measure`: the two architecture cops only. No exclusions are
+# loaded, so the complete repository is measured.
 inherit_from:
   - umaxica.yml
 

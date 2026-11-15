@@ -2,6 +2,8 @@
 # frozen_string_literal: true
 
 class AssociatedRecordLimitValidator < ActiveModel::Validator
+  public
+
   def validate(record)
     foreign_key = options.fetch(:foreign_key)
     return if record.public_send(foreign_key).blank?

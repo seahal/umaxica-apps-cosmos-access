@@ -35,4 +35,5 @@ module JitSecurityJwtJtiGenerator
       0
     end
   end
+  public_class_method :generate, :encoded_length
 end

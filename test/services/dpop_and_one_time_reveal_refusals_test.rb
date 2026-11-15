@@ -9,7 +9,6 @@ require "test_helper"
 # same way on both sides or a proof for the right request looks like one for the
 # wrong request.
 class DpopProofRefusalsTest < ActiveSupport::TestCase
-
   def verifier(proof_jwt:, request_uri: "https://id.example.test/oauth/token")
     DpopProofVerifier.new(
       proof_jwt: proof_jwt, request_method: "POST", request_uri: request_uri, record_jti: false,
@@ -28,5 +27,4 @@ class DpopProofRefusalsTest < ActiveSupport::TestCase
     assert_not result.valid?
     assert_predicate result.error, :present?
   end
-
 end

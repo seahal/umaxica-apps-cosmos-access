@@ -19,6 +19,8 @@ class OidcAccessTokenAuthenticator < ApplicationService
     @request_uri = request_uri
   end
 
+  public
+
   def call
     return failure("invalid_token") if access_token.blank?
 
@@ -40,12 +42,12 @@ class OidcAccessTokenAuthenticator < ApplicationService
     return failure("insufficient_scope") unless token_scope_allows_userinfo?(payload)
 
     device = find_device_session(base_session)
-    return failure("invalid_token") if device&.principal_public_id.blank?
-    return failure("invalid_token") unless token_subject_matches?(device.principal_public_id, payload)
+    return failure("invalid_token") if device&.subject_public_id.blank?
+    return failure("invalid_token") unless token_subject_matches?(device.subject_public_id, payload)
 
     Result.new(
       success: true, payload: payload, token: base_session, device: device,
-      principal_public_id: device.principal_public_id, error: nil,
+      principal_public_id: device.subject_public_id, error: nil,
     )
   end
 
@@ -115,8 +117,8 @@ class OidcAccessTokenAuthenticator < ApplicationService
   def find_device_session(root)
     model, owner =
       case resource_type
-      when "client" then [ClientDeviceSession, { user_id: root.user_id }]
-      when "operator" then [OperatorDeviceSession, { staff_id: root.staff_id }]
+      when "client" then [ClientDeviceSession, { subject_public_id: root.subject_public_id }]
+      when "operator" then [OperatorDeviceSession, { subject_public_id: root.subject_public_id }]
       else raise ArgumentError, "unsupported OP realm"
       end
     model.connection_class_for_self.connected_to(role: :writing) do

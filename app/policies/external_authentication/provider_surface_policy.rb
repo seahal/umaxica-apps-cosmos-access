@@ -13,6 +13,8 @@ module ExternalAuthentication
       }.freeze,
     }.freeze
 
+    public
+
     def allowed?(surface:, provider:, operation:)
       ALLOWED_OPERATIONS.fetch(surface, {}).fetch(provider, []).include?(operation)
     end

@@ -7,6 +7,8 @@ class OtpTelephoneAdapter < OtpAdapter
     @surface = surface
   end
 
+  public
+
   def deliver(record:, otp_code:, message_style: :default, purpose: nil, public_id: nil,
               sign_up_flow_ref: nil, sign_up_otp_counter: nil,
               sign_up_telephone_transaction_ref: nil, sign_up_telephone_otp_generation: nil,

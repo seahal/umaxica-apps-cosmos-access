@@ -3,7 +3,6 @@
 
 module Email::App
   class ApplicationMailer < ActionMailer::Base
-
     default from: -> { ENV.fetch("SMTP_FROM_ADDRESS_APP") }
   end
 end

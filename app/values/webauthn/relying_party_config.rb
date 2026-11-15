@@ -25,6 +25,8 @@ module Webauthn
 
     # Exact-match origin check: scheme, host, and effective port must all be
     # equal. Default ports (443/80) compare equal to their explicit forms.
+    public
+
     def trusted_origin?(candidate)
       candidate_uri = parse_origin(candidate.to_s)
 

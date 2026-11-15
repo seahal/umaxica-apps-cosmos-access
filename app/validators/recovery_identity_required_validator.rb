@@ -2,6 +2,8 @@
 # frozen_string_literal: true
 
 class RecoveryIdentityRequiredValidator < ActiveModel::Validator
+  public
+
   def validate(record)
     owner = record.public_send(options.fetch(:owner))
     return if owner&.has_verified_recovery_identity?

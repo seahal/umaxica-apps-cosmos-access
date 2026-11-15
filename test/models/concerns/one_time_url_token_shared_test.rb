@@ -21,6 +21,14 @@ class OneTimeUrlTokenSharedTest < ActiveSupport::TestCase
     assert_nil DummyToken.parse_one_time_url_token("abc")
   end
 
+  test "logout transaction exposes the shared opaque token format" do
+    transaction = LogoutTransaction.new
+
+    assert_equal OneTimeUrlTokenShared::TOKEN_SEPARATOR, transaction.token_separator
+    assert_equal OneTimeUrlTokenShared::VERIFIER_BYTES, transaction.verifier_bytes
+    assert_equal ["opaque-id", "verifier"], transaction.parse_one_time_url_token("opaque-id.verifier")
+  end
+
   test "digest and secure compare work as expected" do
     expected = DummyToken.digest_one_time_url_verifier("verifier")
 

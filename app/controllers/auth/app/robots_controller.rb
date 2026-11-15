@@ -8,6 +8,8 @@ module Auth
 
       AUTHENTICATION_MODE = :bare
 
+      public
+
       def index
         show_plain_text
       end

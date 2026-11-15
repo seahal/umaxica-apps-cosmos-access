@@ -180,7 +180,7 @@ class ClientSecretSignInReceiptTest < ActiveSupport::TestCase
     root = client_tokens(:one)
     device = client_device_sessions(:one)
     flow = ClientSignInFlow.create!(
-      principal_id: root.user_id, token: root, nonce_digest: "f" * 64,
+      principal_id: root.subject_public_id, token: root, nonce_digest: "f" * 64,
       issued_at: now - 11.days, expires_at: now - 9.days,
       state_id: ClientSignInFlowState::COMPLETED, completed_at: now - 10.days, session_issued_at: now - 10.days,
       authentication_method: "secret", authentication_context: "normal",
@@ -191,7 +191,7 @@ class ClientSecretSignInReceiptTest < ActiveSupport::TestCase
         operation_id: SecureRandom.uuid,
         sign_in_flow_id: flow.id,
         credential_ref: "c" * 21,
-        client_ref: device.principal_public_id,
+        client_ref: device.subject_public_id,
         root_token_ref: root.public_id,
         committed_at: now,
         created_at: now,

@@ -3,6 +3,8 @@
 
 module SignIn
   class SequencePolicy < ApplicationPolicy
+    public
+
     def show_checkpoint?
       checkpoint_allowed?
     end

@@ -13,6 +13,8 @@ module ExternalAuthentication
       @audience = audience.dup.freeze
     end
 
+    public
+
     def call(auth_hash:, verified_at:)
       return failed(code: :invalid_callback, safe_reason: :callback_invalid) unless auth_hash.is_a?(OmniAuth::AuthHash)
       return failed(code: :invalid_callback, safe_reason: :provider_mismatch) unless auth_hash.provider == PROVIDER

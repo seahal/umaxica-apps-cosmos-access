@@ -20,7 +20,7 @@
 #  current_refresh_token_id   :bigint
 #  public_id                  :string(21)       not null
 #  refresh_token_family_id    :string
-#  staff_id                   :bigint           not null
+#  subject_public_id          :string           not null
 #  status_id                  :bigint           default(1), not null
 #
 # Indexes
@@ -30,12 +30,23 @@
 #  index_operator_device_sessions_on_public_id                 (public_id) UNIQUE
 #  index_operator_device_sessions_on_refresh_token_family_id   (refresh_token_family_id)
 #  index_operator_device_sessions_on_revoked_at                (revoked_at)
-#  index_operator_device_sessions_on_staff_id                  (staff_id)
 #
 class OperatorDeviceSession < OpBaseOrgRecord
   include DeviceSessionable
 
-  attr_readonly :principal_public_id
+  before_validation :generate_public_id, on: :create
+  before_validation :refresh_generated_public_id_after_collision, on: :create
+  before_create :generate_public_id
+  around_create :retry_public_id_collision
+  validate :public_id_immutable_after_create, on: :update
+
+  validates :public_id, presence: true, length: { is: PublicId::GENERATION_SIZE }, uniqueness: true
+  validates :public_id, uniqueness: true, length: { maximum: 21 }
+  validates :status_id, presence: true
+
+  scope :active, -> { where(revoked_at: nil, status_id: DeviceSessionable::STATUS_ACTIVE) }
+
+  attr_readonly :subject_public_id
 
   # Nullable in the schema and legitimately blank for fallback (non-DBSC)
   # sessions and before the first refresh rotation; requiring it made `revoke!`
@@ -47,9 +58,8 @@ class OperatorDeviceSession < OpBaseOrgRecord
                            dependent: :restrict_with_exception,
                            inverse_of: :operator_device_session
 
-  validates :staff_id, presence: true
-  validates :principal_public_id, presence: true, length: { maximum: 255 }
+  validates :subject_public_id, presence: true, length: { maximum: 255 }
 
   # Unique indexes that include the primary key back composite references; checked only for an explicit id.
-  validates :id, uniqueness: { scope: %i(staff_id) }, allow_nil: true, if: :will_save_change_to_id?
+  validates :id, uniqueness: { scope: %i(subject_public_id) }, allow_nil: true, if: :will_save_change_to_id?
 end

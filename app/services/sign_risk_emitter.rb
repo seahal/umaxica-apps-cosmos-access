@@ -112,4 +112,5 @@ class SignRiskEmitter
 
   private_class_method :persist, :build_context, :persist_user_occurrence,
                        :persist_staff_occurrence, :hmac_email, :hmac_ip, :meta_reason
+  public_class_method :emit, :feature_enabled?
 end

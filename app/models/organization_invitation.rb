@@ -40,6 +40,8 @@ class OrganizationInvitation < OpBaseOrgRecord
   scope :expired, -> { where(expires_at: ..Time.current) }
   scope :consumed, -> { where.not(consumed_at: nil) }
 
+  public
+
   def active?
     consumed_at.nil? && expires_at > Time.current
   end
@@ -57,6 +59,8 @@ class OrganizationInvitation < OpBaseOrgRecord
   end
 
   class << self
+    public
+
     def find_valid(code, email: nil)
       invitation = active.find_by(code: code)
       return nil if invitation.blank?

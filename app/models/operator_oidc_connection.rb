@@ -24,6 +24,19 @@
 class OperatorOidcConnection < OpBaseOrgRecord
   include OidcConnectionRecord
 
+  before_validation :generate_public_id, on: :create
+  before_validation :refresh_generated_public_id_after_collision, on: :create
+  before_create :generate_public_id
+  around_create :retry_public_id_collision
+  validate :public_id_immutable_after_create, on: :update
+
+  validates :public_id, presence: true, length: { is: PublicId::GENERATION_SIZE }, uniqueness: true
+  validates :client_id, presence: true
+  validates :client_id, length: { maximum: 64 }
+
+  scope :recent_first, -> { order(Arel.sql("COALESCE(last_used_at, updated_at, created_at) DESC")) }
+  scope :active, -> { where(revoked_at: nil) }
+
   has_many :staff_tokens,
            class_name: "OperatorToken",
            foreign_key: :oidc_connection_id,
@@ -35,7 +48,10 @@ class OperatorOidcConnection < OpBaseOrgRecord
 
   def self.actor_foreign_key = :staff_id
 
+  public
+
   def active_tokens
     staff_tokens.session_inventory
   end
+  public_class_method :actor_foreign_key
 end

@@ -59,4 +59,7 @@ class SignUpEmailPendingGuard
       [nil, namespace]
     end
   end
+
+  private_class_method :lock_key, :resolve_digest_and_namespace
+  public_class_method :with_lock
 end

@@ -71,7 +71,7 @@ module JitSecurityJwtIssuerBuilder
       acc[kid] = KeyRecord.new(
         kid: kid,
         private_key: (kid == active_kid) ? active_private_key : nil,
-        public_key: JitSecurityJwtJwk.import_public_key(jwk),
+        public_key: import_public_key(jwk),
         public_jwk: jwk.except("state"),
         state: state,
       )

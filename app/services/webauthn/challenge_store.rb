@@ -38,6 +38,8 @@ module Webauthn
       @session = session
     end
 
+    public
+
     def issue!(challenge:, purpose:, surface:, rp_id:, origin:, actor_global_key:)
       purpose = normalize_purpose(purpose)
       entries = current_entries

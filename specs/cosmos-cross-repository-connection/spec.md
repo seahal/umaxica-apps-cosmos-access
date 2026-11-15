@@ -45,6 +45,16 @@ ADR (the only one so far is PS256-only signing).
   (`adr/cosmos-base-surface-decomposition.md`, Protocol Target). Choices in this spec should not
   move away from them.
 
+### Owner amendment (2026-11-13): client assertion algorithm
+
+The original out-of-scope note below recorded the PS256 signing migration as deferred while Access
+used ES384. The owner has since confirmed that Governance, Sphere and Press sign their
+`private_key_jwt` assertions with PS256. Access now accepts PS256 only for client assertions,
+requires RSA keys of at least 3072 bits, and advertises PS256 only. This supersedes only that
+algorithm deferral; it does not authorize key-material changes or implementation edits in the RP
+repositories. The current Access contract is recorded in
+`adr/cosmos-jwt-ps256-and-op-signing-in-aws-kms.md`.
+
 ## RP Implementation: A Fork of `openid_connect`, Extended and Proposed Upstream (owner, 2026-11-11)
 
 Available Ruby OIDC client gems cannot meet the target profile as released. `openid_connect` is the

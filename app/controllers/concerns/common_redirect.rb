@@ -303,4 +303,5 @@ module CommonRedirect
       ),
     )
   end
+  public_class_method :normalize_host
 end

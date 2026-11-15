@@ -1,24 +1,7 @@
 # typed: false
 # frozen_string_literal: true
 
-class OidcAuthorizeCoordinator < ApplicationService
-  Result =
-    Data.define(:success, :redirect_url, :redirect_uri, :error, :error_description) do
-      def success? = success
-    end
-
-  def initialize(params:, resource:, session_token:, auth_method: nil, acr: nil, authentication_event_at: nil,
-                 authorization_transaction_ref: nil)
-    super()
-  end
-
-  def call
-    Result.new(
-      success: false, redirect_url: nil, redirect_uri: nil, error: "temporarily_unavailable",
-      error_description: "Governance authorization code authority is unavailable",
-    )
-  end
-
+class OidcAuthorizeCoordinator
   class << self
     public
 

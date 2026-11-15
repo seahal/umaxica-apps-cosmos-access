@@ -40,6 +40,8 @@ class IdentityPasskeyCeremonyGrant
     new(payload, kid: header["kid"], now: now)
   end
 
+  public
+
   def [](key) = payload[key.to_s]
 
   def validate!(now: Time.current)
@@ -65,4 +67,5 @@ class IdentityPasskeyCeremonyGrant
       "iat" => now.to_i,
     }
   end
+  public_class_method :issue, :decode, :default_claims
 end

@@ -26,7 +26,7 @@ class OpSessionRiskEnforcerTest < ActiveSupport::TestCase
     4.times do
       ClientOccurrence.create!(
         body: SecureRandom.uuid, event_type: "risk.auth_failed",
-        context: { user_id: root.user_id }, status_id: ClientOccurrence::ACTIVE_STATUS_ID,
+        context: { subject_public_id: root.subject_public_id }, status_id: ClientOccurrence::ACTIVE_STATUS_ID,
         discard_at: 1.hour.from_now, purge_eligible_at: 2.hours.from_now,
       )
     end
@@ -36,7 +36,7 @@ class OpSessionRiskEnforcerTest < ActiveSupport::TestCase
     assert_equal IdentityStepUpCeremonyContract::EVIDENCE_RECORDED, root.reload.evidence_state_id
     ClientOccurrence.create!(
       body: SecureRandom.uuid, event_type: "risk.auth_failed",
-      context: { user_id: root.user_id }, status_id: ClientOccurrence::ACTIVE_STATUS_ID,
+      context: { subject_public_id: root.subject_public_id }, status_id: ClientOccurrence::ACTIVE_STATUS_ID,
       discard_at: 1.hour.from_now, purge_eligible_at: 2.hours.from_now,
     )
 
@@ -67,7 +67,7 @@ class OpSessionRiskEnforcerTest < ActiveSupport::TestCase
       assert_predicate unrelated.reload, :active_status?
       assert_not unrelated.device_session_record!.revoked?
       realm = OpAuthorityStopCommitter.realm_for_root(root)
-      stop = OpAuthorityStopCommitter.stop_class(realm).where(principal_public_id: root.principal_public_id).last!
+      stop = OpAuthorityStopCommitter.stop_class(realm).where(principal_public_id: root.subject_public_id).last!
 
       assert_equal OpAuthorityStopReference.cause_id("risk"), stop.cause_id
     end

@@ -7,11 +7,17 @@ class OpAuthorityStopTargetUniquenessTest < ActiveSupport::TestCase
 
   test "target uniqueness is scoped to its owning stop on each surface" do
     [
-      ["app", client_tokens(:one).device_session.principal_public_id, client_tokens(:one), client_tokens(:two), OpAppGrant,
-       OpAppAuthorityStopRootTarget, OpAppAuthorityStopGrantTarget, :client_token_id, "base-app-ww",],
-      ["org", operator_tokens(:one).device_session.principal_public_id, operator_tokens(:one), operator_tokens(:two), OpOrgGrant,
-       OpOrgAuthorityStopRootTarget, OpOrgAuthorityStopGrantTarget, :operator_token_id, "base-org-ww",],
-    ].each do |realm, principal_public_id, root, other_root, grant_model, root_target, grant_target, parent_key, client_id|
+      [
+        "app", client_tokens(:one).device_session.subject_public_id, client_tokens(:one), client_tokens(:two),
+        OpAppGrant, OpAppAuthorityStopRootTarget, OpAppAuthorityStopGrantTarget, :client_token_id, "base-app-ww",
+      ],
+      [
+        "org", operator_tokens(:one).device_session.subject_public_id, operator_tokens(:one), operator_tokens(:two),
+        OpOrgGrant, OpOrgAuthorityStopRootTarget, OpOrgAuthorityStopGrantTarget, :operator_token_id, "base-org-ww",
+      ],
+    ].each do |attributes|
+      realm, principal_public_id, root, other_root, grant_model, root_target, grant_target, parent_key,
+        client_id = attributes
       stops =
         %w(first second).map do |event|
           OpAuthorityStopCommitter.stop_principal(
@@ -47,9 +53,9 @@ class OpAuthorityStopTargetUniquenessTest < ActiveSupport::TestCase
 
   test "target uniqueness and required foreign keys survive direct inserts on each surface" do
     [
-      ["app", client_tokens(:one).device_session.principal_public_id, client_tokens(:one), OpAppGrant,
+      ["app", client_tokens(:one).device_session.subject_public_id, client_tokens(:one), OpAppGrant,
        OpAppAuthorityStopRootTarget, OpAppAuthorityStopGrantTarget, :client_token_id, "base-app-ww",],
-      ["org", operator_tokens(:one).device_session.principal_public_id, operator_tokens(:one), OpOrgGrant,
+      ["org", operator_tokens(:one).device_session.subject_public_id, operator_tokens(:one), OpOrgGrant,
        OpOrgAuthorityStopRootTarget, OpOrgAuthorityStopGrantTarget, :operator_token_id, "base-org-ww",],
     ].each do |realm, principal_public_id, root, grant_model, root_target, grant_target, parent_key, client_id|
       stop = OpAuthorityStopCommitter.stop_principal(

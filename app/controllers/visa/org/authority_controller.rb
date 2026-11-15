@@ -57,15 +57,15 @@ module Visa
 
       def token_class = OperatorToken
 
-      def root_owner_id(root) = root.staff_id
+      def root_owner_id(root) = root.subject_public_id
 
-      def browser_risk_payload(root) = { staff_id: root.staff_id, user_token_id: root.public_id }
+      def browser_risk_payload(root) = { staff_id: root.subject_public_id, user_token_id: root.public_id }
 
       def write_browser_refresh_audit(root)
         AuthenticationAuditWriter.write_reference(
           OperatorChronicle, OperatorChronicleEvent::TOKEN_REFRESHED,
-          subject_type: "Operator", subject_id: root.staff_id.to_s,
-          actor_type: "Operator", actor_id: root.staff_id.to_s,
+          subject_type: "Operator", subject_id: root.subject_public_id.to_s,
+          actor_type: "Operator", actor_id: root.subject_public_id.to_s,
           context: { session_public_id: root.device_session_record.public_id },
         )
       end

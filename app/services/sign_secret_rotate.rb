@@ -49,6 +49,8 @@ class SignSecretRotate
     @issued_by_ref = issued_by_ref
   end
 
+  public
+
   def call
     rotated = SignSecretIssue.call(
       credential_collection: @credential_collection,
@@ -72,4 +74,5 @@ class SignSecretRotate
 
     Result.new(secret_credential: rotated.secret_credential, raw_secret_credential: rotated.raw_secret_credential)
   end
+  public_class_method :call
 end

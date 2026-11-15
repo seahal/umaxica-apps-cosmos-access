@@ -10,6 +10,8 @@ class IdentityStepUpCeremonyFreshnessRevoker
     @token = token
   end
 
+  public
+
   def call!
     unless token.is_a?(ClientToken) || token.is_a?(OperatorToken)
       raise ArgumentError, "unsupported step-up token"
@@ -21,4 +23,6 @@ class IdentityStepUpCeremonyFreshnessRevoker
   private
 
   attr_reader :token
+
+  public_class_method :call!
 end

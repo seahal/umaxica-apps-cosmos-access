@@ -8,13 +8,12 @@ class RoutingEntrypointsTest < ActiveSupport::TestCase
   test "global routing entrypoints are loaded" do
     assert_nothing_raised { Rails.application.reload_routes! }
 
-    preference_route = Rails.application.routes.recognize_path(
-      "http://auth.app.localhost/api/v0/preferences/theme",
-      method: :get,
-    )
-
-    assert_equal "auth/app/api/v0/preferences/themes", preference_route[:controller]
-    assert_equal "show", preference_route[:action]
+    assert_raises(ActionController::RoutingError) do
+      Rails.application.routes.recognize_path(
+        "http://auth.app.localhost/api/v0/preferences/theme",
+        method: :get,
+      )
+    end
 
     root_route = Rails.application.routes.recognize_path("http://unregistered.invalid/")
 

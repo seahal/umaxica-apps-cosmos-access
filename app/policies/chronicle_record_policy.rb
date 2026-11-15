@@ -64,6 +64,8 @@ class ChronicleRecordPolicy
   ].freeze
 
   class << self
+    public
+
     def sanitize(value, key: nil)
       case value
       when Hash

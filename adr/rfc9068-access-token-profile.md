@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted (2026-09-10). This profile applies to Auth access JWTs only. Preference JWTs use the
-separate realm contract in
+Accepted (2026-09-10), amended 2026-11-13 for the Access PS256 cut-over. This profile applies to
+Auth access JWTs only. Preference JWTs use the separate realm contract in
 [`preference-realm-jwt-and-host-bound-browser-binding.md`](preference-realm-jwt-and-host-bound-browser-binding.md).
 
 ## Context
@@ -13,24 +13,25 @@ First-party Auth access JWTs used a private header `typ`, duplicated payload typ
 collided with RFC 8693. Resource-type suffixes were also folded into `iss`.
 
 UMAXICA needs a stable Auth access-token contract that matches RFC 9068 as closely as possible while
-keeping the existing ES384-only key policy.
+keeping the then-existing ES384-only key policy. The 2026-11-13 implementation amendment replaces
+that policy for Access with a single PS256 cut-over and no ES384 compatibility period.
 
 ## Decision
 
 UMAXICA Auth access JWTs follow RFC 9068 in token structure, claims, semantics, and validation
-requirements. ES384 is the sole supported signing algorithm. UMAXICA intentionally does not
-implement the RFC 9068 §2.1 requirement that conforming authorization servers and resource servers
-include RS256 among their supported signature algorithms.
+requirements. PS256 is the sole supported signing algorithm, using RSA keys of at least 3072 bits.
+UMAXICA intentionally does not implement the RFC 9068 §2.1 requirement that conforming authorization
+servers and resource servers include RS256 among their supported signature algorithms.
 
-This is an RFC 9068 profile with one documented interoperability deviation. ES384 itself is
+This is an RFC 9068 profile with one documented interoperability deviation. PS256 itself is
 permitted by RFC 9068; the deviation is the absence of RS256 support. `alg=none` and every algorithm
-other than ES384 are rejected. The verifier does not treat the token-provided `alg` as authorization
+other than PS256 are rejected. The verifier does not treat the token-provided `alg` as authorization
 to select an arbitrary algorithm.
 
 Auth access JWTs use JOSE:
 
 ```json
-{ "alg": "ES384", "kid": "...", "typ": "at+jwt" }
+{ "alg": "PS256", "kid": "...", "typ": "at+jwt" }
 ```
 
 Required claims: `iss`, `exp`, `aud`, `sub`, `client_id`, `iat`, `jti`.
@@ -61,7 +62,7 @@ fails as an unknown kid.
 
 ### Validation
 
-Verifiers require `typ=at+jwt`, `alg=ES384`, a `kid` that resolves in the expected keyring, a valid
+Verifiers require `typ=at+jwt`, `alg=PS256`, a `kid` that resolves in the expected keyring, a valid
 signature, the exact issuer, an expected audience, `exp`, `iat`, and `nbf` when present. `sub`,
 `client_id`, `iss`, and `jti` must be non-empty strings; `iat`, `exp`, and `nbf` must be integers;
 `scope` is required and must be a non-empty string. `scp`, `act`, and payload `typ` are rejected.

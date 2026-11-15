@@ -22,4 +22,5 @@ class SignInStateMachine
   def self.http_status_for(status)
     TERMINAL_RESULT_STATUSES.fetch(status.to_sym)
   end
+  public_class_method :terminal_status?, :http_status_for
 end

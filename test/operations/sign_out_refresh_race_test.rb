@@ -16,12 +16,11 @@ class SignOutRefreshRaceTest < ActiveSupport::TestCase
   setup do
     @principal_public_id = PublicId.generate
     @device = ClientDeviceSession.create!(
-      user_id: SecureRandom.random_number(1_000_000) + 9_300_000,
-      principal_public_id: @principal_public_id,
+      subject_public_id: @principal_public_id,
     )
     @root = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: @device.user_id,
+      subject_public_id: @device.subject_public_id,
       device_session: @device,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       user_token_status_id: ClientTokenStatus::ACTIVE,

@@ -4,6 +4,11 @@
 class IdentityTotpCeremonyCandidate < OpBaseAppRecord
   include IdentityCeremonyCandidateRecord
 
+  scope :active_at, ->(time) { where(arel_table[:expires_at].gt(time), consumed_at: nil) }
+
+  validates :ref, :digest, :surface, :actor_ref, :session_ref, :expires_at, presence: true
+  validates :ref, uniqueness: true
+
   encrypts :private_key
 
   validates :private_key, presence: true

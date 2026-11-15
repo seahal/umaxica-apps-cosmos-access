@@ -6,15 +6,6 @@ module OauthCallbackStateable
 
   TTL_SECONDS = 300
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    scope :active_at, ->(time) { where(arel_table[:expires_at].gt(time)) }
-    scope :unconsumed, -> { where(consumed_at: nil) }
-
-    validates :state_digest, :provider, :issued_at, :expires_at, presence: true
-    validates :state_digest, uniqueness: true
-  end
-
   class_methods do
     def issue!(state:, provider:, intent: nil, now: Time.current)
       return nil if state.blank? || provider.blank?

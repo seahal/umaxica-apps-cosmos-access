@@ -6,12 +6,8 @@ require "active_support"
 require "active_support/test_case"
 require_relative "../../lib/architecture_baseline"
 
-# Ratchet for the Umaxica architecture cops.
-#
-# `.rubocop_todo.yml` keeps `bin/rubocop` green by excluding files that are already in debt, which
-# alone would let a new violation slip into one of those files unnoticed. This test measures the
-# repository with the excludes ignored and compares against the recorded per-file counts, so a debt
-# file may only improve. Regenerate both artifacts with `bin/rails architecture:baseline`.
+# Ratchet for the Umaxica architecture cops. RuboCop reports all findings directly; this test keeps
+# the per-file debt count from growing while existing findings are removed.
 class ArchitectureBaselineTest < ActiveSupport::TestCase
   def test_no_file_exceeds_its_recorded_architecture_debt
     measured = ArchitectureBaseline.measure
@@ -30,13 +26,8 @@ class ArchitectureBaselineTest < ActiveSupport::TestCase
     end
   end
 
-  def test_baseline_and_rubocop_todo_describe_the_same_files
-    recorded = ArchitectureBaseline.recorded
-    todo = YAML.load_file(ArchitectureBaseline::TODO_PATH, aliases: false)
-
-    ArchitectureBaseline::COPS.each do |cop|
-      assert_equal recorded.fetch(cop).keys.sort, todo.fetch(cop).fetch("Exclude").sort, cop
-    end
+  def test_rubocop_todo_does_not_exist
+    assert_not File.exist?(ArchitectureBaseline::ROOT.join(".rubocop_todo.yml"))
   end
 
   def test_baseline_does_not_list_resolved_files

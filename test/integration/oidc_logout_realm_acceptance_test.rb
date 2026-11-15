@@ -7,16 +7,16 @@ class OidcLogoutRealmAcceptanceTest < ActionDispatch::IntegrationTest
 
   test "APP logout preserves the ORG session and refuses an ORG hint at APP" do
     app = ClientToken.create!(
-      authentication_epoch: 0, user_id: 1001,
+      authentication_epoch: 0, subject_public_id: "logout-client",
       device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "logout-client",
+        subject_public_id: "logout-client",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
     org = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: 1002,
+      authentication_epoch: 0, subject_public_id: "logout-operator",
       device_session: OperatorDeviceSession.create!(
-        staff_id: 1002, principal_public_id: "logout-operator",
+        subject_public_id: "logout-operator",
       ),
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )

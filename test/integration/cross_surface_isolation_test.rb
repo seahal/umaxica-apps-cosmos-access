@@ -6,24 +6,19 @@ require "test_helper"
 
 # App and Org access tokens authenticate only on their corresponding Visa surface.
 class CrossSurfaceIsolationTest < ActionDispatch::IntegrationTest
-  fixtures :operators, :clients
+  self.fixture_table_names = %w(client_tokens operator_tokens client_device_sessions operator_device_sessions)
 
   setup do
-    @client = clients(:one)
-    @operator = operators(:one)
+    @client_token = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
+    @operator_token = OperatorToken.find(ActiveRecord::FixtureSet.identify(:one))
   end
 
   # --- positive controls: each surface accepts its own actor ---
 
   test "client access token authenticates on Visa App token check" do
-    token = ClientToken.create!(authentication_epoch: 0, user: @client)
+    token = @client_token
     token.rotate_refresh_token!
-    access = jwt_access_token_for(
-      @client,
-      host: ENV.fetch("PRIVATE_VISA_SERVICE_URL"),
-      session_public_id: token.public_id,
-      resource_type: "client",
-    )
+    access = access_token_for_root(token, "client")
 
     get "/edge/v0/token/check", headers: token_check_headers(ENV.fetch("PRIVATE_VISA_SERVICE_URL"), access), as: :json
 
@@ -33,14 +28,10 @@ class CrossSurfaceIsolationTest < ActionDispatch::IntegrationTest
   end
 
   test "operator access token authenticates on Visa Org token check" do
-    token = OperatorToken.create!(authentication_epoch: 0, staff: @operator)
+    token = @operator_token
+    token.update!(authentication_context: "normal")
     token.rotate_refresh_token!
-    access = jwt_access_token_for(
-      @operator,
-      host: ENV.fetch("PRIVATE_VISA_STAFF_URL"),
-      session_public_id: token.public_id,
-      resource_type: "operator",
-    )
+    access = access_token_for_root(token, "operator")
 
     get "/edge/v0/token/check", headers: token_check_headers(ENV.fetch("PRIVATE_VISA_STAFF_URL"), access), as: :json
 
@@ -52,14 +43,10 @@ class CrossSurfaceIsolationTest < ActionDispatch::IntegrationTest
   # --- isolation matrix: foreign-surface credentials are rejected (redirect to sign-in) ---
 
   test "operator access token is rejected on Visa App token check" do
-    token = OperatorToken.create!(authentication_epoch: 0, staff: @operator)
+    token = @operator_token
+    token.update!(authentication_context: "normal")
     token.rotate_refresh_token!
-    access = jwt_access_token_for(
-      @operator,
-      host: ENV.fetch("PRIVATE_VISA_STAFF_URL"),
-      session_public_id: token.public_id,
-      resource_type: "operator",
-    )
+    access = access_token_for_root(token, "operator")
 
     get "/edge/v0/token/check", headers: token_check_headers(ENV.fetch("PRIVATE_VISA_SERVICE_URL"), access), as: :json
 
@@ -67,14 +54,9 @@ class CrossSurfaceIsolationTest < ActionDispatch::IntegrationTest
   end
 
   test "client access token is rejected on Visa Org token check" do
-    token = ClientToken.create!(authentication_epoch: 0, user: @client)
+    token = @client_token
     token.rotate_refresh_token!
-    access = jwt_access_token_for(
-      @client,
-      host: ENV.fetch("PRIVATE_VISA_SERVICE_URL"),
-      session_public_id: token.public_id,
-      resource_type: "client",
-    )
+    access = access_token_for_root(token, "client")
 
     get "/edge/v0/token/check", headers: token_check_headers(ENV.fetch("PRIVATE_VISA_STAFF_URL"), access), as: :json
 
@@ -89,6 +71,24 @@ class CrossSurfaceIsolationTest < ActionDispatch::IntegrationTest
       "Accept" => "application/json",
       "Authorization" => "Bearer #{access_token}",
     }
+  end
+
+  def access_token_for_root(root, resource_type)
+    payload = AuthorizationTokenClaims.build(
+      resource: nil,
+      subject: root.public_send((resource_type == "client") ? :subject_public_id : :subject_public_id).to_s,
+      resource_type: resource_type,
+      issued_at: Time.current,
+      access_token_ttl: 60.seconds,
+      session_public_id: root.device_session.public_id,
+      oidc_jti: root.oidc_jti,
+      authentication_context: "normal",
+    )
+    JitSecurityJwtKeyring.encode(
+      payload,
+      typ: SecurityJwtAuthAccessTokenCodec::TOKEN_TYPE,
+      issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(resource_type),
+    )
   end
   private
 
@@ -332,11 +332,7 @@ end
 
 # DAMP local route helper aliases for former shared test support.
 class CrossSurfaceIsolationTest
-
   private
-
-
-
 end
 
 # DAMP local helper copy on the test class.
@@ -395,7 +391,7 @@ class CrossSurfaceIsolationTest
 
   def load_jump_rt_env!
     @jump_rt_env_originals ||= {}
-    jump_rt_key = Base64.strict_encode64(OpenSSL::PKey::EC.generate("secp384r1").to_der)
+    jump_rt_key = Base64.strict_encode64(OpenSSL::PKey::RSA.generate(3_072).private_to_der)
     %w(AUTH_APP AUTH_ORG ACME_APP ACME_ORG CORE_APP CORE_ORG BASE_APP BASE_ORG).each do |namespace|
       ENV["JWT_#{namespace}_ACTIVE_KID"] = "#{namespace.downcase.tr("_", "-")}-test"
       ENV["JWT_#{namespace}_PRIVATE_KEY"] = jump_rt_key

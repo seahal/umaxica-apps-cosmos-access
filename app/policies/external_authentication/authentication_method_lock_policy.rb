@@ -7,6 +7,8 @@ module ExternalAuthentication
   # Distinct from login_allowed? (BAN), which only reflects principal-level
   # status and never sees per-method unusable/permanently_frozen effects.
   class AuthenticationMethodLockPolicy
+    public
+
     def locked?(enforcement_case_class:, principal_public_id:, authentication_method:)
       enforcement_case_class.authentication_method_effect_blocking?(
         principal_public_id,

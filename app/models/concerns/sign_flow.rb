@@ -4,25 +4,8 @@
 module SignFlow
   extend ActiveSupport::Concern
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    include ::PublicId
-    include ::Retainable
-
-    attribute :issued_at, :datetime, default: -> { Time.current }
-    attribute :expires_at, :datetime, default: -> { default_ttl.from_now }
-
-    validates :nonce_digest, presence: true
-    validates :issued_at, :expires_at, presence: true
-    validate :expires_after_issued_at
-
-    scope :recent_first, -> { order(created_at: :desc) }
-    scope :current,
-          -> do
-            where(arel_table[:discard_at].gt(Time.current))
-              .where(arel_table[:expires_at].gt(Time.current))
-          end
-  end
+  include ::PublicId
+  include ::Retainable
 
   class_methods do
     def digest_nonce(nonce)
@@ -35,6 +18,8 @@ module SignFlow
       AuthAdmissionBinding::CURFEW_DURATION
     end
   end
+
+  public
 
   def default_expires_at
     self.class.default_ttl.from_now

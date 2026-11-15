@@ -35,6 +35,8 @@ class IdentityOneTimeReveal
 
   public_class_method :resume_for_operation!
 
+  public
+
   def issue!(actor:, session_nonce:, value:, purpose:, metadata:, expires_in:)
     raise ArgumentError, "actor is required" unless actor&.id
     raise ArgumentError, "session_nonce is required" if session_nonce.blank?
@@ -185,4 +187,5 @@ class IdentityOneTimeReveal
       serializer: JSON,
     )
   end
+  public_class_method :issue!, :consume!
 end

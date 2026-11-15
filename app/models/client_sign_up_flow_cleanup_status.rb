@@ -11,6 +11,8 @@
 class ClientSignUpFlowCleanupStatus < OpBaseAppRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   NOTHING = 0
   IDLE = 10
   PENDING = 20

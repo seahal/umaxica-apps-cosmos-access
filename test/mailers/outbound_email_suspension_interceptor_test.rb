@@ -3,41 +3,28 @@
 
 require "test_helper"
 
-class OutboundEmailSuspensionInterceptorTest < ActionMailer::TestCase
-  setup do
-    ActionMailer::Base.deliveries.clear
-  end
-
+class OutboundEmailSuspensionInterceptorTest < ActiveSupport::TestCase
   teardown do
     Flipper.disable(:outbound_email_suspended)
   end
 
-  test "transactional mail is delivered while no channel is suspended" do
-    otp_mail.deliver_now
+  test "an unsuspended email channel leaves the message deliverable" do
+    Flipper.disable(:outbound_email_suspended)
+    message = Mail.new
+    message.perform_deliveries = true
 
-    assert_equal 1, ActionMailer::Base.deliveries.size
+    OutboundEmailSuspensionInterceptor.delivering_email(message)
+
+    assert message.perform_deliveries
   end
 
-  test "suspending the email channel stops transactional mail" do
+  test "a suspended email channel stops the message before delivery" do
     Flipper.enable(:outbound_email_suspended)
+    message = Mail.new
+    message.perform_deliveries = true
 
-    otp_mail.deliver_now
+    OutboundEmailSuspensionInterceptor.delivering_email(message)
 
-    assert_empty ActionMailer::Base.deliveries
-  end
-
-  private
-
-  def otp_mail
-    Email::App::OtpMailer.with(
-      encrypted_hotp_token: encrypted_otp("123456"),
-      email_address: "user@example.com",
-      public_id: "email-public-id",
-      encrypted_verification_token: OutboundSensitivePayload.encrypt_email_verification_token("verification-token"),
-    ).create
-  end
-
-  def encrypted_otp(code)
-    OutboundSensitivePayload.encrypt_email_otp(code)
+    assert_not message.perform_deliveries
   end
 end

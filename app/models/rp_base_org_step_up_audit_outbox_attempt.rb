@@ -7,6 +7,10 @@ class RpBaseOrgStepUpAuditOutboxAttempt < RpBaseOrgRecord
 
   belongs_to :outbox, class_name: "RpBaseOrgStepUpAuditOutbox", inverse_of: :attempts
 
+  validates :attempt_number, uniqueness: { scope: :outbox_id }
+  validates :outbox_id,
+            uniqueness: { conditions: -> { where(outcome: "delivered") } },
+            if: -> { outcome == "delivered" }
   validates :attempted_at, presence: true
   validates :attempt_number, numericality: { only_integer: true, greater_than: 0 }
   validates :outcome, inclusion: { in: %w(delivered failed) }

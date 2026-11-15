@@ -38,8 +38,11 @@ class AcceptanceWu02JwksSeparationTest < ActionDispatch::IntegrationTest
       assert_empty visa_keys.map { |key| key.fetch("kid") } & auth_keys.map { |key| key.fetch("kid") },
                    "Visa and Auth #{realm} JWKS must not share a kid"
 
-      visa_material = visa_keys.map { |key| key.slice("kty", "crv", "x", "y") }
-      auth_material = auth_keys.map { |key| key.slice("kty", "crv", "x", "y") }
+      assert_equal ["RSA"], visa_keys.map { |key| key.fetch("kty") }.uniq
+      assert_equal ["RSA"], auth_keys.map { |key| key.fetch("kty") }.uniq
+
+      visa_material = visa_keys.map { |key| key.slice("kty", "n", "e") }
+      auth_material = auth_keys.map { |key| key.slice("kty", "n", "e") }
 
       assert_empty visa_material & auth_material,
                    "Visa and Auth #{realm} JWKS must not share public key material"

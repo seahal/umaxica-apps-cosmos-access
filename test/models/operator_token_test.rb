@@ -80,9 +80,9 @@ require "test_helper"
 class OperatorTokenTest < ActiveSupport::TestCase
   def setup
     @staff = 9_000_000_001
-    device = OperatorDeviceSession.create!(staff_id: @staff, principal_public_id: "operator-#{@staff}")
+    device = OperatorDeviceSession.create!(subject_public_id: "operator-#{@staff}")
     @token = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: @staff, device_session: device,
+      authentication_epoch: 0, subject_public_id: device.subject_public_id, device_session: device,
       staff_token_status_id: OperatorTokenStatus::ACTIVE,
     )
   end
@@ -93,15 +93,15 @@ class OperatorTokenTest < ActiveSupport::TestCase
 
   test "persists the historical staff identifier" do
     assert_not_nil @token
-    assert_equal @staff, @token.staff_id
+    assert_equal @staff, @token.subject_public_id
   end
 
   test "token cannot bind a device session belonging to another Operator" do
     other = 9_000_000_002
     other_token = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: other,
+      authentication_epoch: 0, subject_public_id: "operator-#{other}",
       device_session: OperatorDeviceSession.create!(
-        staff_id: other, principal_public_id: "operator-#{other}",
+        subject_public_id: "operator-#{other}",
       ),
     )
     original_device_id = @token.device_session_id
@@ -113,16 +113,16 @@ class OperatorTokenTest < ActiveSupport::TestCase
         end
       end
 
-    assert_equal "fk_operator_tokens_on_staff_id_and_device_session_id",
+    assert_equal "fk_operator_tokens_on_subject_and_device_session",
                  error.cause.result.error_field(PG::Result::PG_DIAG_CONSTRAINT_NAME)
     assert_equal original_device_id, @token.reload.device_session_id
   end
 
   test "device session rejects a current token owned by another session" do
     other_token = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: @staff,
+      authentication_epoch: 0, subject_public_id: "operator-#{@staff}",
       device_session: OperatorDeviceSession.create!(
-        staff_id: @staff, principal_public_id: "operator-#{@staff}",
+        subject_public_id: "operator-#{@staff}",
       ),
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )
@@ -154,7 +154,7 @@ class OperatorTokenTest < ActiveSupport::TestCase
         end
       end
     assert_equal "23503", error.cause.result.error_field(PG::Result::PG_DIAG_SQLSTATE)
-    assert_includes %w(fk_operator_tokens_on_device_session_id fk_operator_tokens_on_staff_id_and_device_session_id),
+    assert_includes %w(fk_operator_tokens_on_device_session_id fk_operator_tokens_on_subject_and_device_session),
                     error.cause.result.error_field(PG::Result::PG_DIAG_CONSTRAINT_NAME)
 
     assert_raises(ActiveRecord::NotNullViolation) do
@@ -169,9 +169,9 @@ class OperatorTokenTest < ActiveSupport::TestCase
   test "token device session must belong to the same staff" do
     other_staff = 9_000_000_002
     other_token = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: other_staff,
+      authentication_epoch: 0, subject_public_id: "operator-#{other_staff}",
       device_session: OperatorDeviceSession.create!(
-        staff_id: other_staff, principal_public_id: "operator-#{other_staff}",
+        subject_public_id: "operator-#{other_staff}",
       ),
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )
@@ -183,7 +183,7 @@ class OperatorTokenTest < ActiveSupport::TestCase
         end
       end
     assert_equal "23503", error.cause.result.error_field(PG::Result::PG_DIAG_SQLSTATE)
-    assert_equal "fk_operator_tokens_on_staff_id_and_device_session_id",
+    assert_equal "fk_operator_tokens_on_subject_and_device_session",
                  error.cause.result.error_field(PG::Result::PG_DIAG_CONSTRAINT_NAME)
   end
 
@@ -209,7 +209,7 @@ class OperatorTokenTest < ActiveSupport::TestCase
         end
       end
     assert_equal "23001", error.cause.result.error_field(PG::Result::PG_DIAG_SQLSTATE)
-    assert_includes %w(fk_operator_tokens_on_device_session_id fk_operator_tokens_on_staff_id_and_device_session_id),
+    assert_includes %w(fk_operator_tokens_on_device_session_id fk_operator_tokens_on_subject_and_device_session),
                     error.cause.result.error_field(PG::Result::PG_DIAG_CONSTRAINT_NAME)
 
     assert OperatorDeviceSession.exists?(session.id)
@@ -239,14 +239,14 @@ class OperatorTokenTest < ActiveSupport::TestCase
     token_one = OperatorToken.find_by!(public_id: "one_staff_token_00001")
 
     assert_not_nil token_one
-    assert_not_nil token_one.staff_id
+    assert_not_nil token_one.subject_public_id
   end
 
   test "can load two fixture" do
     token_two = OperatorToken.find_by!(public_id: "two_staff_token_00001")
 
     assert_not_nil token_two
-    assert_not_nil token_two.staff_id
+    assert_not_nil token_two.subject_public_id
   end
 
   test "timestamp is set on creation" do
@@ -274,8 +274,8 @@ class OperatorTokenTest < ActiveSupport::TestCase
     OperatorToken::MAX_TOTAL_SESSIONS_PER_STAFF.times do
       OperatorToken.create!(
         authentication_epoch: 0,
-        staff_id: staff, device_session: OperatorDeviceSession.create!(
-          staff_id: staff, principal_public_id: "operator-#{staff}",
+        subject_public_id: "operator-#{staff}", device_session: OperatorDeviceSession.create!(
+          subject_public_id: "operator-#{staff}",
         ),
         staff_token_status: token_status,
         staff_token_kind: token_kind,
@@ -287,7 +287,7 @@ class OperatorTokenTest < ActiveSupport::TestCase
     extra_token = OperatorToken.new(
       authentication_epoch: 0,
       staff_id: staff, device_session: OperatorDeviceSession.create!(
-        staff_id: staff, principal_public_id: "operator-#{staff}",
+        subject_public_id: "operator-#{staff}",
       ),
       staff_token_status: token_status,
       staff_token_kind: token_kind,
@@ -312,9 +312,9 @@ class OperatorTokenTest < ActiveSupport::TestCase
   test "active state reflects revoked and expired refresh tokens" do
     freeze_time do
       token = OperatorToken.create!(
-        authentication_epoch: 0, staff_id: @staff,
+        authentication_epoch: 0, subject_public_id: "operator-#{@staff}",
         device_session: OperatorDeviceSession.create!(
-          staff_id: @staff, principal_public_id: "operator-#{@staff}",
+          subject_public_id: "operator-#{@staff}",
         ),
       )
 
@@ -357,8 +357,8 @@ class OperatorTokenTest < ActiveSupport::TestCase
     freeze_time do
       token = OperatorToken.create!(
         authentication_epoch: 0,
-        staff_id: @staff, device_session: OperatorDeviceSession.create!(
-          staff_id: @staff, principal_public_id: "operator-#{@staff}",
+        subject_public_id: "operator-#{@staff}", device_session: OperatorDeviceSession.create!(
+          subject_public_id: "operator-#{@staff}",
         ),
         staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
         discard_at: 12.hours.from_now,
@@ -391,8 +391,8 @@ class OperatorTokenTest < ActiveSupport::TestCase
     purge_eligible_at = 2.days.from_now
     token = OperatorToken.create!(
       authentication_epoch: 0,
-      staff_id: @staff, device_session: OperatorDeviceSession.create!(
-        staff_id: @staff, principal_public_id: "operator-#{@staff}",
+      subject_public_id: "operator-#{@staff}", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "operator-#{@staff}",
       ),
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       discard_at: 1.day.from_now,
@@ -406,8 +406,8 @@ class OperatorTokenTest < ActiveSupport::TestCase
     purge_eligible_at = 4.days.from_now
     token = OperatorToken.create!(
       authentication_epoch: 0,
-      staff_id: @staff, device_session: OperatorDeviceSession.create!(
-        staff_id: @staff, principal_public_id: "operator-#{@staff}",
+      subject_public_id: "operator-#{@staff}", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "operator-#{@staff}",
       ),
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
       discard_at: 1.day.from_now,
@@ -423,15 +423,15 @@ class OperatorTokenTest < ActiveSupport::TestCase
   test "purgeability query returns only tokens purgeable at or before now" do
     staff = 9_000_000_002
     past_token = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: staff, device_session: OperatorDeviceSession.create!(
-        staff_id: staff, principal_public_id: "operator-#{staff}",
+      authentication_epoch: 0, subject_public_id: "operator-#{staff}", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "operator-#{staff}",
       ), discard_at: 20.minutes.ago,
       purge_eligible_at: 10.minutes.ago,
     )
     future_token = OperatorToken.create!(
       authentication_epoch: 0,
-      staff_id: staff, device_session: OperatorDeviceSession.create!(
-        staff_id: staff, principal_public_id: "operator-#{staff}",
+      subject_public_id: "operator-#{staff}", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "operator-#{staff}",
       ),
       discard_at: 10.minutes.ago,
       purge_eligible_at: 10.minutes.from_now,
@@ -454,8 +454,8 @@ class OperatorTokenTest < ActiveSupport::TestCase
   test "rotate_refresh! consumes old row and creates new generation in same family" do
     token = OperatorToken.create!(
       authentication_epoch: 0,
-      staff_id: @staff, device_session: OperatorDeviceSession.create!(
-        staff_id: @staff, principal_public_id: "operator-#{@staff}",
+      subject_public_id: "operator-#{@staff}", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "operator-#{@staff}",
       ),
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )
@@ -481,8 +481,8 @@ class OperatorTokenTest < ActiveSupport::TestCase
   test "rotate_refresh! classifies second attempt as replay" do
     token = OperatorToken.create!(
       authentication_epoch: 0,
-      staff_id: @staff, device_session: OperatorDeviceSession.create!(
-        staff_id: @staff, principal_public_id: "operator-#{@staff}",
+      subject_public_id: "operator-#{@staff}", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "operator-#{@staff}",
       ),
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )
@@ -512,22 +512,22 @@ class OperatorTokenTest < ActiveSupport::TestCase
     expired_staff = 9_000_000_005
     revoked = OperatorToken.create!(
       authentication_epoch: 0,
-      staff_id: revoked_staff, device_session: OperatorDeviceSession.create!(
-        staff_id: revoked_staff, principal_public_id: "operator-#{revoked_staff}",
+      subject_public_id: "operator-#{revoked_staff}", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "operator-#{revoked_staff}",
       ),
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )
     compromised = OperatorToken.create!(
       authentication_epoch: 0,
-      staff_id: compromised_staff, device_session: OperatorDeviceSession.create!(
-        staff_id: compromised_staff, principal_public_id: "operator-#{compromised_staff}",
+      subject_public_id: "operator-#{compromised_staff}", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "operator-#{compromised_staff}",
       ),
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )
     expired = OperatorToken.create!(
       authentication_epoch: 0,
-      staff_id: expired_staff, device_session: OperatorDeviceSession.create!(
-        staff_id: expired_staff, principal_public_id: "operator-#{expired_staff}",
+      subject_public_id: "operator-#{expired_staff}", device_session: OperatorDeviceSession.create!(
+        subject_public_id: "operator-#{expired_staff}",
       ),
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )
@@ -563,9 +563,9 @@ class OperatorTokenTest < ActiveSupport::TestCase
 
   test "find_from_signed_ref resolves token when verifier payload has string keys" do
     token = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: @staff,
+      authentication_epoch: 0, subject_public_id: "operator-#{@staff}",
       device_session: OperatorDeviceSession.create!(
-        staff_id: @staff, principal_public_id: "operator-#{@staff}",
+        subject_public_id: "operator-#{@staff}",
       ),
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )

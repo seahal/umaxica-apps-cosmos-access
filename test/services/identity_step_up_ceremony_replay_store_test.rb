@@ -15,4 +15,25 @@ class IdentityStepUpCeremonyReplayStoreTest < ActiveSupport::TestCase
       IdentityStepUpCeremonyReplayStore.for(:invalid)
     end
   end
+
+  test "creates, finds, and selects a pending app transaction by actor session and scope" do
+    now = Time.current
+    store = IdentityStepUpCeremonyReplayStore.for(:app)
+    transaction = store.create_transaction!(
+      actor_ref: "actor-step-up-store",
+      session_ref: "session-step-up-store",
+      required_scope: "profile.write",
+      allowed_methods: %w(totp passkey),
+      now: now,
+    )
+
+    assert_equal transaction, store.find_transaction!(transaction.transaction_id)
+    assert_equal transaction, store.latest_pending_for(
+      actor_ref: "actor-step-up-store",
+      session_ref: "session-step-up-store",
+      required_scope: "profile.write",
+      now: now,
+    )
+    assert_not store.consumed?("not-yet-issued-result")
+  end
 end

@@ -20,14 +20,11 @@
 module HealthCheckRendering
   extend ActiveSupport::Concern
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    before_action :disable_health_response_cache
-  end
-
   # Probe endpoints (liveness/readiness/startup): text/plain, no redirect, no layout, no
   # negotiation. `result.ok?` already folds the probe-specific rule that liveness tolerates a
   # "starting" process while startup and readiness do not.
+  public
+
   def render_probe(result)
     if result.ok?
       render plain: "ok\n"
@@ -85,16 +82,6 @@ module HealthCheckRendering
       end
 
     entry.fetch(:status)
-  end
-
-  # A health response is a verdict about this instance at this instant, so a stored copy is a
-  # stale verdict: a cached 200 keeps an orchestrator sending traffic to an instance that has
-  # since failed its readiness probe, and a cached 503 keeps traffic away from one that has
-  # recovered. Rails otherwise defaults these to `max-age=0, private, must-revalidate`, which
-  # permits storage. Applied as a callback so it also covers a 406 refused by the machine JSON
-  # endpoint.
-  def disable_health_response_cache
-    response.set_header("Cache-Control", "no-store")
   end
 
   # The routed surface that answered, as "<realm>/<surface>". `controller_path` is the path Rails

@@ -6,6 +6,8 @@ require "fileutils"
 require "json"
 require "jit_log_event"
 require "jit_security_jwt_jwk"
+require "jit_security_jwt_jwks"
+require "jit_security_jwt_key_material"
 require "openssl"
 
 module JitSecurityJwtLocalKeysetInstaller
@@ -20,20 +22,20 @@ module JitSecurityJwtLocalKeysetInstaller
     changed |= install_keyset_issuer!(
       store,
       prefix: "AUTH",
-      kid: "#{Rails.env}-auth-es384-a",
+      kid: "#{Rails.env}-auth-ps256-a",
     )
     JitSecurityJwtRegistry::SURFACE_NAMESPACES.each do |namespace|
       changed |= install_surface_issuer!(
         store,
         namespace: namespace,
-        kid: "#{Rails.env}-#{namespace.downcase.tr("_", "-")}-es384-a",
+        kid: "#{Rails.env}-#{namespace.downcase.tr("_", "-")}-ps256-a",
       )
     end
     JitSecurityJwtRegistry::OIDC_CLIENT_NAMESPACES.each do |namespace|
       changed |= install_oidc_client_issuer!(
         store,
         namespace: namespace,
-        kid: "#{Rails.env}-oidc-client-#{namespace.downcase.tr("_", "-")}-es384-a",
+        kid: "#{Rails.env}-oidc-client-#{namespace.downcase.tr("_", "-")}-ps256-a",
       )
     end
 
@@ -59,10 +61,13 @@ module JitSecurityJwtLocalKeysetInstaller
     return false if complete_env?(active_name, private_name, public_name)
 
     env_values =
-      if store.key?(prefix)
+      if reusable_local_ps256_issuer?(store[prefix], private_key_field: "private_keyset")
         store.fetch(prefix)
       else
-        warn_local_keyset_regenerated(issuer: prefix, kid: kid)
+        reason = store.key?(prefix) ? "stored keyset is not PS256 RSA-3072" : "store missing"
+        warn_local_keyset_regenerated(
+          issuer: prefix, kid: kid, reason: reason,
+        )
         keyset_issuer_env(kid)
       end
     store[prefix] = env_values
@@ -95,10 +100,12 @@ module JitSecurityJwtLocalKeysetInstaller
     private_name = names.fetch("private_key")
     public_name = names.fetch("public_keyset")
     env_values =
-      if stored
+      if reusable_local_ps256_issuer?(stored, private_key_field: "private_key")
         stored
       else
-        warn_local_keyset_regenerated(issuer: store_key, kid: kid)
+        warn_local_keyset_regenerated(
+          issuer: store_key, kid: kid, reason: stored ? "stored keyset is not PS256 RSA-3072" : "store missing",
+        )
         surface_issuer_env(kid)
       end
     store[store_key] = env_values
@@ -117,10 +124,14 @@ module JitSecurityJwtLocalKeysetInstaller
 
     store_key = "OIDC_CLIENT_#{namespace}"
     env_values =
-      if store.key?(store_key)
+      if reusable_local_ps256_issuer?(store[store_key], private_key_field: "private_key")
         store.fetch(store_key)
       else
-        warn_local_keyset_regenerated(issuer: store_key, kid: kid)
+        warn_local_keyset_regenerated(
+          issuer: store_key,
+          kid: kid,
+          reason: store.key?(store_key) ? "stored keyset is not PS256 RSA-3072" : "store missing",
+        )
         surface_issuer_env(kid)
       end
     store[store_key] = env_values
@@ -142,12 +153,13 @@ module JitSecurityJwtLocalKeysetInstaller
   # by persisting keys across boots, so a regeneration almost always means
   # the store under tmp/ was cleared (rails tmp:clear, fresh clone, CI,
   # container rebuild). Warn loudly so the cause is obvious in the log.
-  def warn_local_keyset_regenerated(issuer:, kid:)
+  def warn_local_keyset_regenerated(issuer:, kid:, reason:)
     Rails.logger.warn(
       JitLogEvent.format(
         "jwt.local_keyset.regenerated",
         issuer: issuer,
         kid: kid,
+        reason: reason,
         env: Rails.env,
         store_path: DEFAULT_STORE_PATH.to_s,
         impact: "tokens issued before this boot for this issuer will fail verification until reissued",
@@ -176,8 +188,31 @@ module JitSecurityJwtLocalKeysetInstaller
     File.write(path, JSON.pretty_generate(store), mode: "w", perm: 0o600)
   end
 
+  def reusable_local_ps256_issuer?(values, private_key_field:)
+    return false unless values.is_a?(Hash)
+
+    kid = values.fetch("active_kid")
+    encoded_private_key =
+      if private_key_field == "private_keyset"
+        private_keys = JitSecurityJwtKeyMaterial.parse_private_keyset(values.fetch(private_key_field))
+        return false unless private_keys.keys == [kid]
+
+        private_keys.fetch(kid)
+      else
+        JitSecurityJwtKeyMaterial.decode_private_key(values.fetch(private_key_field))
+      end
+    public_keys = JitSecurityJwtJwks.parse_public_collection(values.fetch("public_keyset"))
+    active_public_jwk = public_keys.fetch(kid)
+    expected_public_jwk = JitSecurityJwtJwk.export_public(encoded_private_key, kid: kid)
+
+    active_public_jwk.except("state") == expected_public_jwk
+  rescue JitSecurityJwtJwk::Error, JitSecurityJwtJwks::Error, JitSecurityJwtKeyMaterial::Error,
+         KeyError, JSON::ParserError, TypeError
+    false
+  end
+
   def keyset_issuer_env(kid)
-    key = OpenSSL::PKey::EC.generate("secp384r1")
+    key = OpenSSL::PKey::RSA.generate(JitSecurityJwtJwk::MIN_RSA_MODULUS_BITS)
     {
       "active_kid" => kid,
       "private_keyset" => JSON.generate(kid => base64_der(key)),
@@ -186,7 +221,7 @@ module JitSecurityJwtLocalKeysetInstaller
   end
 
   def surface_issuer_env(kid)
-    key = OpenSSL::PKey::EC.generate("secp384r1")
+    key = OpenSSL::PKey::RSA.generate(JitSecurityJwtJwk::MIN_RSA_MODULUS_BITS)
     {
       "active_kid" => kid,
       "private_key" => base64_der(key),
@@ -199,10 +234,10 @@ module JitSecurityJwtLocalKeysetInstaller
   end
 
   def base64_der(key)
-    Base64.strict_encode64(key.to_der)
+    Base64.strict_encode64(key.private_to_der)
   end
 
   private_class_method :install_keyset_issuer!, :install_surface_issuer!, :install_oidc_client_issuer!,
                        :complete_env?, :warn_local_keyset_regenerated, :load_store, :write_store, :keyset_issuer_env,
-                       :surface_issuer_env
+                       :surface_issuer_env, :reusable_local_ps256_issuer?
 end

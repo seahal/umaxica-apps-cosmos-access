@@ -5,9 +5,14 @@ require "test_helper"
 # require "helpers/global_test_support"
 
 class AuthenticationCurrentResourceResolverCoverageTest < ActiveSupport::TestCase
-  FakeResource = Struct.new(:id)
+  FakeResource =
+    Struct.new(:id) do
+      def public_id = id.to_s
+    end
   FakeSuspendedResource =
     Struct.new(:id) do
+      def public_id = id.to_s
+
       def suspended? = true
 
       def terminated? = false
@@ -127,9 +132,9 @@ class AuthenticationCurrentResourceResolverCoverageTest < ActiveSupport::TestCas
 
   test "successful resolution touches activity when the token is stale enough" do
     token =
-      Struct.new(:public_id, :oidc_jti, :last_used_at, :created_at, :user_id, :device_session_id) do
+      Struct.new(:public_id, :oidc_jti, :last_used_at, :created_at, :subject_public_id, :device_session_id) do
         def has_attribute?(name)
-          %i(public_id oidc_jti last_used_at created_at user_id device_session_id).include?(name.to_sym)
+          %i(public_id oidc_jti last_used_at created_at subject_public_id device_session_id).include?(name.to_sym)
         end
 
         def update_columns(attrs)
@@ -167,9 +172,9 @@ class AuthenticationCurrentResourceResolverCoverageTest < ActiveSupport::TestCas
 
   test "suspended client access token fails before normal current resource is built" do
     token =
-      Struct.new(:public_id, :oidc_jti, :last_used_at, :created_at, :user_id, :device_session_id) do
+      Struct.new(:public_id, :oidc_jti, :last_used_at, :created_at, :subject_public_id, :device_session_id) do
         def has_attribute?(name)
-          %i(public_id oidc_jti last_used_at created_at user_id device_session_id).include?(name.to_sym)
+          %i(public_id oidc_jti last_used_at created_at subject_public_id device_session_id).include?(name.to_sym)
         end
       end.new("sess-1", nil, 10.minutes.ago, 10.minutes.ago, 123, nil)
 

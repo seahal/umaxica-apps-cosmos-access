@@ -11,6 +11,8 @@ class SignRiskEvent
     @occurred_at = occurred_at
   end
 
+  public
+
   def to_h
     {
       name: name,

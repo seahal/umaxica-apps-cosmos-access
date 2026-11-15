@@ -3,6 +3,8 @@
 
 class RpBaseOrgSessionSelection < RpBaseOrgRecord
   belongs_to :rp_session, class_name: "RpBaseOrgSession", inverse_of: :actor_selection
+
+  validates :rp_session_id, uniqueness: true
   has_one :avatar_selection,
           class_name: "RpBaseOrgSessionAvatarSelection",
           foreign_key: :rp_session_id,

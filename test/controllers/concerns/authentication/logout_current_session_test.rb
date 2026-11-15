@@ -45,9 +45,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "revokes current user session token by public id" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -69,16 +69,16 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
 
     assert_equal "browser_logout", stop.cause_name
     assert_equal OpAuthorityStopReference.scope_id("root"), stop.scope_id
-    assert_equal token.principal_public_id, stop.principal_public_id
+    assert_equal token.subject_public_id, stop.principal_public_id
     assert OpAppAuthorityStopRootTarget.exists?(stop:, root: token)
   end
 
   test "revokes every unrevoked RP session row with the parent" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -116,9 +116,8 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "risk cause on one root records a root stop without a browser flow or identity epoch change" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user, device_session: ClientDeviceSession.create!(
-        user_id: user,
-        principal_public_id: "logout-principal",
+      authentication_epoch: 0, subject_public_id: "logout-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -158,9 +157,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "revokes unrevoked RP sessions when the parent token was already revoked" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -189,9 +188,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "a precondition that fails under the parent lock revokes nothing" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -220,9 +219,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "a precondition is evaluated while the parent Device Session row is locked" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -251,9 +250,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "revokes current user session token by oidc sid" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -273,9 +272,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "is idempotent when token is already revoked" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -298,9 +297,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "repairs an unrevoked RP grant under a previously revoked root" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -347,8 +346,8 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "records operator root stops in its own realm" do
     operator = 1002
     operator_token = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: operator,
-      device_session: OperatorDeviceSession.create!(staff_id: operator, principal_public_id: "logout-operator"),
+      authentication_epoch: 0, subject_public_id: "logout-operator",
+      device_session: OperatorDeviceSession.create!(subject_public_id: "logout-operator"),
     )
     operator_token.rotate_refresh_token!
 
@@ -376,9 +375,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "resolves the session public id from current when session_public_id is omitted" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -403,9 +402,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "resolves the token via its device session when session_public_id targets the device session" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -483,9 +482,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "a device-session lookup failure propagates and revokes nothing" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -513,9 +512,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "propagates a device-session revoke failure without revoking the token" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -546,9 +545,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "logs safely without resource or token identifiers when the device session revoke raises" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -579,9 +578,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "failure logs carry no actor reference, token identifier or error message" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -631,9 +630,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "a revocation failure propagates and the token stays unrevoked" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -660,9 +659,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "a revocation failure propagates without a resource" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -687,9 +686,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "rolls back the parent and authority stop when token cascade fails" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -717,9 +716,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "rolls back the parent, RP sessions and authority stop when an RP revoke fails" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -756,9 +755,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "confirms the persisted parent when the writer reports a lost commit response" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -794,9 +793,9 @@ class AuthenticationLogoutCurrentSessionTest < ActiveSupport::TestCase
   test "raises an indeterminate outcome when the post-commit read cannot use the writer" do
     user = 1001
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: user,
+      authentication_epoch: 0, subject_public_id: "logout-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: user, principal_public_id: "logout-principal",
+        subject_public_id: "logout-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )

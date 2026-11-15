@@ -83,9 +83,8 @@ class Wu44RootEpochRevocationContractTest < ActiveSupport::TestCase
   private
 
   def create_app_root(principal_public_id)
-    user_id = SecureRandom.random_number(1_000_000) + 9_300_000
-    device = ClientDeviceSession.create!(user_id:, principal_public_id:)
-    root = ClientToken.create!(authentication_epoch: 0, device_session: device, user_id:)
+    device = ClientDeviceSession.create!(subject_public_id: principal_public_id)
+    root = ClientToken.create!(authentication_epoch: 0, device_session: device, subject_public_id: principal_public_id)
 
     [root, device]
   end

@@ -9,8 +9,8 @@ class TokenStatusManagementTest < ActiveSupport::TestCase
   def setup
     @token = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       discard_at: 1.day.from_now,
@@ -30,9 +30,9 @@ class TokenStatusManagementTest < ActiveSupport::TestCase
 
   test "strict issuance context maps absent columns and NULL to Normal and rejects corrupt values" do
     operator_token = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: 1002,
+      authentication_epoch: 0, subject_public_id: "refresh-operator",
       device_session: OperatorDeviceSession.create!(
-        staff_id: 1002, principal_public_id: "refresh-operator",
+        subject_public_id: "refresh-operator",
       ), authentication_context: nil,
     )
 
@@ -49,9 +49,9 @@ class TokenStatusManagementTest < ActiveSupport::TestCase
 
     ["", "future-context"].each do |stored_value|
       corrupt_token = OperatorToken.new(
-        staff_id: 1002,
+        subject_public_id: "refresh-operator",
         device_session: OperatorDeviceSession.create!(
-          staff_id: 1002, principal_public_id: "refresh-operator",
+          subject_public_id: "refresh-operator",
         ), authentication_context: stored_value,
       )
 
@@ -65,28 +65,28 @@ class TokenStatusManagementTest < ActiveSupport::TestCase
     @token.update!(user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 1.day.from_now)
     restricted = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ), user_token_status_id: ClientTokenStatus::RESTRICTED, discard_at: 1.day.from_now,
       purge_eligible_at: 2.days.from_now,
     )
     revoked = ClientToken.create!(
-      authentication_epoch: 0, user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      authentication_epoch: 0, subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ), discard_at: Time.current,
       purge_eligible_at: 1.day.from_now,
     )
     refresh_expired = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ), user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 1.minute.ago,
       purge_eligible_at: 1.day.from_now,
     )
     rotated_source = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ), user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: 1.day.from_now,
       purge_eligible_at: 2.days.from_now,
     )
@@ -105,23 +105,23 @@ class TokenStatusManagementTest < ActiveSupport::TestCase
   test "restricted_status scope returns only restricted usable tokens" do
     active = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ), user_token_status_id: ClientTokenStatus::ACTIVE,
       discard_at: 1.day.from_now, purge_eligible_at: 2.days.from_now,
     )
     @token.update!(user_token_status_id: ClientTokenStatus::RESTRICTED, discard_at: 1.day.from_now)
     revoked = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ), user_token_status_id: ClientTokenStatus::RESTRICTED,
       discard_at: Time.current, purge_eligible_at: 1.day.from_now,
     )
     refresh_expired = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ), user_token_status_id: ClientTokenStatus::RESTRICTED, discard_at: 1.minute.ago,
       purge_eligible_at: 1.day.from_now,
     )
@@ -137,20 +137,20 @@ class TokenStatusManagementTest < ActiveSupport::TestCase
   test "not_revoked scope returns only usable tokens" do
     @token.update!(discard_at: 1.day.from_now)
     revoked = ClientToken.create!(
-      authentication_epoch: 0, user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      authentication_epoch: 0, subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ), discard_at: Time.current,
       purge_eligible_at: 1.day.from_now,
     )
     refresh_expired = ClientToken.create!(
-      authentication_epoch: 0, user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      authentication_epoch: 0, subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ), discard_at: 1.minute.ago,
       purge_eligible_at: 1.day.from_now,
     )
     rotated_source = ClientToken.create!(
-      authentication_epoch: 0, user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      authentication_epoch: 0, subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ), discard_at: 1.day.from_now,
       purge_eligible_at: 2.days.from_now,
     )
@@ -167,14 +167,14 @@ class TokenStatusManagementTest < ActiveSupport::TestCase
 
   test "future discard_at stays valid until due and past discard_at is excluded" do
     future_token = ClientToken.create!(
-      authentication_epoch: 0, user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      authentication_epoch: 0, subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ), discard_at: 10.minutes.from_now,
       purge_eligible_at: 1.day.from_now,
     )
     past_token = ClientToken.create!(
-      authentication_epoch: 0, user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      authentication_epoch: 0, subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ), discard_at: 10.minutes.ago,
       purge_eligible_at: 1.day.from_now,
     )
@@ -199,8 +199,8 @@ class TokenStatusManagementTest < ActiveSupport::TestCase
     evaluation_time = Time.utc(2040, 1, 1, 12)
     token = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ),
       user_token_status_id: ClientTokenStatus::ACTIVE,
       discard_at: evaluation_time - 1.minute,
@@ -253,9 +253,9 @@ class TokenStatusManagementTest < ActiveSupport::TestCase
 
   test "scheduled_revocation_due? tracks past discard_at" do
     token = ClientToken.new(
-      user_id: 1001,
+      subject_public_id: "refresh-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+        subject_public_id: "refresh-principal",
       ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
     token.define_singleton_method(:discard_at) { 1.minute.ago }
@@ -318,12 +318,13 @@ class TokenStatusManagementTest < ActiveSupport::TestCase
     assert_equal :discard_at, ClientToken.expiry_column
   end
 
-  test "revoke! sets expired_at and status to revoked" do
+  test "revoke! sets expiry and revoked status at the supplied instant" do
     freeze_time do
-      @token.revoke!
+      revocation_time = Time.current
+      @token.revoke!(now: revocation_time)
 
       assert_predicate @token.discard_at, :present?
-      assert_in_delta Time.current.to_f, Float(@token.discard_at), 1
+      assert_equal revocation_time.to_i, @token.discard_at.to_i
       assert_equal ClientTokenStatus::REVOKED, @token.user_token_status_id
     end
   end
@@ -339,10 +340,9 @@ class TokenStatusManagementTest < ActiveSupport::TestCase
 
   test "default token status is active" do
     token = ClientToken.new(
-      user_id: 1001,
+      subject_public_id: "refresh-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: 1001,
-        principal_public_id: "refresh-principal",
+        subject_public_id: "refresh-principal",
       ),
     )
 
@@ -381,9 +381,9 @@ class TokenStatusManagementTest < ActiveSupport::TestCase
 
   test "works with OperatorToken as well" do
     token = OperatorToken.create!(
-      authentication_epoch: 0, staff_id: 1002,
+      authentication_epoch: 0, subject_public_id: "refresh-operator",
       device_session: OperatorDeviceSession.create!(
-        staff_id: 1002, principal_public_id: "refresh-operator",
+        subject_public_id: "refresh-operator",
       ),
     )
 

@@ -87,9 +87,5 @@ end
 
 # DAMP local route helper aliases for former shared test support.
 class Security::AcmeRenameInventoryTest
-
   private
-
-
-
 end

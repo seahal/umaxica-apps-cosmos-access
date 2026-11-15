@@ -12,6 +12,8 @@ module ExternalAuthentication
       super
     end
 
+    public
+
     def unlinked? = status == :unlinked
 
     def already_unlinked? = status == :already_unlinked

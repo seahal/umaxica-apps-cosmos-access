@@ -42,9 +42,51 @@
 #  fk_rails_...  (token_id => client_tokens.id) ON DELETE => cascade
 #
 class ClientSignInFlow < OpBaseAppRecord
+  has_one :oidc_authorization_transaction,
+          class_name: "ClientOidcAuthorizationTransaction",
+          foreign_key: :secret_sign_in_flow_id,
+          inverse_of: :secret_sign_in_flow,
+          strict_loading: false,
+          dependent: :restrict_with_exception
   has_many :secret_sign_in_receipts, class_name: "ClientSecretSignInReceipt", foreign_key: :sign_in_flow_id,
                                      inverse_of: false, dependent: :restrict_with_error
+  has_many :session_limit_resolution_transactions,
+           class_name: "ClientSessionLimitResolutionTransaction",
+           foreign_key: :sign_in_flow_id,
+           inverse_of: :sign_in_flow,
+           dependent: :restrict_with_error
   include SignInFlow
+
+  before_validation :generate_public_id, on: :create
+  before_validation :refresh_generated_public_id_after_collision, on: :create
+  before_validation :assign_default_state_id
+  before_create :generate_public_id
+  around_create :retry_public_id_collision
+  validate :public_id_immutable_after_create, on: :update
+
+  validates :public_id, presence: true, length: { is: PublicId::GENERATION_SIZE }, uniqueness: true
+  attribute :discard_at, :datetime, default: -> { Retainable::SENTINEL }
+  attribute :purge_eligible_at, :datetime, default: -> { Retainable::SENTINEL }
+
+  validates :discard_at, presence: true
+  validates :purge_eligible_at, presence: true
+  validate :retention_order_valid
+  validate :retention_times_not_before_created_at, on: :update
+
+  Retainable.registry << self unless Retainable.registry.include?(self)
+  attribute :issued_at, :datetime, default: -> { Time.current }
+  attribute :expires_at, :datetime, default: -> { default_ttl.from_now }
+
+  validates :nonce_digest, presence: true
+  validates :issued_at, :expires_at, presence: true
+  validate :expires_after_issued_at
+
+  scope :recent_first, -> { order(created_at: :desc) }
+  scope :current,
+        -> do
+          where(arel_table[:discard_at].gt(Time.current))
+            .where(arel_table[:expires_at].gt(Time.current))
+        end
   include FlowSignIn
 
   cycle_status_column :state_id
@@ -102,7 +144,6 @@ class ClientSignInFlow < OpBaseAppRecord
   validates :result_digest, length: { maximum: 64 }
   validates :result_digest, uniqueness: true, allow_nil: true
 
-  before_validation :assign_default_state_id
   public
 
   def record_authentication_evidence!(method:, authenticated_at: nil,

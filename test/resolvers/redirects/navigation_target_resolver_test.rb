@@ -9,7 +9,6 @@ class RedirectsNavigationTargetResolverTest < ActiveSupport::TestCase
       def auth_app_sign_in_check_path(ri:) = "/sign/in/check?ri=#{ri}"
 
       def auth_app_sign_in_path(ri:) = "/sign/in?ri=#{ri}"
-
     end
 
   test "resolves registered navigation keys" do

@@ -95,7 +95,7 @@ class ObjectPlacementTest < Minitest::Test
   def test_validators_are_active_model_validators
     offenders =
       ruby_files_under("app/validators").reject do |path|
-        File.read(File.join(REPOSITORY_ROOT, path)).match?(/<\s*ActiveModel::(Each)?Validator\b/)
+        File.read(File.join(REPOSITORY_ROOT, path)).match?(/<\s*(?:ActiveModel::(Each)?Validator|ActiveRecord::Validations::UniquenessValidator)\b/)
       end
 
     assert_empty offenders,

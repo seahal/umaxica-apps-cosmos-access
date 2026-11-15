@@ -77,13 +77,11 @@ module RefreshTokenShared
     end
   end
 
+  public
+
   def generate_refresh_token(public_id:)
     self.class.generate_refresh_token(public_id: public_id)
   end
 
-  delegate :parse_refresh_token, :digest_refresh_token,
-           :legacy_refresh_token_digest, :secure_compare?, :digest_session_identifier,
-           :lock_refresh_token_record_by_digest,
-           :refresh_token_separator, :refresh_token_verifier_bytes,
-           to: :class
+  delegate :digest_refresh_token, :secure_compare?, to: :class
 end

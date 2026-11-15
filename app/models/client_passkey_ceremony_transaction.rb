@@ -37,5 +37,29 @@
 class ClientPasskeyCeremonyTransaction < OpBaseAppRecord
   include PasskeyCeremonyTransactionable
 
+  scope :expired_at, ->(time) { where(arel_table[:expires_at].lteq(time)) }
+  scope :consumed, -> { where.not(consumed_at: nil).or(where(status: PasskeyCeremonyTransactionable::STATUS_CONSUMED)) }
+  scope :active_at, ->(time) {
+    where(arel_table[:expires_at].gt(time)).where(consumed_at: nil, status: PasskeyCeremonyTransactionable::STATUS_PENDING)
+  }
+  scope :pending, -> { where(status: PasskeyCeremonyTransactionable::STATUS_PENDING, consumed_at: nil) }
+  scope :purgeable_at, lambda { |time, retention_period: PasskeyCeremonyTransactionable::RETENTION_PERIOD|
+    cutoff = time - retention_period
+    where(arel_table[:expires_at].lteq(cutoff))
+      .or(where(arel_table[:consumed_at].lteq(cutoff)))
+  }
+
+  validates :transaction_id, :surface, :actor_ref, :session_ref, :operation, :status, :grant_jti, :expires_at,
+            :rp_id, :origin,
+            presence: true
+  validates :transaction_id, uniqueness: true
+  validates :grant_jti, uniqueness: true
+  validates :result_jti, uniqueness: true, allow_nil: true
+  validates :surface, inclusion: { in: IdentityPasskeyCeremonyContract::SURFACES }
+  validates :operation, inclusion: { in: IdentityPasskeyCeremonyContract::OPERATIONS }
+  validates :status, inclusion: { in: PasskeyCeremonyTransactionable::STATUSES }
+  validate :surface_matches_transaction_class
+  validate :consumed_transaction_has_result
+
   ceremony_surface "app"
 end

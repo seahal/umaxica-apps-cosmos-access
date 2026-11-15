@@ -25,6 +25,8 @@ class OidcEndSessionRequest < ApplicationService
     @request = request
   end
 
+  public
+
   def call
     return handle_id_token_hint if param_present?(:id_token_hint)
     return invalid_request("post_logout_redirect_uri is invalid") if invalid_no_hint_redirect_uri?

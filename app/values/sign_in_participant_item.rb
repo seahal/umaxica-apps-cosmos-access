@@ -11,6 +11,8 @@ class SignInParticipantItem
     @message = message
   end
 
+  public
+
   def blocking?
     blocking == true
   end

@@ -30,7 +30,7 @@ class OidcExistingGrantRefreshCoordinatorTest < ActiveSupport::TestCase
     store = Valkey::AuthState::AuthorizationCodeStore.new
     code = store.issue!(
       client_id: @client.client_id, redirect_uri: @client.redirect_uris.first,
-      subject: "cli_#{@root.device_session.principal_public_id}", base_session_ref: @root.public_id,
+      subject: "cli_#{@root.device_session.subject_public_id}", base_session_ref: @root.public_id,
       code_challenge: "a" * 43, code_challenge_method: "S256", resource_type: "client",
     )
     grant_before = @grant.reload.attributes
@@ -122,7 +122,7 @@ class OidcExistingGrantRefreshCoordinatorTest < ActiveSupport::TestCase
   end
 
   test "rejects client assertion unless private_key_jwt is explicitly registered" do
-    client = Struct.new(:registered_token_endpoint_auth_method).new(nil)
+    client = Struct.new(:registered_token_endpoint_auth_method, :authorization_response_type).new(nil, "code")
     result =
       OidcClientRegistry.stub(:find, client) do
         OidcTokenExchangeCoordinator.call(
@@ -147,7 +147,7 @@ class OidcExistingGrantRefreshCoordinatorTest < ActiveSupport::TestCase
   end
 
   test "rejects client_secret_post client when an assertion is supplied" do
-    client = Struct.new(:registered_token_endpoint_auth_method).new("client_secret_post")
+    client = Struct.new(:registered_token_endpoint_auth_method, :authorization_response_type).new("client_secret_post", "code")
     result =
       OidcClientRegistry.stub(:find, client) do
         OidcTokenExchangeCoordinator.call(
@@ -162,8 +162,10 @@ class OidcExistingGrantRefreshCoordinatorTest < ActiveSupport::TestCase
   end
 
   test "diagnostic metadata none does not enable public token exchange" do
-    client = Struct.new(:registered_token_endpoint_auth_method, :metadata_token_endpoint_auth_method, :client_secret)
-      .new(nil, "none", nil)
+    client = Struct.new(
+      :registered_token_endpoint_auth_method, :metadata_token_endpoint_auth_method, :client_secret,
+      :authorization_response_type,
+    ).new(nil, "none", nil, "code")
     result =
       OidcClientRegistry.stub(:find, client) do
         OidcTokenExchangeCoordinator.call(
@@ -177,7 +179,7 @@ class OidcExistingGrantRefreshCoordinatorTest < ActiveSupport::TestCase
   end
 
   test "explicit public client rejects client_secret authentication" do
-    client = Struct.new(:registered_token_endpoint_auth_method).new("none")
+    client = Struct.new(:registered_token_endpoint_auth_method, :authorization_response_type).new("none", "code")
     result =
       OidcClientRegistry.stub(:find, client) do
         OidcTokenExchangeCoordinator.call(
@@ -191,7 +193,7 @@ class OidcExistingGrantRefreshCoordinatorTest < ActiveSupport::TestCase
   end
 
   test "explicit public client rejects client assertion authentication" do
-    client = Struct.new(:registered_token_endpoint_auth_method).new("none")
+    client = Struct.new(:registered_token_endpoint_auth_method, :authorization_response_type).new("none", "code")
     result =
       OidcClientRegistry.stub(:find, client) do
         OidcTokenExchangeCoordinator.call(
@@ -339,7 +341,7 @@ class OidcExistingGrantRefreshCoordinatorTest < ActiveSupport::TestCase
 
   test "refresh rotation preserves RP token linkage" do
     connection = ClientOidcConnection.create!(
-      user_id: @root.user_id, client_id: @client.client_id, scope: "openid profile", last_used_at: 5.minutes.ago,
+      subject_public_id: @root.subject_public_id, client_id: @client.client_id, scope: "openid profile", last_used_at: 5.minutes.ago,
     )
     previous_last_used_at = connection.last_used_at
     refresh_token = @grant.issue_refresh_token!
@@ -372,7 +374,7 @@ class OidcExistingGrantRefreshCoordinatorTest < ActiveSupport::TestCase
                                                   issuer: OidcIssuer.for_client(@client), audiences: [@client.aud],
                                                   jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_client(@client),
     )
-    subject = "cli_#{@root.device_session.principal_public_id}"
+    subject = "cli_#{@root.device_session.subject_public_id}"
 
     assert_equal "id-token+jwt", id_header.fetch("typ")
     assert_equal OidcIssuer.for_client(@client), id_claims.fetch("iss")
@@ -410,7 +412,7 @@ class OidcExistingGrantRefreshCoordinatorTest < ActiveSupport::TestCase
     %w(app-ios-rp app-android-rp).each do |client_id|
       redirect_uri = "https://palm-jp.umaxica.app/oidc/callback"
       code = store.issue!(
-        client_id: client_id, redirect_uri: redirect_uri, subject: "cli_#{@root.device_session.principal_public_id}",
+        client_id: client_id, redirect_uri: redirect_uri, subject: "cli_#{@root.device_session.subject_public_id}",
         base_session_ref: @root.public_id, code_challenge: "a" * 43, code_challenge_method: "S256",
         resource_type: "client",
       )
@@ -453,7 +455,9 @@ class OidcExistingGrantRefreshCoordinatorTest < ActiveSupport::TestCase
   end
 
   test "fails invalid_client for blank configured confidential client secret" do
-    client = Struct.new(:registered_token_endpoint_auth_method, :client_secret).new("client_secret_post", "")
+    client = Struct.new(
+      :registered_token_endpoint_auth_method, :client_secret, :authorization_response_type,
+    ).new("client_secret_post", "", "code")
     result =
       OidcClientRegistry.stub(:find, client) do
         OidcTokenExchangeCoordinator.call(

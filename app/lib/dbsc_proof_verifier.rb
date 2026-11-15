@@ -30,6 +30,8 @@ class DbscProofVerifier
     @expected_audience = expected_audience
   end
 
+  public
+
   def call
     return failure("missing_proof") if proof.blank?
     return failure("missing_challenge") if challenge.to_s.blank?
@@ -97,4 +99,5 @@ class DbscProofVerifier
   def failure(error_code, message: nil)
     Result.new(ok: false, payload: nil, header: nil, error_code: error_code, message: message)
   end
+  public_class_method :call
 end

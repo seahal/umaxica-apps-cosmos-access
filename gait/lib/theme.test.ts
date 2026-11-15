@@ -73,6 +73,14 @@ describe("applyTheme", () => {
     expect(document.documentElement.classList.contains("theme-system")).toBe(true);
     expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
+
+  test("uses the light system preference when the operating system is not dark", () => {
+    applyTheme("system");
+
+    expect(document.documentElement.dataset["theme"]).toBe("system");
+    expect(document.documentElement.classList.contains("theme-system")).toBe(true);
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+  });
 });
 
 test("watchThemeCookie reports normalized cookie changes and deletion", async () => {

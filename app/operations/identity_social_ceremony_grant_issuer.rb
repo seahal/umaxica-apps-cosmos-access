@@ -30,6 +30,8 @@ class IdentitySocialCeremonyGrantIssuer
     @now = now
   end
 
+  public
+
   def call
     IdentitySocialCeremonyGrant.issue(transaction.grant_claims(now: now), issuer_id: issuer_id, now: now)
   end
@@ -37,4 +39,6 @@ class IdentitySocialCeremonyGrantIssuer
   private
 
   attr_reader :transaction, :issuer_id, :now
+
+  public_class_method :issue!
 end

@@ -21,6 +21,8 @@
 #  actor_id       :bigint           default(0), not null
 #  event_id       :bigint           default(0), not null
 #  level_id       :bigint           default(1), not null
+#  sign_flow_halted_generation :text
+#  sign_flow_halted_transaction_public_id :text
 #  subject_id     :bigint           not null
 #
 # Indexes
@@ -33,6 +35,8 @@
 #  index_operator_chronicles_on_purge_eligible_at                 (purge_eligible_at)
 #  index_operator_chronicles_on_subject_id                (subject_id)
 #  index_staff_activities_on_actor                        (actor_type,actor_id)
+#  uniq_operator_chronicles_sign_flow_halted_identity (sign_flow_halted_transaction_public_id,
+#                                                      sign_flow_halted_generation) UNIQUE WHERE event_id = 18
 #
 # Foreign Keys
 #
@@ -42,6 +46,16 @@
 
 class OperatorChronicle < ChronicleRecord
   include Retainable
+
+  attribute :discard_at, :datetime, default: -> { Retainable::SENTINEL }
+  attribute :purge_eligible_at, :datetime, default: -> { Retainable::SENTINEL }
+
+  validates :discard_at, presence: true
+  validates :purge_eligible_at, presence: true
+  validate :retention_order_valid
+  validate :retention_times_not_before_created_at, on: :update
+
+  Retainable.registry << self unless Retainable.registry.include?(self)
 
   attribute :level_id, default: OperatorChronicleLevel::NOTHING
 
@@ -61,18 +75,22 @@ class OperatorChronicle < ChronicleRecord
 
   validates :event_id, numericality: { only_integer: true }, allow_nil: true
   validates :level_id, numericality: { only_integer: true }, allow_nil: true
-  validates :context, jsonb_keys_uniqueness: {
-    keys: %w(transaction_public_id halt_generation),
-    conditions: -> { where(event_id: OperatorChronicleEvent::SIGN_FLOW_HALTED) },
-  }, if: :sign_flow_halted_event?
+  validates :sign_flow_halted_transaction_public_id,
+            uniqueness: {
+              scope: :sign_flow_halted_generation,
+              conditions: -> { where(event_id: OperatorChronicleEvent::SIGN_FLOW_HALTED) },
+            }, if: :sign_flow_halted_event?
   validate :sign_flow_halted_context_is_valid
   # Validate that event_id exists in staff_chronicle_events table
   validate :event_id_must_exist
+  before_validation :assign_sign_flow_halted_identity_columns
   before_validation :default_actor_to_subject
   # Helper methods for compatibility with existing code
   before_create :set_timestamp
 
   scope :recent_activity_first, -> { order(arel_table[:occurred_at].desc, arel_table[:created_at].desc) }
+
+  public
 
   def set_timestamp
     self.timestamp ||= Time.current
@@ -105,6 +123,16 @@ class OperatorChronicle < ChronicleRecord
   end
 
   private
+
+  def assign_sign_flow_halted_identity_columns
+    return unless sign_flow_halted_event?
+
+    facts = context.is_a?(Hash) ? context.stringify_keys : {}
+    self.sign_flow_halted_transaction_public_id = facts["transaction_public_id"]
+    self.sign_flow_halted_generation = nil
+    generation = facts["halt_generation"]
+    self.sign_flow_halted_generation = generation.to_s if generation.is_a?(String) || generation.is_a?(Integer)
+  end
 
   def sign_flow_halted_event?
     event_id == OperatorChronicleEvent::SIGN_FLOW_HALTED

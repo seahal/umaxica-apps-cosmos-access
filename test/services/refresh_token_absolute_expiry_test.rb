@@ -77,16 +77,16 @@ class RefreshTokenAbsoluteExpiryTest < ActiveSupport::TestCase
     when :app
       ClientToken.create!(
         authentication_epoch: 0,
-        user_id: 1001, device_session: ClientDeviceSession.create!(
-          user_id: 1001, principal_public_id: "absolute-client",
+        subject_public_id: "absolute-client", device_session: ClientDeviceSession.create!(
+          subject_public_id: "absolute-client",
         ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
         user_token_status_id: ClientTokenStatus::ACTIVE, discard_at: expires_at,
       )
     when :org
       OperatorToken.create!(
         authentication_epoch: 0,
-        staff_id: 1002, device_session: OperatorDeviceSession.create!(
-          staff_id: 1002, principal_public_id: "absolute-operator",
+        subject_public_id: "absolute-operator", device_session: OperatorDeviceSession.create!(
+          subject_public_id: "absolute-operator",
         ), staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
         staff_token_status_id: OperatorTokenStatus::ACTIVE, discard_at: expires_at,
       )

@@ -58,6 +58,8 @@ module SignedSessionReference
     end
   end
 
+  public
+
   def signed_ref
     Rails.application.message_verifier(:session_ref).generate(
       { id: id, pid: public_id },

@@ -67,5 +67,6 @@ module Webauthn
       raise VerificationError, "returned user handle does not match the credential owner" unless matches
     end
     private_class_method :verify_user_handle!
+    public_class_method :options_for, :verify!
   end
 end

@@ -105,7 +105,8 @@ module Jit
           public_keysets.each do |keyset|
             keyset.fetch("keys").each do |jwk|
               assert_empty JitSecurityJwtJwk::PRIVATE_FIELDS & jwk.keys
-              assert_equal "ES384", jwk.fetch("alg")
+              assert_equal "RSA", jwk.fetch("kty")
+              assert_equal "PS256", jwk.fetch("alg")
               assert_equal "sig", jwk.fetch("use")
             end
           end
@@ -124,6 +125,40 @@ module Jit
           assert(logged.any? { |message| message.include?("jwt.local_keyset_store.malformed") })
           assert JitSecurityJwtRegistry.private_key_for("auth")
           assert JitSecurityJwtRegistry.public_key_for("auth", ENV.fetch("AUTH_JWT_ACTIVE_KID"))
+        end
+
+        test "the local store replaces ES384 keysets with new PS256 RSA keys" do
+          legacy_key = OpenSSL::PKey::EC.generate("secp384r1")
+          legacy_kid = "test-auth-es384-a"
+          legacy_jwk = JWT::JWK.new(legacy_key, kid: legacy_kid).export.stringify_keys
+            .except(*JitSecurityJwtJwk::PRIVATE_FIELDS).merge("alg" => "ES384", "use" => "sig", "state" => "active")
+          FileUtils.mkdir_p(File.dirname(@store_path))
+          File.write(
+            @store_path,
+            JSON.generate(
+              "AUTH" => {
+                "active_kid" => legacy_kid,
+                "private_keyset" => JSON.generate(legacy_kid => Base64.strict_encode64(legacy_key.private_to_der)),
+                "public_keyset" => JSON.generate(keys: [legacy_jwk]),
+              },
+            ),
+          )
+
+          warnings = []
+          Rails.logger.stub(:warn, ->(message) { warnings << message }) do
+            JitSecurityJwtLocalKeysetInstaller.install!(store_path: @store_path)
+          end
+          stored_auth = JSON.parse(File.read(@store_path)).fetch("AUTH")
+          current_kid = stored_auth.fetch("active_kid")
+          current_key = JitSecurityJwtKeyMaterial.parse_private_keyset(stored_auth.fetch("private_keyset"))
+            .fetch(current_kid)
+          current_jwk = JSON.parse(stored_auth.fetch("public_keyset")).fetch("keys").first
+
+          assert_equal "test-auth-ps256-a", current_kid
+          assert_kind_of OpenSSL::PKey::RSA, current_key
+          assert_equal "RSA", current_jwk.fetch("kty")
+          assert_equal "PS256", current_jwk.fetch("alg")
+          assert warnings.any? { |message| message.include?("stored keyset is not PS256 RSA-3072") }
         end
 
         test "generating fresh local keys warns that prior tokens will fail verification" do
@@ -168,7 +203,7 @@ module Jit
 
         test "a surface kid preset in ENV is refused even when a store already exists" do
           JitSecurityJwtLocalKeysetInstaller.install!(store_path: @store_path)
-          ENV["JWT_VISA_APP_ACTIVE_KID"] = "production-visa-app-es384-a"
+          ENV["JWT_VISA_APP_ACTIVE_KID"] = "production-visa-app-ps256-a"
 
           assert_raises(ArgumentError) do
             JitSecurityJwtLocalKeysetInstaller.install!(store_path: @store_path)
@@ -185,7 +220,7 @@ module Jit
 
           assert_equal kid, ENV.fetch("JWT_AUTH_APP_ACTIVE_KID")
           assert_equal private_key, ENV.fetch("JWT_AUTH_APP_PRIVATE_KEY")
-          assert_equal "#{Rails.env}-auth-app-es384-a", kid
+          assert_equal "#{Rails.env}-auth-app-ps256-a", kid
         end
 
         test "installing twice in one process accepts the values the installer exported" do

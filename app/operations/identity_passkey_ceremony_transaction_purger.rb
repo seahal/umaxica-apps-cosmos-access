@@ -16,6 +16,8 @@ class IdentityPasskeyCeremonyTransactionPurger
     @retention_period = retention_period
   end
 
+  public
+
   def call
     MODELS.transform_values do |model|
       model.connection_owner.connected_to(role: :writing) do
@@ -27,4 +29,6 @@ class IdentityPasskeyCeremonyTransactionPurger
   private
 
   attr_reader :now, :retention_period
+
+  public_class_method :call
 end

@@ -12,6 +12,8 @@
 class ClientTokenStatus < OpBaseAppRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   NOTHING = 0
   ACTIVE = 1
   EXPIRED = 102

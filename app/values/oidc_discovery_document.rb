@@ -24,7 +24,7 @@ module OidcDiscoveryDocument
       grant_types_supported: %w(authorization_code refresh_token),
       subject_types_supported: ["public"],
       id_token_signing_alg_values_supported: [AuthenticationTokenService::JWT_ALGORITHM],
-      token_endpoint_auth_signing_alg_values_supported: [AuthenticationTokenService::JWT_ALGORITHM],
+      token_endpoint_auth_signing_alg_values_supported: OidcClientAssertionJwt::ACCEPTED_ALGORITHMS,
       token_endpoint_auth_methods_supported: %w(private_key_jwt client_secret_post none),
       revocation_endpoint_auth_methods_supported: OidcClientRegistry.revocation_endpoint_auth_methods_for(
         resource_type,

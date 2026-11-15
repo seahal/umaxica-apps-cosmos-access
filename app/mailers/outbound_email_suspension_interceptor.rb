@@ -21,5 +21,5 @@ class OutboundEmailSuspensionInterceptor
       ),
     )
   end
-
+  public_class_method :delivering_email
 end

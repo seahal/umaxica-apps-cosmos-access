@@ -88,8 +88,6 @@ class RetentionGovernanceBoundaryTest < ActiveJob::TestCase
           scope: "openid",
           state: "retention-state",
           nonce: "retention-nonce",
-          code_challenge: "x" * 43,
-          code_challenge_method: "S256",
           login_challenge: "retention-login-#{index}",
           login_challenge_expires_at: now + 1.hour,
           expires_at: now + 1.hour,

@@ -18,6 +18,8 @@
 class SecurityOneTimeRevealPurgeJob < ApplicationJob
   queue_as :retention
 
+  public
+
   def perform(batch_size: 500)
     now = Time.current
 

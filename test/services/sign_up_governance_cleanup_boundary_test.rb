@@ -23,8 +23,6 @@ class SignUpGovernanceCleanupBoundaryTest < ActiveSupport::TestCase
             scope: "openid",
             state: "state",
             nonce: "nonce",
-            code_challenge: "challenge",
-            code_challenge_method: "S256",
             login_challenge: SecureRandom.uuid,
             login_challenge_expires_at: now + 5.minutes,
             expires_at: now + 5.minutes,

@@ -3,6 +3,8 @@
 
 module ExternalAuthentication
   module AppleNotificationVerifierPort
+    public
+
     def call
       raise NotImplementedError
     end

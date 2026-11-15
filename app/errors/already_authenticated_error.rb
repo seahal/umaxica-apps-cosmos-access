@@ -6,6 +6,8 @@ class AlreadyAuthenticatedError < ApplicationError
     super(nil, status_code, **context)
   end
 
+  public
+
   def message
     I18n.t("errors.messages.operation_not_permitted")
   end

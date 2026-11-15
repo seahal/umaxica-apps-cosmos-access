@@ -57,5 +57,6 @@ module OutboundHttp
     def self.default_adapter
       :net_http
     end
+    public_class_method :build, :default_adapter
   end
 end

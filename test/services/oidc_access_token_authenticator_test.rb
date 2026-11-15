@@ -20,7 +20,7 @@ class OidcAccessTokenAuthenticatorTest < ActiveSupport::TestCase
              session_public_id: root.public_id, base_session_public_id: root.public_id,
              oidc_sid: PublicId.generate, oidc_jti: SecureRandom.uuid, expires_at: 5.minutes.from_now,
              scopes: %w(openid), issuer: OidcIssuer.for_resource_type(type), audiences: [client.aud],
-             subject: "#{OidcSubject.prefix_for(type)}_#{device.principal_public_id}",
+             subject: "#{OidcSubject.prefix_for(type)}_#{device.subject_public_id}",
              jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type), client_id: client.client_id,
              authentication_context: root.strict_authentication_context_value.to_s,
       )
@@ -40,7 +40,7 @@ class OidcAccessTokenAuthenticatorTest < ActiveSupport::TestCase
       assert_predicate result, :success?
       assert_equal root, result.token
       assert_equal device, result.device
-      assert_equal device.principal_public_id, result.principal_public_id
+      assert_equal device.subject_public_id, result.principal_public_id
       assert_not_respond_to result, :resource
       assert_empty connections.grep(/zenith|replica/)
     end
@@ -62,7 +62,7 @@ class OidcAccessTokenAuthenticatorTest < ActiveSupport::TestCase
         "nbf" => Time.current.to_i,
         "exp" => 5.minutes.from_now.to_i,
         "jti" => SecureRandom.uuid,
-        "sub" => "#{OidcSubject.prefix_for(type)}_#{device.principal_public_id}",
+        "sub" => "#{OidcSubject.prefix_for(type)}_#{device.subject_public_id}",
         "client_id" => client_id,
         "scope" => "openid",
         "acr" => "aal1",
@@ -119,7 +119,7 @@ class OidcAccessTokenAuthenticatorTest < ActiveSupport::TestCase
              session_public_id: root.public_id, base_session_public_id: root.public_id,
              oidc_sid: PublicId.generate, oidc_jti: SecureRandom.uuid, expires_at: 5.minutes.from_now,
              scopes: %w(openid), issuer: OidcIssuer.for_resource_type(type), audiences: [client.aud],
-             subject: "#{OidcSubject.prefix_for(type)}_#{device.principal_public_id}",
+             subject: "#{OidcSubject.prefix_for(type)}_#{device.subject_public_id}",
              jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type), client_id: client_id,
              authentication_context: root.strict_authentication_context_value.to_s,
       )
@@ -161,7 +161,7 @@ class OidcAccessTokenAuthenticatorTest < ActiveSupport::TestCase
         nil, host: host, resource_type: "client", session_public_id: root.public_id,
              base_session_public_id: root.public_id, oidc_sid: PublicId.generate, oidc_jti: SecureRandom.uuid,
              expires_at: 5.minutes.from_now, scopes: %w(openid), issuer: OidcIssuer.for_resource_type("client"),
-             audiences: [client.aud], subject: "cli_#{device.principal_public_id}",
+             audiences: [client.aud], subject: "cli_#{device.subject_public_id}",
              jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type("client"), client_id: client.client_id,
              authentication_context: "normal", dpop_jkt: thumbprint,
       )

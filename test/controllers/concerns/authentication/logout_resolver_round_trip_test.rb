@@ -9,7 +9,7 @@ class AuthenticationLogoutResolverRoundTripTest < ActiveSupport::TestCase
     root = ClientToken.includes(:device_session).find(ActiveRecord::FixtureSet.identify(:one))
     host = OidcIssuer.host_for_resource_type("client")
     payload = AuthorizationTokenClaims.build(
-      resource: nil, subject: root.user_id.to_s, resource_type: "client", issued_at: Time.current,
+      resource: nil, subject: root.subject_public_id.to_s, resource_type: "client", issued_at: Time.current,
       access_token_ttl: 60.seconds, session_public_id: root.device_session.public_id,
       oidc_jti: root.oidc_jti, authentication_context: AuthenticationContextValue::NORMAL_KEY,
     )

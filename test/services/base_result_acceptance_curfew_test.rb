@@ -44,6 +44,24 @@ class BaseResultAcceptanceCurfewTest < ActiveSupport::TestCase
     assert_equal @binding.id, validate!(cancellation: true).id
   end
 
+  test "confirmation lookup returns the owning admission and refuses other references" do
+    found = BaseAuthAdmissionCoordinator.find_admission_binding_by_confirmation!(
+      surface: "app",
+      reference: @binding.confirmation_ref,
+    )
+
+    assert_equal @binding.id, found.id
+    assert_raises(BaseAuthAdmissionCoordinator::Denied) do
+      BaseAuthAdmissionCoordinator.find_admission_binding_by_confirmation!(
+        surface: "app",
+        reference: SecureRandom.uuid,
+      )
+    end
+    assert_raises(BaseAuthAdmissionCoordinator::Denied) do
+      BaseAuthAdmissionCoordinator.find_admission_binding_by_confirmation!(surface: "app", reference: "")
+    end
+  end
+
   private
 
   def move_curfew!(offset)

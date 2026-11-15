@@ -7,7 +7,7 @@ module IdentitySocialCeremonyContract
   Error = Class.new(StandardError)
   module_function
 
-  ALGORITHM = "ES384"
+  ALGORITHM = JitSecurityJwtJwk::ALGORITHM
   SURFACES = %w(app).freeze
   OPERATIONS = %w(link login signup account_selection).freeze
   PROVIDERS = %w(apple google).freeze

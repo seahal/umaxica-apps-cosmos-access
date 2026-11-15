@@ -1,4 +1,5 @@
 import { AxeBuilder } from "@axe-core/playwright";
+import type { Page } from "playwright";
 import { expect, test } from "playwright/test";
 
 for (const theme of ["light", "dark"]) {
@@ -56,6 +57,8 @@ for (const edition of ["app", "com", "org"]) {
     for (const width of [320, 768, 1024, 1440]) {
       test(`conditions and density reflow in ${edition}/${lang} at ${width}px`, async ({
         page,
+      }: {
+        page: Page;
       }) => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto(`http://127.0.0.1:3190/components.html?edition=${edition}&lang=${lang}`);

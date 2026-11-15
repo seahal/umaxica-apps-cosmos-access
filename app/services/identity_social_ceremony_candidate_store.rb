@@ -37,6 +37,8 @@ class IdentitySocialCeremonyCandidateStore
     new.delete(ref)
   end
 
+  public
+
   def store!(surface:, actor_ref:, session_ref:, transaction_id:, operation:, provider:, callback_result:, expires_at:)
     unless callback_result.is_a?(ExternalAuthentication::CallbackResult) && callback_result.verified?
       raise IdentitySocialCeremonyContract::Error, "social auth candidate is required"
@@ -205,4 +207,5 @@ class IdentitySocialCeremonyCandidateStore
   rescue ArgumentError, KeyError, TypeError
     raise IdentitySocialCeremonyContract::Error, "social auth candidate is invalid"
   end
+  public_class_method :store!, :fetch!, :consume!, :delete
 end

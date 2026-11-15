@@ -27,17 +27,21 @@ class OidcTokenExchangeCoordinator < ApplicationService
     @expected_resource_type = expected_resource_type
   end
 
+  public
+
   def call
     return failure(
       "invalid_request", "grant_type must be 'authorization_code' or 'refresh_token'",
     ) unless valid_grant_type?
     return failure("invalid_request", "token endpoint realm is required") unless expected_realm_configured?
     return failure("invalid_client", "OIDC client authentication failed") unless authenticated_client?
+    return failure("unauthorized_client", "Base front-channel clients do not use the Token Endpoint") if
+      authenticated_client_config.authorization_response_type == "id_token"
 
     if grant_type == "refresh_token"
       exchange_refresh_token!
     else
-      failure("temporarily_unavailable", "Governance credential lookup is unavailable")
+      failure("temporarily_unavailable", "authorization-code issuance is unavailable for this client")
     end
   rescue AuthenticationContextValue::UnknownContextError
     failure("invalid_grant", "session authentication context is invalid")
@@ -171,7 +175,7 @@ class OidcTokenExchangeCoordinator < ApplicationService
   def refresh_session_usable?(usage)
     root = usage.parent_token
     device = usage.parent_device_session
-    return false unless root&.active_status? && device&.usable? && device.principal_public_id.present?
+    return false unless root&.active_status? && device&.usable? && device.subject_public_id.present?
 
     root.strict_authentication_context_value
     true
@@ -191,7 +195,7 @@ class OidcTokenExchangeCoordinator < ApplicationService
       resource_type: resource_type,
       response_builder: lambda do |usage:, refresh_token:, now:, **_|
         locked_root_token = usage.parent_token
-        principal_public_id = usage.parent_device_session.principal_public_id
+        principal_public_id = usage.parent_device_session.subject_public_id
         result = issue_refreshed_token_result(
           usage: usage,
           principal_public_id: principal_public_id,
@@ -382,6 +386,7 @@ class OidcTokenExchangeCoordinator < ApplicationService
       metadata_token_endpoint_auth_method: client.metadata_token_endpoint_auth_method,
       jwt_namespace: client.jwt_namespace,
       required_operator_capability: client.required_operator_capability,
+      authorization_response_type: client.authorization_response_type,
     )
   end
 

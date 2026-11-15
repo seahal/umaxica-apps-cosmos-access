@@ -21,6 +21,39 @@ class SessionLimitResolutionTransactionableTest < ActiveSupport::TestCase
     assert_raises(FlowConfigurationError) { unsupported_model.resolution_oidc_authorization_transaction_class }
     assert_raises(FlowConfigurationError) { unsupported_model.resolution_state_class }
   end
+
+  test "retained query APIs find the matching open transaction by challenge" do
+    now = ClientSignInFlow.database_now
+    flow = ClientSignInFlow.create!(
+      nonce_digest: ClientSignInFlow.digest_nonce(SecureRandom.urlsafe_base64(32)),
+      issued_at: now,
+      expires_at: now + 5.minutes,
+    )
+    challenge = SecureRandom.urlsafe_base64(32)
+    transaction = ClientSessionLimitResolutionTransaction.create!(
+      challenge_digest: ClientSessionLimitResolutionTransaction.digest_challenge(challenge),
+      state_id: SessionLimitResolutionTransactionable::PENDING,
+      waiting_slot: SessionLimitResolutionTransactionable::WAITING_SLOT,
+      sign_in_flow_id: flow.id,
+      actor_ref: "historical-resolution-subject",
+      browser_binding_digest: "f" * 64,
+      started_at: now,
+      expires_at: now + 5.minutes,
+    )
+
+    assert_includes ClientSessionLimitResolutionTransaction.open, transaction
+    assert_includes ClientSessionLimitResolutionTransaction.active_at, transaction
+    # Public method lookup avoids Rails/DynamicFindBy mistaking this explicit domain query for a dynamic finder.
+    assert_equal transaction,
+                 ClientSessionLimitResolutionTransaction.public_method(:find_by_challenge).call(challenge)
+    assert_equal transaction, ClientSessionLimitResolutionTransaction.find_active_by_challenge(challenge)
+  end
+
+  test "elapsed actor resolution remains unavailable without Governance" do
+    assert_raises(GovernanceLookupUnavailableError) do
+      ClientSessionLimitResolutionTransaction.expire_elapsed_for_actor!(nil, writer_now: Time.current)
+    end
+  end
 end
 
 class SessionLimitResolutionDatabaseHistoryTest < ActiveSupport::TestCase
@@ -39,6 +72,22 @@ class SessionLimitResolutionDatabaseHistoryTest < ActiveSupport::TestCase
       [-1, 0, 1].each do |microseconds|
         resolution_class.stub(:database_now, deadline + Rational(microseconds, 1_000_000)) do
           assert_equal microseconds.negative?, row.open?
+        end
+      end
+    end
+
+    test "#{resolution_class.name} terminal and elapsed predicates read persisted state precisely" do
+      deadline = Time.utc(2026, 1, 1)
+      row = resolution_class.new(
+        state_id: SessionLimitResolutionTransactionable::CANCELLED,
+        expires_at: deadline,
+      )
+
+      assert_predicate row, :terminal?
+      assert_not row.pending?
+      [-1, 0, 1].each do |microseconds|
+        resolution_class.stub(:database_now, deadline + Rational(microseconds, 1_000_000)) do
+          assert_equal !microseconds.negative?, row.expired_at?
         end
       end
     end

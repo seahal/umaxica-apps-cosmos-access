@@ -39,7 +39,7 @@ class OidcSevenFirstPartyRpIsolationTest < ActiveSupport::TestCase
 
     assert_equal "operator", tech.resource_type
     assert_equal "tech-org-ww", tech.aud
-    assert_equal OperatorCapabilityGrant::TECH_ACCESS, tech.required_operator_capability
+    assert_equal "tech.access", tech.required_operator_capability
     assert_not_equal edit.redirect_uris, tech.redirect_uris
     assert_not_equal edit.jwt_namespace, tech.jwt_namespace
   end

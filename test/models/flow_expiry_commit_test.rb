@@ -5,7 +5,7 @@ require "test_helper"
 class FlowExpiryCommitTest < ActiveSupport::TestCase
   self.use_transactional_tests = false
 
-  test "unavailable sign-in transitions fail closed without mutating expired flows" do
+  test "unavailable sign-in transitions fail closed without mutating past-expiry flows" do
     [ClientSignInFlow, OperatorSignInFlow].each do |model|
       flow = nil
       begin
@@ -20,7 +20,10 @@ class FlowExpiryCommitTest < ActiveSupport::TestCase
         assert_not model.lease_connection.transaction_open?
         assert_raises(GovernanceLookupUnavailableError) { flow.complete_sign_in! }
         assert_equal original, model.find(flow.id).attributes
-        assert_predicate model.find(flow.id), :sign_in_expired?
+        persisted = model.find(flow.id)
+
+        assert_operator persisted.expires_at, :<=, model.database_now
+        assert_equal model::STATE_MODEL::PRIMARY_PENDING, persisted.state_id
       ensure
         flow&.destroy!
       end
@@ -40,10 +43,13 @@ class FlowExpiryCommitTest < ActiveSupport::TestCase
           model.transaction do
             model.connection_class_for_self.connected_to(role: :reading) { flow.advance_sign_in_to_mfa! }
           end
-          end
+        end
 
         assert_equal original, model.find(flow.id).attributes
-        assert_predicate model.find(flow.id), :sign_in_expired?
+        persisted = model.find(flow.id)
+
+        assert_operator persisted.expires_at, :<=, model.database_now
+        assert_equal model::STATE_MODEL::PRIMARY_PENDING, persisted.state_id
       ensure
         flow&.destroy!
       end

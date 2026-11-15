@@ -8,9 +8,9 @@ class RefreshTokenableTest < ActiveSupport::TestCase
 
   test "create! seeds refresh metadata and device session" do
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: 1001,
+      authentication_epoch: 0, subject_public_id: "refresh-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+        subject_public_id: "refresh-principal",
       ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
 
@@ -24,8 +24,8 @@ class RefreshTokenableTest < ActiveSupport::TestCase
   test "rotation makes the replacement token current for the same device session" do
     token = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       refresh_token: "rotation-current-pointer-verifier",
@@ -46,7 +46,7 @@ class RefreshTokenableTest < ActiveSupport::TestCase
     token = ClientToken.new(
       user_id: 1001,
       device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+        subject_public_id: "refresh-principal",
       ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
 
@@ -62,8 +62,8 @@ class RefreshTokenableTest < ActiveSupport::TestCase
   test "refresh token replay is terminal and revokes the whole family" do
     original = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       refresh_token: "first-verifier",
@@ -95,8 +95,8 @@ class RefreshTokenableTest < ActiveSupport::TestCase
   test "rotation releases a unique dbsc session id on the previous token" do
     original = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       refresh_token: "first-verifier",
@@ -113,9 +113,9 @@ class RefreshTokenableTest < ActiveSupport::TestCase
   test "rotation preserves the authentication event time" do
     event_at = Time.utc(2026, 1, 2, 3, 4, 5)
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: 1001,
+      authentication_epoch: 0, subject_public_id: "refresh-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+        subject_public_id: "refresh-principal",
       ), authentication_event_at: event_at,
     )
 
@@ -127,9 +127,9 @@ class RefreshTokenableTest < ActiveSupport::TestCase
 
   test "rotation uses the writer database clock for usage timestamps" do
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: 1001,
+      authentication_epoch: 0, subject_public_id: "refresh-principal",
       device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+        subject_public_id: "refresh-principal",
       ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
     database_time = 1.hour.from_now
@@ -145,8 +145,8 @@ class RefreshTokenableTest < ActiveSupport::TestCase
   test "class rotation accepts a writer-clock decision time" do
     ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       refresh_token: "class-rotation-verifier",
@@ -167,7 +167,7 @@ class RefreshTokenableTest < ActiveSupport::TestCase
     token = ClientToken.new(
       user_id: 1001,
       device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+        subject_public_id: "refresh-principal",
       ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
     token.define_singleton_method(:discard_at) { 1.day.from_now }
@@ -185,7 +185,7 @@ class RefreshTokenableTest < ActiveSupport::TestCase
     token = ClientToken.new(
       user_id: 1001,
       device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+        subject_public_id: "refresh-principal",
       ), user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
 

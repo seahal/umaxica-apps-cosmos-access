@@ -88,7 +88,7 @@ class CrossSurfaceTokenTest < ActionDispatch::IntegrationTest
   def bearer_for_root(root, host:, resource_type:)
     payload = AuthorizationTokenClaims.build(
       resource: nil,
-      subject: root.public_send(resource_type == "client" ? :user_id : :staff_id).to_s,
+      subject: root.public_send((resource_type == "client") ? :subject_public_id : :subject_public_id).to_s,
       resource_type: resource_type,
       issued_at: Time.current,
       access_token_ttl: 60.seconds,
@@ -364,7 +364,7 @@ class CrossSurfaceTokenTest
 
   def load_jump_rt_env!
     @jump_rt_env_originals ||= {}
-    jump_rt_key = Base64.strict_encode64(OpenSSL::PKey::EC.generate("secp384r1").to_der)
+    jump_rt_key = Base64.strict_encode64(OpenSSL::PKey::RSA.generate(3_072).private_to_der)
     %w(AUTH_APP AUTH_ORG ACME_APP ACME_ORG CORE_APP CORE_ORG BASE_APP BASE_ORG).each do |namespace|
       ENV["JWT_#{namespace}_ACTIVE_KID"] = "#{namespace.downcase.tr("_", "-")}-test"
       ENV["JWT_#{namespace}_PRIVATE_KEY"] = jump_rt_key

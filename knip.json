@@ -17,7 +17,6 @@
     // Rails application layouts resolve these through importmap, outside the Vite package graph.
     "@hotwired/stimulus",
     "@hotwired/turbo-rails",
-    "linkinator",
     // `.herb.yml` enables the Herb linter for editor template diagnostics.
     "@herb-tools/linter"
   ],

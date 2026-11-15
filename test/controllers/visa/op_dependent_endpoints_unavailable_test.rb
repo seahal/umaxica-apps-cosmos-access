@@ -20,7 +20,7 @@ class VisaOpDependentEndpointsUnavailableTest < ActionDispatch::IntegrationTest
         nil, host: host, resource_type: type, session_public_id: root.public_id,
              base_session_public_id: root.public_id, oidc_sid: PublicId.generate, oidc_jti: SecureRandom.uuid,
              scopes: %w(openid), issuer: OidcIssuer.for_resource_type(type), audiences: [client.aud],
-             subject: "#{OidcSubject.prefix_for(type)}_#{device.principal_public_id}",
+             subject: "#{OidcSubject.prefix_for(type)}_#{device.subject_public_id}",
              jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type), client_id: client_id,
              expires_at: 5.minutes.from_now, authentication_context: root.strict_authentication_context_value.to_s,
       )
@@ -66,7 +66,7 @@ class VisaOpDependentEndpointsUnavailableTest < ActionDispatch::IntegrationTest
         nil, host: host, resource_type: type, session_public_id: root.public_id,
              base_session_public_id: root.public_id, oidc_sid: PublicId.generate, oidc_jti: SecureRandom.uuid,
              scopes: %w(profile), issuer: OidcIssuer.for_resource_type(type), audiences: [client.aud],
-             subject: "#{OidcSubject.prefix_for(type)}_#{device.principal_public_id}",
+             subject: "#{OidcSubject.prefix_for(type)}_#{device.subject_public_id}",
              jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type), client_id: client_id,
              expires_at: 5.minutes.from_now, authentication_context: root.strict_authentication_context_value.to_s,
       )
@@ -98,7 +98,7 @@ class VisaOpDependentEndpointsUnavailableTest < ActionDispatch::IntegrationTest
         nil, host: host, resource_type: type, session_public_id: root.public_id,
              base_session_public_id: root.public_id, oidc_sid: grant.public_id, oidc_jti: grant.oidc_jti,
              scopes: %w(openid), issuer: OidcIssuer.for_resource_type(type), audiences: [client.aud],
-             subject: "#{OidcSubject.prefix_for(type)}_#{device.principal_public_id}",
+             subject: "#{OidcSubject.prefix_for(type)}_#{device.subject_public_id}",
              jwt_issuer_id: OidcIssuer.jwt_issuer_id_for_resource_type(type), client_id: client_id,
              expires_at: 5.minutes.from_now, authentication_context: root.strict_authentication_context_value.to_s,
       )
@@ -158,7 +158,7 @@ class VisaOpDependentEndpointsUnavailableTest < ActionDispatch::IntegrationTest
       assert_response :unauthorized
       assert_equal "invalid_client", response.parsed_body.fetch("error")
       OpAuthorityStopCommitter.stop_grant(
-        grant: grant, cause: "token_revocation", principal_public_id: device.principal_public_id,
+        grant: grant, cause: "token_revocation", principal_public_id: device.subject_public_id,
         authority_evidence_ref: "sensitive-api-contract:#{grant.public_id}",
       )
       get "/oauth/userinfo", headers: { "Authorization" => "Bearer #{token}" }

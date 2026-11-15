@@ -10,39 +10,20 @@ class OrgInvitationService
     end
 
   def self.create(organization_id:, email:, invited_by:, role_id: 0)
-    # Issuance stays closed until target Bureau, Unit and grant authority are explicit.
-    Result.new(success: false, invitation: nil, code: nil, error: MIGRATION_REQUIRED_MESSAGE)
+    unavailable_result
   end
 
   def self.validate(code:, email: nil)
-    new.validate(code: code, email: email)
+    unavailable_result
   end
 
   def self.consume(code:, email: nil)
-    new.consume(code: code, email: email)
+    unavailable_result
   end
 
-  def validate(code:, email: nil)
-    invitation = OrganizationInvitation.find_valid(code, email: email)
-
-    if invitation
-      Result.new(success: true, invitation: invitation, code: code, error: nil)
-    else
-      Result.new(success: false, invitation: nil, code: code, error: "Invalid or expired invitation code")
-    end
+  def self.unavailable_result
+    Result.new(success: false, invitation: nil, code: nil, error: MIGRATION_REQUIRED_MESSAGE)
   end
-
-  def consume(code:, email: nil)
-    invitation = OrganizationInvitation.find_valid(code, email: email)
-
-    unless invitation
-      return Result.new(success: false, invitation: nil, code: code, error: "Invalid or expired invitation code")
-    end
-
-    if invitation.consume!
-      Result.new(success: true, invitation: invitation, code: code, error: nil)
-    else
-      Result.new(success: false, invitation: invitation, code: code, error: "Failed to consume invitation")
-    end
-  end
+  private_class_method :unavailable_result
+  public_class_method :create, :validate, :consume
 end

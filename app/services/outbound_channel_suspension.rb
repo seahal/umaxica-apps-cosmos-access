@@ -25,6 +25,8 @@ class OutboundChannelSuspension
     @flipper = flipper
   end
 
+  public
+
   def suspended?(channel)
     feature_name =
       CHANNEL_FEATURE_NAMES.fetch(channel.to_sym) do
@@ -33,4 +35,5 @@ class OutboundChannelSuspension
 
     FeatureFlags.enabled?(feature_name, flipper: @flipper)
   end
+  public_class_method :suspended?
 end

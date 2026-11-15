@@ -2,6 +2,8 @@
 # frozen_string_literal: true
 
 module ApplicationHelper
+  public
+
   def page_title(title = nil)
     if title.present?
       content_for(:page_title, title)

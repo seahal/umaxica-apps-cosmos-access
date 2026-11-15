@@ -21,6 +21,26 @@ class OpExistingSessionLogoutTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "operator end-session POST with an unknown client cannot stop an existing root" do
+    browser = open_session
+    host = OidcIssuer.host_for_resource_type("operator")
+    browser.host!(host)
+    browser.https!
+    root = OperatorToken.find(ActiveRecord::FixtureSet.identify(:one))
+
+    browser.post(
+      "/oidc/logout",
+      params: {
+        client_id: "unknown-operator-client",
+        post_logout_redirect_uri: "https://rp.example.test/signed-out",
+      },
+    )
+
+    assert_equal 400, browser.response.status
+    assert_nil browser.response.location
+    assert_not root.reload.revoked?
+  end
+
   test "a staged logout cannot be confirmed using a different device credential" do
     browser = open_session
     host = OidcIssuer.host_for_resource_type("client")
@@ -29,7 +49,7 @@ class OpExistingSessionLogoutTest < ActionDispatch::IntegrationTest
     [:one, :two].each do |fixture|
       root = ClientToken.includes(:device_session).find(ActiveRecord::FixtureSet.identify(fixture))
       payload = AuthorizationTokenClaims.build(
-        resource: nil, subject: root.user_id.to_s, resource_type: "client",
+        resource: nil, subject: root.subject_public_id.to_s, resource_type: "client",
         issued_at: Time.current, access_token_ttl: 60.seconds,
         session_public_id: root.device_session.public_id, oidc_jti: root.oidc_jti,
         authentication_context: AuthenticationContextValue::NORMAL_KEY,
@@ -60,8 +80,8 @@ class OpExistingSessionLogoutTest < ActionDispatch::IntegrationTest
   end
 
   test "both realms confirm logout with valid or expired existing OP credentials and retain scalar audit history" do
-    [["client", ClientToken, :user_id, ClientChronicle],
-     ["operator", OperatorToken, :staff_id, OperatorChronicle],].each do |type, model, owner_key, audits|
+    [["client", ClientToken, :subject_public_id, ClientChronicle],
+     ["operator", OperatorToken, :subject_public_id, OperatorChronicle],].each do |type, model, owner_key, audits|
       [[:one, Time.current], [:two, 5.minutes.ago]].each do |fixture, issued_at|
         root = model.includes(:device_session).find(ActiveRecord::FixtureSet.identify(fixture))
         root.update!(authentication_context: "normal") if type == "operator"
@@ -101,6 +121,24 @@ class OpExistingSessionLogoutTest < ActionDispatch::IntegrationTest
         assert_predicate browser.cookies[AuthenticationCookieName.access], :blank?
         assert_predicate browser.cookies[AuthenticationCookieName.refresh], :blank?
         assert_includes browser.response.headers["Set-Cookie"].to_s, "#{AuthenticationCookieName.access}=;"
+
+        completion_uri = URI.parse(browser.response.location)
+
+        assert_equal host, completion_uri.host
+        assert_equal "/oidc/logout/completion", completion_uri.path
+        browser.get(completion_uri.request_uri)
+
+        assert_equal 200, browser.response.status
+        completion_page = Nokogiri::HTML(browser.response.body).at_css("script[data-page]")
+
+        assert completion_page
+        completion_props = JSON.parse(completion_page.text).fetch("props")
+
+        assert_equal "VISA", completion_props.fetch("chrome").fetch("family_label")
+        assert completion_props.fetch("clear_history")
+
+        assert_not completion_props.fetch("active")
+        assert_predicate completion_props.fetch("title"), :present?
       end
     end
   end

@@ -14,6 +14,8 @@ class IdentityTelephoneCeremonyTransactionPurger
     @batch_size = batch_size
   end
 
+  public
+
   def call
     MODEL_BY_SURFACE.transform_values { |model| purge_model(model) }
   end

@@ -6,8 +6,8 @@ class OpExternalOwnerScalarTest < ActiveSupport::TestCase
   self.fixture_table_names = %w(client_device_sessions operator_device_sessions)
 
   test "device and OIDC connection owner references reject null before and after validation bypass" do
-    [[ClientDeviceSession, :user_id], [OperatorDeviceSession, :staff_id],
-     [ClientOidcConnection, :user_id], [OperatorOidcConnection, :staff_id],].each do |model, owner_key|
+    [[ClientDeviceSession, :subject_public_id], [OperatorDeviceSession, :subject_public_id],
+     [ClientOidcConnection, :subject_public_id], [OperatorOidcConnection, :subject_public_id],].each do |model, owner_key|
       record = model.new(owner_key => nil)
       record.valid?
 

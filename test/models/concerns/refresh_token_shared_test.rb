@@ -87,6 +87,7 @@ class RefreshTokenSharedTest < ActiveSupport::TestCase
 
     assert_equal token.id, record.id
     token.update!(refresh_token_digest: used_digest, rotated_at: Time.current)
+
     assert_nil ClientToken.lock_refresh_token_record_by_digest(
       used_digest,
       digest_column: :refresh_token_digest,
@@ -94,6 +95,7 @@ class RefreshTokenSharedTest < ActiveSupport::TestCase
       expires_at_column: :discard_at,
     )
     token.update!(refresh_token_digest: expired_digest, rotated_at: nil, discard_at: Time.current)
+
     assert_nil ClientToken.lock_refresh_token_record_by_digest(
       expired_digest,
       digest_column: :refresh_token_digest,

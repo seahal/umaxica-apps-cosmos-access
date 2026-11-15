@@ -33,6 +33,8 @@ class IdentityPasskeyCeremonyResultIssuer
     @now = now
   end
 
+  public
+
   def issue!
     validate_grant!
     IdentityPasskeyCeremonyResult.issue(
@@ -107,4 +109,5 @@ class IdentityPasskeyCeremonyResultIssuer
       "authenticator_metadata" => candidate.metadata.presence&.stringify_keys,
     }.compact
   end
+  public_class_method :issue!
 end

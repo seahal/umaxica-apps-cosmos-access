@@ -34,6 +34,8 @@ class JumpRtIssuer
     @jti = jti
   end
 
+  public
+
   def call
     return nil unless valid_destination?
     return nil unless valid_ttl?
@@ -154,4 +156,5 @@ class JumpRtIssuer
   def boot_jump_config
     Rails.configuration.x.boot_config.fetch(:jump)
   end
+  public_class_method :call
 end

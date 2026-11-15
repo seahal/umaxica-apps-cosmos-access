@@ -49,6 +49,52 @@
 class OperatorStepUpCeremonyTransaction < OpBaseOrgRecord
   include StepUpCeremonyTransactionable
 
+  scope :expired_at, ->(time) { where(arel_table[:expires_at].lteq(time)) }
+  scope :consumed, -> { where.not(consumed_at: nil).or(where(status: StepUpCeremonyTransactionable::STATUS_CONSUMED)) }
+  scope :canceled, -> { where(status: StepUpCeremonyTransactionable::STATUS_CANCELED) }
+  scope :active_at, ->(time) {
+    where(arel_table[:expires_at].gt(time)).where(consumed_at: nil, status: StepUpCeremonyTransactionable::STATUS_PENDING)
+  }
+  scope :pending, -> { where(status: StepUpCeremonyTransactionable::STATUS_PENDING, consumed_at: nil) }
+  scope :purgeable_at, lambda { |time, retention_period: StepUpCeremonyTransactionable::RETENTION_PERIOD|
+    cutoff = time - retention_period
+    where(arel_table[:expires_at].lteq(cutoff))
+      .or(where(arel_table[:consumed_at].lteq(cutoff)))
+  }
+
+  validates :transaction_id, :surface, :actor_ref, :session_ref, :required_scope, :required_aal, :status,
+            :grant_jti, :expires_at, presence: true
+  validates :transaction_id, uniqueness: true
+  validates :grant_jti, uniqueness: true
+  validates :result_jti, uniqueness: true, allow_nil: true
+  validates :allowed_methods, presence: true
+  validates :surface, inclusion: { in: IdentityStepUpCeremonyContract::SURFACES }
+  # @deprecated `required_aal` is a storage label only; remove it after the AAL removal ledger
+  # has retired historical rows and signed compatibility fixtures.
+  validates :required_aal, inclusion: { in: IdentityStepUpCeremonyContract::AALS }
+  validates :aal, inclusion: { in: IdentityStepUpCeremonyContract::AALS }, allow_blank: true
+  validates :method, inclusion: { in: IdentityStepUpCeremonyContract::METHODS }, allow_blank: true
+  validates :status, inclusion: { in: StepUpCeremonyTransactionable::STATUSES }
+  validates :step_up_required, :user_verification_required, :full_reauthentication_required,
+            :phishing_resistant_required,
+            :require_session_binding, inclusion: { in: [true, false] }
+  validates :audience, :token_binding, presence: true
+  validate :surface_matches_transaction_class
+  validate :allowed_methods_are_valid
+  validate :consumed_transaction_has_result
+  validate :cancellation_handoff_fields_are_consistent
+
+  has_many :visa_sensitive_admissions,
+           class_name: "OperatorVisaSensitiveAdmission",
+           foreign_key: :step_up_ceremony_transaction_id,
+           inverse_of: :step_up_ceremony_transaction,
+           dependent: :restrict_with_error
+  has_many :auth_admission_bindings,
+           class_name: "OperatorAuthAdmissionBinding",
+           foreign_key: :step_up_ceremony_transaction_id,
+           inverse_of: :step_up_ceremony_transaction,
+           dependent: :restrict_with_error
+
   ceremony_surface "org"
 
   belongs_to :evidence_state, class_name: "OperatorStepUpEvidenceState", inverse_of: :ceremony_transactions

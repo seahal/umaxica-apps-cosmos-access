@@ -21,5 +21,6 @@ module ExternalAuthentication
         raise ArgumentError, "adapter is unsupported"
       end
     end
+    public_class_method :build
   end
 end

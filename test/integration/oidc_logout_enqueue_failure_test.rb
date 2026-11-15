@@ -8,9 +8,9 @@ class OidcLogoutEnqueueFailureTest < ActionDispatch::IntegrationTest
 
   setup do
     @root = ClientToken.create!(
-      authentication_epoch: 0, user_id: 1001,
+      authentication_epoch: 0, subject_public_id: PublicId.generate,
       device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: PublicId.generate,
+        subject_public_id: PublicId.generate,
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -21,7 +21,7 @@ class OidcLogoutEnqueueFailureTest < ActionDispatch::IntegrationTest
     )
     @visa_host = OidcIssuer.host_for_resource_type("client")
     payload = AuthorizationTokenClaims.build(
-      resource: nil, subject: @root.user_id.to_s, resource_type: "client", issued_at: Time.current,
+      resource: nil, subject: @root.subject_public_id.to_s, resource_type: "client", issued_at: Time.current,
       access_token_ttl: 60.seconds, session_public_id: @root.device_session.public_id,
       oidc_jti: @root.oidc_jti, authentication_context: AuthenticationContextValue::NORMAL_KEY,
     )

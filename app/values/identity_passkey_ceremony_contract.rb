@@ -7,7 +7,7 @@ module IdentityPasskeyCeremonyContract
   Error = Class.new(StandardError)
   module_function
 
-  ALGORITHM = "ES384"
+  ALGORITHM = JitSecurityJwtJwk::ALGORITHM
   SURFACES = %w(app org).freeze
   OPERATIONS = %w(registration).freeze
   LEEWAY = 30

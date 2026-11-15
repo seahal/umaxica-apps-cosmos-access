@@ -33,5 +33,4 @@ class RecurringCeremonyCleanupContractTest < ActiveSupport::TestCase
     assert_equal "EmailCeremonyTransactionPurgeJob",
                  production.fetch("email_ceremony_transaction_purge").fetch("class")
   end
-
 end

@@ -17,8 +17,8 @@ module Security
       test "refresh token reuse revokes only the compromised token family" do
         original = ClientToken.create!(
           authentication_epoch: 0,
-          user_id: 1001, device_session: ClientDeviceSession.create!(
-            user_id: 1001, principal_public_id: "refresh-principal",
+          subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+            subject_public_id: "refresh-principal",
           ),
           discard_at: 1.day.from_now,
           purge_eligible_at: 2.days.from_now,
@@ -28,8 +28,8 @@ module Security
 
         other_family = ClientToken.create!(
           authentication_epoch: 0,
-          user_id: 1001, device_session: ClientDeviceSession.create!(
-            user_id: 1001, principal_public_id: "refresh-principal",
+          subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+            subject_public_id: "refresh-principal",
           ),
           discard_at: 1.day.from_now,
           purge_eligible_at: 2.days.from_now,
@@ -55,8 +55,8 @@ module Security
       test "oidc refresh token reuse revokes the usage and reports it" do
         root_token = ClientToken.create!(
           authentication_epoch: 0,
-          user_id: 1001, device_session: ClientDeviceSession.create!(
-            user_id: 1001, principal_public_id: "refresh-principal",
+          subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+            subject_public_id: "refresh-principal",
           ),
           discard_at: 1.day.from_now,
           purge_eligible_at: 2.days.from_now,
@@ -84,8 +84,8 @@ module Security
       test "oidc refresh token rotation still succeeds for the current token" do
         root_token = ClientToken.create!(
           authentication_epoch: 0,
-          user_id: 1001, device_session: ClientDeviceSession.create!(
-            user_id: 1001, principal_public_id: "refresh-principal",
+          subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+            subject_public_id: "refresh-principal",
           ),
           discard_at: 1.day.from_now,
           purge_eligible_at: 2.days.from_now,
@@ -112,8 +112,8 @@ module Security
       test "ordinary current session revoke does not revoke the whole family" do
         current = ClientToken.create!(
           authentication_epoch: 0,
-          user_id: 1001, device_session: ClientDeviceSession.create!(
-            user_id: 1001, principal_public_id: "refresh-principal",
+          subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+            subject_public_id: "refresh-principal",
           ),
           discard_at: 1.day.from_now,
           purge_eligible_at: 2.days.from_now,

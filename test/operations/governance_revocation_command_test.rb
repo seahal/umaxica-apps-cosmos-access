@@ -7,8 +7,8 @@ class GovernanceRevocationCommandTest < ActiveSupport::TestCase
 
   test "a historical grant whose original root was purged is revoked through its stable device parent" do
     [
-      ["app", ClientDeviceSession, ClientToken, OpAppGrant, :user_id, :client_token_id, "core-app-jp"],
-      ["org", OperatorDeviceSession, OperatorToken, OpOrgGrant, :staff_id, :operator_token_id, "core-org-jp"],
+      ["app", ClientDeviceSession, ClientToken, OpAppGrant, :subject_public_id, :client_token_id, "core-app-jp"],
+      ["org", OperatorDeviceSession, OperatorToken, OpOrgGrant, :subject_public_id, :operator_token_id, "core-org-jp"],
     ].each do |realm, device_class, root_class, grant_class, actor_key, root_key, client_id|
       kind_key, kind_id = {
         "app" => [:user_token_kind_id, ClientTokenKind::BROWSER_WEB],
@@ -16,9 +16,8 @@ class GovernanceRevocationCommandTest < ActiveSupport::TestCase
       }.fetch(realm)
       principal = PublicId.generate
       device_id = device_class.insert_all!(
-        [{ actor_key => 9_600_001,
-           :public_id => PublicId.generate,
-           :principal_public_id => principal,
+        [{ :public_id => PublicId.generate,
+           :subject_public_id => principal,
            :created_at => Time.current,
            :updated_at => Time.current, }],
       ).rows.first.first
@@ -49,6 +48,7 @@ class GovernanceRevocationCommandTest < ActiveSupport::TestCase
 
       grant_id = grant_class.insert_all!(
         [{ root_key => historical_root_id,
+           :subject_public_id => principal,
            :device_session_id => device_id,
            :public_id => PublicId.generate,
            :authentication_epoch => 0,
@@ -100,8 +100,8 @@ class GovernanceRevocationCommandTest < ActiveSupport::TestCase
 
   test "one-session scope ends the named device session while another device of the same subject stays usable" do
     [
-      ["app", ClientDeviceSession, ClientToken, :user_id],
-      ["org", OperatorDeviceSession, OperatorToken, :staff_id],
+      ["app", ClientDeviceSession, ClientToken, :subject_public_id],
+      ["org", OperatorDeviceSession, OperatorToken, :subject_public_id],
     ].each do |realm, device_class, root_class, actor_key|
       kind_key, kind_id = {
         "app" => [:user_token_kind_id, ClientTokenKind::BROWSER_WEB],
@@ -112,9 +112,8 @@ class GovernanceRevocationCommandTest < ActiveSupport::TestCase
       roots = []
       2.times do
         device_id = device_class.insert_all!(
-          [{ actor_key => 9_400_001,
-             :public_id => PublicId.generate,
-             :principal_public_id => principal,
+          [{ :public_id => PublicId.generate,
+             :subject_public_id => principal,
              :created_at => Time.current,
              :updated_at => Time.current, }],
         ).rows.first.first
@@ -172,17 +171,15 @@ class GovernanceRevocationCommandTest < ActiveSupport::TestCase
       roots = []
       grants = []
       [principal, principal, "unrelated-principal"].each_with_index do |subject, index|
-        actor_id = 9_200_000 + index
         device_id = device_class.insert_all!(
-          [{ actor_key => actor_id,
-             :public_id => PublicId.generate,
-             :principal_public_id => subject,
+          [{ :public_id => PublicId.generate,
+             :subject_public_id => subject,
              :created_at => Time.current,
              :updated_at => Time.current, }],
         ).rows.first.first
         devices << device_class.find(device_id)
         root_id = root_class.insert_all!(
-          [{ actor_key => actor_id,
+          [{ actor_key => subject,
              kind_key => kind_id,
              :public_id => PublicId.generate,
              :device_session_id => device_id,
@@ -193,6 +190,7 @@ class GovernanceRevocationCommandTest < ActiveSupport::TestCase
         roots << root_class.find(root_id)
         grant_id = grant_class.insert_all!(
           [{ root_key => root_id,
+             :subject_public_id => subject,
              :device_session_id => device_id,
              :public_id => PublicId.generate,
              :authentication_epoch => 0,
@@ -248,9 +246,8 @@ class GovernanceRevocationCommandTest < ActiveSupport::TestCase
       }.fetch(realm)
       principal = PublicId.generate
       device_id = device_class.insert_all!(
-        [{ actor_key => 9_300_001,
-           :public_id => PublicId.generate,
-           :principal_public_id => principal,
+        [{ :public_id => PublicId.generate,
+           :subject_public_id => principal,
            :created_at => Time.current,
            :updated_at => Time.current, }],
       ).rows.first.first
@@ -265,6 +262,7 @@ class GovernanceRevocationCommandTest < ActiveSupport::TestCase
       ).rows.first.first
       grant_id = grant_class.insert_all!(
         [{ root_key => root_id,
+           :subject_public_id => principal,
            :device_session_id => device_id,
            :public_id => PublicId.generate,
            :authentication_epoch => 0,
@@ -343,16 +341,15 @@ class GovernanceRevocationCommandTest < ActiveSupport::TestCase
       assert_equal command.snapshot, receipt.command
       assert_equal command.digest, receipt.command_digest
 
-      actor_key = (realm == "app") ? :user_id : :staff_id
+      actor_key = :subject_public_id
       device_id = device_class.insert_all!(
-        [{ actor_key => 9_100_001,
-           :public_id => PublicId.generate,
-           :principal_public_id => principal,
+        [{ :public_id => PublicId.generate,
+           :subject_public_id => principal,
            :created_at => Time.current,
            :updated_at => Time.current, }],
       ).rows.first.first
       later_root_id = root_class.insert_all!(
-        [{ actor_key => 9_100_001,
+        [{ actor_key => principal,
            kind_key => kind_id,
            :public_id => PublicId.generate,
            :device_session_id => device_id,
@@ -384,8 +381,8 @@ class GovernanceRevocationCommandTest < ActiveSupport::TestCase
 
   test "unknown or foreign single-session targets commit neither a receipt nor a stop" do
     [
-      ["app", OpAppGovernanceRevocationReceipt, ClientDeviceSession, ClientToken, :user_id],
-      ["org", OpOrgGovernanceRevocationReceipt, OperatorDeviceSession, OperatorToken, :staff_id],
+      ["app", OpAppGovernanceRevocationReceipt, ClientDeviceSession, ClientToken, :subject_public_id],
+      ["org", OpOrgGovernanceRevocationReceipt, OperatorDeviceSession, OperatorToken, :subject_public_id],
     ].each do |realm, receipt_class, device_class, root_class, actor_key|
       kind_key, kind_id = {
         "app" => [:user_token_kind_id, ClientTokenKind::BROWSER_WEB],
@@ -415,14 +412,13 @@ class GovernanceRevocationCommandTest < ActiveSupport::TestCase
       assert_not receipt_class.exists?(command_id: command.command_id)
 
       device_id = device_class.insert_all!(
-        [{ actor_key => 9_100_002,
-           :public_id => PublicId.generate,
-           :principal_public_id => "different-principal",
+        [{ :public_id => PublicId.generate,
+           :subject_public_id => "different-principal",
            :created_at => Time.current,
            :updated_at => Time.current, }],
       ).rows.first.first
       root_id = root_class.insert_all!(
-        [{ actor_key => 9_100_002,
+        [{ actor_key => "different-principal",
            kind_key => kind_id,
            :public_id => root_public_id,
            :device_session_id => device_id,

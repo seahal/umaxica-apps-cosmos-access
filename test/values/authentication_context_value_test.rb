@@ -63,6 +63,24 @@ class AuthenticationContextValueTest < ActiveSupport::TestCase
     end
   end
 
+  test "a verified WebAuthn authentication context records phishing resistance" do
+    context = Webauthn::AuthenticationContext.new(
+      webauthn_id: "credential-id",
+      user_verified: true,
+      user_present: true,
+      sign_count: 4,
+      backup_eligible: false,
+      backup_state: false,
+      aaguid: nil,
+      transports: ["internal"],
+      authenticator_attachment: "platform",
+      verified_at: Time.current,
+    )
+
+    assert_predicate context, :phishing_resistant?
+    assert_predicate context, :aal2_aligned?
+  end
+
   # A Standby token issues the same scopes as the same actor's Normal token;
   # the sensitive-operation boundary is each operation's Step-Up gate, and the
   # capability layer neither adds nor removes a scope in either context.

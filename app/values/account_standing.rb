@@ -70,4 +70,5 @@ class AccountStanding
       raise ArgumentError, "unsupported enforcement release mode: #{enforcement_case.release_mode.inspect}"
     end
   end
+  public_class_method :from_cases
 end

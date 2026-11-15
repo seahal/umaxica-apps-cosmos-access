@@ -36,6 +36,8 @@ class SignUpStateMachine
     @payload = payload.respond_to?(:to_h) ? payload.to_h : {}
   end
 
+  public
+
   def call
     return invalid("ticket is required") unless ticket
 
@@ -247,4 +249,5 @@ class SignUpStateMachine
   def expired_result
     SignUpResult.build(status: :expired, ticket: ticket, errors: ["ticket is expired"])
   end
+  public_class_method :call
 end

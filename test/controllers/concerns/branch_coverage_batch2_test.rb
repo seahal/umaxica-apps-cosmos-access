@@ -17,5 +17,4 @@ class BranchCoverageBatch2Test < ActiveSupport::TestCase
 
     assert_predicate token2, :expired?
   end
-
 end

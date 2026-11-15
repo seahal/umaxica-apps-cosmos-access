@@ -46,14 +46,6 @@ module EmailVerificationChallengeable
   ExpiredError = Class.new(Error)
   ReplayError = Class.new(Error)
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    validates :evp_outcome, inclusion: { in: OUTCOMES }, allow_nil: true
-    validates :evp_failure_reason, inclusion: { in: FAILURE_REASONS }, allow_nil: true
-    validates :evp_attempt_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
-    validate :evp_challenge_metadata_is_consistent
-  end
-
   class_methods do
     def issue_evp_challenge!(actor_ref:, session_ref:, operation:, email_candidate_ref: nil,
                              normalized_email_digest: nil, now: Time.current)
@@ -83,6 +75,8 @@ module EmailVerificationChallengeable
       Rails.application.key_generator.generate_key("email-verification-protocol/challenge", 32)
     end
   end
+
+  public
 
   def evp_challenge_pending?(now: Time.current)
     evp_outcome == OUTCOME_PENDING && !evp_challenge_expired?(now: now)

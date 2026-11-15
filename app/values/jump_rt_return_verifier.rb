@@ -47,6 +47,8 @@ class JumpRtReturnVerifier
     @now = now
   end
 
+  public
+
   def call
     return failure("missing_token") if token.blank?
     return failure("malformed") if token.bytesize > MAX_TOKEN_LENGTH
@@ -119,7 +121,7 @@ class JumpRtReturnVerifier
       raise UnknownKid, "unknown kid"
     end
 
-    JWT::JWK.import(jwk).public_key
+    JitSecurityJwtJwk.import_public_key(jwk)
   end
 
   def jwks_keys(force:)
@@ -209,7 +211,7 @@ class JumpRtReturnVerifier
         end
 
         jwk = normalized_public_jwk(source)
-        raise JwksUnavailable, "jwks entry is not a public ES384 verification key" unless jwk
+        raise JwksUnavailable, "jwks entry is not a public PS256 RSA verification key" unless jwk
 
         begin
           JWT::JWK.import(jwk).public_key
@@ -306,4 +308,5 @@ class JumpRtReturnVerifier
   def failure(error)
     Result.new(success: false, payload: nil, error: error)
   end
+  public_class_method :call
 end

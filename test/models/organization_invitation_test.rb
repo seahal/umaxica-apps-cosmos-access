@@ -41,4 +41,39 @@ class OrganizationInvitationTest < ActiveSupport::TestCase
     # The historical scalar has no deleted Operator ORM dependency.
     assert_nil OrganizationInvitation.reflect_on_association(:invited_by)
   end
+
+  test "expiry and consumption predicates distinguish retained terminal records" do
+    now = OrganizationInvitation.database_now
+    OrganizationInvitation.insert_all!(
+      [
+        {
+          code: "e" * 32,
+          email: "expired@example.test",
+          invited_by_id: 9_876_543,
+          organization_id: 9_876_544,
+          expires_at: now - 1.second,
+          consumed_at: nil,
+          created_at: now,
+          updated_at: now,
+        },
+        {
+          code: "c" * 32,
+          email: "consumed@example.test",
+          invited_by_id: 9_876_543,
+          organization_id: 9_876_544,
+          expires_at: now + 1.day,
+          consumed_at: now,
+          created_at: now,
+          updated_at: now,
+        },
+      ],
+    )
+    expired = OrganizationInvitation.find_by!(code: "e" * 32)
+    consumed = OrganizationInvitation.find_by!(code: "c" * 32)
+
+    assert_predicate expired, :expired?
+    assert_not_predicate expired, :consumed?
+    assert_predicate consumed, :consumed?
+    assert_not_predicate consumed, :expired?
+  end
 end

@@ -36,7 +36,7 @@ class OidcClientAssertionJwtTest < ActiveSupport::TestCase
 
   test "issue refreshes local key material once when the registry is missing a client assertion key" do
     token_url = "https://log.umaxica.app/oauth/token"
-    key = OpenSSL::PKey::EC.generate("secp384r1")
+    key = OpenSSL::PKey::RSA.generate(3_072)
     previous = JitSecurityJwtRegistry.instance_variable_get(:@issuers)
     installed = false
 
@@ -53,7 +53,7 @@ class OidcClientAssertionJwtTest < ActiveSupport::TestCase
         lambda do |**|
           installed = true
           ENV["OIDC_CLIENT_CORE_APP_JP_ACTIVE_KID"] = "core-app-oidc-recovered"
-          ENV["OIDC_CLIENT_CORE_APP_JP_PRIVATE_KEY"] = Base64.strict_encode64(key.to_der)
+          ENV["OIDC_CLIENT_CORE_APP_JP_PRIVATE_KEY"] = Base64.strict_encode64(key.private_to_der)
           true
         end
 
@@ -107,6 +107,122 @@ class OidcClientAssertionJwtTest < ActiveSupport::TestCase
         assertion: assertion,
         token_url: token_url,
       )
+    end
+  end
+
+  test "verifies PS256 assertions from external RPs while Access signs PS256" do
+    token_url = "https://log.umaxica.app/oauth/token"
+    now = Time.current
+    external_key = OpenSSL::PKey::RSA.generate(3_072)
+
+    with_oidc_client_key("CORE_APP_JP") do
+      namespace = OidcClientRegistry.jwt_namespace_for("core-app-jp")
+      issuer_id = "oidc_client:#{namespace}"
+      active_kid = JitSecurityJwtRegistry.issuer(issuer_id).current_kid
+      active_jwk = JitSecurityJwtJwk.export_public(
+        JitSecurityJwtRegistry.private_key_for(issuer_id, active_kid), kid: active_kid,
+      )
+      external_jwk = JitSecurityJwtJwk.export_public(external_key, kid: "governance-ps256")
+
+      with_env(
+        "OIDC_CLIENT_CORE_APP_JP_PUBLIC_KEYSET" => JSON.generate(keys: [active_jwk, external_jwk]),
+      ) do
+        JitSecurityJwtRegistry.reload!
+        issued_by_access = OidcClientAssertionJwt.issue(client_id: "core-app-jp", token_url:)
+        external_assertion = JWT.encode(
+          {
+            "iss" => "core-app-jp",
+            "sub" => "core-app-jp",
+            "aud" => token_url,
+            "jti" => SecureRandom.uuid,
+            "iat" => now.to_i,
+            "exp" => (now + OidcClientAssertionJwt::TTL).to_i,
+            "typ" => OidcClientAssertionJwt::TOKEN_TYPE,
+          },
+          external_key,
+          "PS256",
+          { "kid" => "governance-ps256", "typ" => OidcClientAssertionJwt::TOKEN_TYPE },
+        )
+        verification = OidcClientAssertionJwt.verify(
+          client_id: "core-app-jp", assertion: external_assertion, token_url:, now:,
+        )
+
+        assert_equal "PS256", JitSecurityJwtKeyring.parse_header(issued_by_access).fetch("alg")
+        assert_predicate verification, :authenticated?
+      end
+    end
+  end
+
+  test "rejects ES384 client assertions and refuses their verification keys" do
+    token_url = "https://log.umaxica.app/oauth/token"
+    now = Time.current
+    external_key = OpenSSL::PKey::EC.generate("secp384r1")
+    external_assertion = JWT.encode(
+      {
+        "iss" => "core-app-jp",
+        "sub" => "core-app-jp",
+        "aud" => token_url,
+        "jti" => SecureRandom.uuid,
+        "iat" => now.to_i,
+        "exp" => (now + OidcClientAssertionJwt::TTL).to_i,
+        "typ" => OidcClientAssertionJwt::TOKEN_TYPE,
+      },
+      external_key,
+      "ES384",
+      { "kid" => "governance-es384", "typ" => OidcClientAssertionJwt::TOKEN_TYPE },
+    )
+
+    with_oidc_client_key("CORE_APP_JP") do
+      assert_not OidcClientAssertionJwt.valid?(
+        client_id: "core-app-jp", assertion: external_assertion, token_url:, now:,
+      )
+
+      external_jwk = JWT::JWK.new(external_key, kid: "governance-es384")
+        .export.stringify_keys.except(*JitSecurityJwtJwk::PRIVATE_FIELDS).merge(
+          "alg" => "ES384",
+          "use" => "sig",
+        )
+
+      with_env(
+        "OIDC_CLIENT_CORE_APP_JP_PUBLIC_KEYSET" => JSON.generate(keys: [external_jwk]),
+      ) do
+        error = assert_raises(JitSecurityJwtRegistry::ConfigurationError) { JitSecurityJwtRegistry.reload! }
+
+        assert_match(/OIDC_CLIENT_CORE_APP_JP_PUBLIC_KEYSET.*missing n, e/, error.message)
+      end
+    end
+  end
+
+  test "rejects other RSA client assertion algorithms when the matching PS256 key is registered" do
+    token_url = "https://log.umaxica.app/oauth/token"
+    now = Time.current
+    external_key = OpenSSL::PKey::RSA.generate(3_072)
+    external_jwk = JitSecurityJwtJwk.export_public(external_key, kid: "governance-ps256")
+
+    with_oidc_client_key("CORE_APP_JP") do
+      with_env("OIDC_CLIENT_CORE_APP_JP_PUBLIC_KEYSET" => JSON.generate(keys: [external_jwk])) do
+        JitSecurityJwtRegistry.reload!
+        %w(RS256 PS384).each do |algorithm|
+          assertion = JWT.encode(
+            {
+              "iss" => "core-app-jp",
+              "sub" => "core-app-jp",
+              "aud" => token_url,
+              "jti" => SecureRandom.uuid,
+              "iat" => now.to_i,
+              "exp" => (now + OidcClientAssertionJwt::TTL).to_i,
+              "typ" => OidcClientAssertionJwt::TOKEN_TYPE,
+            },
+            external_key,
+            algorithm,
+            { "kid" => "governance-ps256", "typ" => OidcClientAssertionJwt::TOKEN_TYPE },
+          )
+
+          assert_not OidcClientAssertionJwt.valid?(
+            client_id: "core-app-jp", assertion:, token_url:, now:,
+          ), "#{algorithm} must be refused"
+        end
+      end
     end
   end
 
@@ -306,11 +422,11 @@ class OidcClientAssertionJwtTest < ActiveSupport::TestCase
   private
 
   def with_oidc_client_key(namespace)
-    key = OpenSSL::PKey::EC.generate("secp384r1")
+    key = OpenSSL::PKey::RSA.generate(3_072)
     kid = "#{namespace.downcase.tr("_", "-")}-oidc-test"
     env = {
       "OIDC_CLIENT_#{namespace}_ACTIVE_KID" => kid,
-      "OIDC_CLIENT_#{namespace}_PRIVATE_KEY" => Base64.strict_encode64(key.to_der),
+      "OIDC_CLIENT_#{namespace}_PRIVATE_KEY" => Base64.strict_encode64(key.private_to_der),
     }
     previous = JitSecurityJwtRegistry.instance_variable_get(:@issuers)
 

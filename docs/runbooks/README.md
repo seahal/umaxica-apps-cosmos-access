@@ -52,7 +52,7 @@ complete provider subjects. Refer to the approved secret inventory instead.
 | [ChainSeal key rotation](chain-seal-key-rotation.md)                                | ChainSeal ES384 key rotation and emergency revocation                                                                   |
 | [Device session token integrity rollout](device-session-token-integrity-rollout.md) | Precondition checks and migration order for device session and token reference constraints                              |
 | [Entra ID Org login](entra-org-login.md)                                            | Microsoft Entra application registration and enablement for the Org login ceremony                                      |
-| [Jump RT key rotation](jump-rt-key-rotation.md)                                     | ES384 signing key rotation for Jump redirect tokens                                                                     |
+| [Jump RT key rotation](jump-rt-key-rotation.md)                                     | PS256 RSA signing key rotation for Access Jump redirect tokens                                                          |
 | [JWT key rotation](jwt-key-rotation.md)                                             | Access token, Preference token, OIDC ID Token and JWKS key rotation                                                     |
 | [Rails master key rotation](rails-master-key-rotation.md)                           | Zero-downtime rotation of the Rails credentials master key                                                              |
 | [Passkey](passkey.md)                                                               | AAGUID catalog maintenance and passkey operations                                                                       |

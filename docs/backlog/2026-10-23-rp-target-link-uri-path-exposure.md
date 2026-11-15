@@ -7,7 +7,7 @@ different target transport.
 ## Concern
 
 The adopted design (owner decisions D-149 and D-151 of the 2026-10 authentication cycle) carries the
-RP's internal return target as the `target_link_uri` claim of the RP's OIDC `state`, an ES384 JWS. A
+RP's internal return target as the `target_link_uri` claim of the RP's OIDC `state`, a PS256 JWS. A
 JWS is signed, not encrypted. The path is therefore readable wherever the `state` travels or is
 stored: the authorization request URL sent to the OP, the OP's stored authorization transaction, the
 Jump gateway and any log that records those URLs.
@@ -23,7 +23,7 @@ and a different mechanism is considered after it works.
 
 ## State when recorded
 
-The RP Rails slice now uses the ES384 JWS `state` and path-only `target_link_uri` from
+The RP Rails slice now uses the PS256 JWS `state` and path-only `target_link_uri` from
 `OidcSsoInitiator`, `OidcCallback`, and `RpTargetLinkUri`. Plain RP `pt` is no longer the browser RP
 return lane. The remaining concern is that the signed path is readable to the OP and Jump; no
 security defect was inferred from that accepted design trade-off.

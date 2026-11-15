@@ -27,6 +27,8 @@ module ExternalAuthentication
       @flipper = flipper
     end
 
+    public
+
     def start_decision(provider:, operation:, context:)
       validate_context(context)
       raise ArgumentError, "operation is unsupported" unless START_OPERATIONS.include?(operation)

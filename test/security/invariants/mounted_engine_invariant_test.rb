@@ -1,8 +1,6 @@
 # typed: false
 # frozen_string_literal: true
 
-# rubocop:disable I18n/RailsI18n/DecorateString
-
 require "test_helper"
 
 module Security
@@ -46,15 +44,15 @@ module Security
         end
       end
 
-      test "no unauthenticated admin engine path is routable outside development" do
-        routed_paths = Rails.application.routes.routes.map { |route| route.path.spec.to_s }
-
+      test "no unauthenticated admin engine path can be recognized outside development" do
         FORBIDDEN_MOUNT_PATHS.each do |forbidden_path|
-          matches = routed_paths.select { |path| path.start_with?(forbidden_path) }
+          probe_path = (forbidden_path == "/_inertia/devtools") ? "#{forbidden_path}/entries" : forbidden_path
 
-          assert_empty matches,
-                       "#{forbidden_path} is routable in #{Rails.env}: #{matches.inspect}. " \
-                       "Mounted admin engines bypass enforce_access_policy! and surface isolation entirely."
+          assert_raises(ActionController::RoutingError, forbidden_path) do
+            Rails.application.routes.recognize_path(
+              "https://#{ENV.fetch("PUBLIC_AUTH_SERVICE_URL")}#{probe_path}", method: :get,
+            )
+          end
         end
       end
 
@@ -162,5 +160,3 @@ module Security
     end
   end
 end
-
-# rubocop:enable I18n/RailsI18n/DecorateString

@@ -33,4 +33,5 @@ class SignUpEligibilityPolicy
       raise ArgumentError, "unsupported sign-up eligibility surface: #{surface.inspect}"
     end
   end
+  public_class_method :eligible?, :supported_surface?
 end

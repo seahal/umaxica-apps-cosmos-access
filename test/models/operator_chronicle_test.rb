@@ -43,11 +43,10 @@
 require "test_helper"
 
 class OperatorChronicleTest < ActiveSupport::TestCase
-  self.fixture_table_names = %w(operator_tokens operator_device_sessions operator_chronicle_events
-                                operator_chronicle_levels)
+  self.fixture_table_names = %w(operator_chronicle_events operator_chronicle_levels)
 
   def setup
-    @subject_id = operator_tokens(:one).staff_id
+    @subject_id = 123_456
     @audit_event = OperatorChronicleEvent.find(OperatorChronicleEvent::LOGIN_SUCCESS)
     @audit_level = OperatorChronicleLevel.find(OperatorChronicleLevel::NOTHING)
     @audit = OperatorChronicle.create!(
@@ -143,7 +142,9 @@ class OperatorChronicleTest < ActiveSupport::TestCase
 
     assert_not audit.valid?
     assert_includes audit.errors[:event_id], "must reference a valid staff audit event"
-    attributes = @audit.attributes.except("id").merge("event_id" => 999_999)
+    attributes = @audit.attributes.except(
+      "id", "sign_flow_halted_generation", "sign_flow_halted_transaction_public_id",
+    ).merge("event_id" => 999_999)
     assert_raises(ActiveRecord::InvalidForeignKey) do
       OperatorChronicle.transaction(requires_new: true) { OperatorChronicle.insert_all!([attributes]) }
     end

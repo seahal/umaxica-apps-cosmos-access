@@ -6,6 +6,8 @@ module OidcClientAssertionJwt
 
   ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
   TOKEN_TYPE = "oidc-client-assertion+jwt"
+  # Client assertions follow the cross-repository PS256-only signing contract.
+  ACCEPTED_ALGORITHMS = [JitSecurityJwtJwk::ALGORITHM].freeze
   TTL = 5.minutes
   VerificationResult =
     Data.define(:authenticated, :step_up_claims_state, :step_up_expectation) do
@@ -65,7 +67,7 @@ module OidcClientAssertionJwt
     return rejected_verification unless assertion.is_a?(String) && assertion.present?
 
     header = JitSecurityJwtKeyring.parse_header(assertion)
-    return rejected_verification unless header["alg"] == JitSecurityJwtRegistry::ALGORITHM
+    return rejected_verification unless ACCEPTED_ALGORITHMS.include?(header["alg"])
     return rejected_verification unless header["typ"] == TOKEN_TYPE
 
     namespace = OidcClientRegistry.jwt_namespace_for(client_id)

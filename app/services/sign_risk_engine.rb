@@ -72,4 +72,5 @@ class SignRiskEngine
   end
 
   private_class_method :score_for_user, :score_for_staff, :evaluate_rules
+  public_class_method :score, :ip_anomaly_revoke_enabled?
 end

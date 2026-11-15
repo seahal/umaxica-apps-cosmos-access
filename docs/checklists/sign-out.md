@@ -59,6 +59,12 @@ deployment has passed acceptance.
 - SIGNOUT-9: OP authority-stop retention deletes child records before their stop and only after
   every referenced root is purge-eligible and every participant has a final delivery state.
   Restrictive foreign keys preserve the order; a rootless identity-stop record remains durable.
+- SIGNOUT-10: A Visa browser session carries at most one pending end-session request. A repeated
+  request with the same resolved client, grant, registered return URI, `state`, `ui_locales` and
+  legacy return-region claim may resume that confirmation. A canonical continuation carrying only
+  `ri` and optional `lx` may render the stored confirmation after its redirect. A different protocol
+  request in the same browser session is refused with 403 and leaves the original pending request
+  and OP authority unchanged; one tab cannot silently reuse another tab's return context.
 
 Sources: [logout sequence](../security/logout-sequence.md),
 [logout session management](../security/logout-session-management.md),

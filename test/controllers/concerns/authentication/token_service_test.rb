@@ -7,6 +7,8 @@ require "test_helper"
 class AuthenticationTokenServiceTest < ActiveSupport::TestCase
   include ActiveSupport::Testing::TimeHelpers
 
+  TokenSubject = Data.define(:id)
+
   test "encode returns nil for nil resource" do
     result = AuthenticationTokenService.encode(nil, host: "example.com", resource_type: "client")
 
@@ -14,7 +16,7 @@ class AuthenticationTokenServiceTest < ActiveSupport::TestCase
   end
 
   test "encode returns nil for blank host" do
-    user = clients(:one)
+    user = TokenSubject.new(id: "client-subject")
     result = AuthenticationTokenService.encode(user, host: "", resource_type: "client")
 
     assert_nil result
@@ -42,6 +44,7 @@ class AuthenticationTokenServiceTest < ActiveSupport::TestCase
     payload = { "scope" => "authenticated domain:operator read:org" }
 
     assert_equal "operator", AuthenticationTokenService.extract_resource_type(payload)
+    assert_equal "operator", AuthenticationToken.extract_resource_type(payload)
   end
 
   test "extract_session_id returns sid from payload" do
@@ -75,7 +78,7 @@ class AuthenticationTokenServiceTest < ActiveSupport::TestCase
   end
 
   test "encode creates valid token that can be decoded" do
-    user = clients(:one)
+    user = TokenSubject.new(id: "client-subject")
     token = AuthenticationTokenService.encode(
       user, host: "example.com", session_id: "sid123",
             resource_type: "client",
@@ -91,7 +94,7 @@ class AuthenticationTokenServiceTest < ActiveSupport::TestCase
   end
 
   test "encode default access token ttl matches the application policy" do
-    user = clients(:one)
+    user = TokenSubject.new(id: "client-subject")
     now = Time.zone.parse("2026-06-18 01:08:54")
     captured_payload = nil
 
@@ -115,9 +118,11 @@ class AuthenticationTokenServiceTest < ActiveSupport::TestCase
     assert_equal (now + SecurityTokenLifetimes::AUTH_ACCESS_JWT_TTL).to_i, captured_payload["exp"]
   end
 
-  test "encode infers staff resource type" do
-    staff = operators(:one)
-    token = AuthenticationTokenService.encode(staff, host: "example.com", session_id: "sid-staff")
+  test "encode accepts the explicit operator resource type" do
+    staff = TokenSubject.new(id: "operator-subject")
+    token = AuthenticationTokenService.encode(
+      staff, host: "example.com", session_id: "sid-staff", resource_type: "operator",
+    )
 
     assert_predicate token, :present?
 
@@ -128,7 +133,7 @@ class AuthenticationTokenServiceTest < ActiveSupport::TestCase
   end
 
   test "encode returns nil when keyring raises" do
-    user = clients(:one)
+    user = TokenSubject.new(id: "client-subject")
 
     JitSecurityJwtKeyring.stub(:encode, ->(*) { raise JWT::EncodeError, "boom" }) do
       assert_nil AuthenticationTokenService.encode(user, host: "example.com", resource_type: "client")
@@ -136,7 +141,7 @@ class AuthenticationTokenServiceTest < ActiveSupport::TestCase
   end
 
   test "decode rejects token when resource_type issuer/type do not match" do
-    user = clients(:one)
+    user = TokenSubject.new(id: "client-subject")
     token = AuthenticationTokenService.encode(
       user, host: "example.com", session_id: "sid123",
             resource_type: "client",
@@ -146,7 +151,7 @@ class AuthenticationTokenServiceTest < ActiveSupport::TestCase
   end
 
   test "encode includes cnf.jkt when dpop_jkt provided" do
-    user = clients(:one)
+    user = TokenSubject.new(id: "client-subject")
     token = AuthenticationTokenService.encode(
       user, host: "example.com", session_id: "sid123",
             resource_type: "client", dpop_jkt: "thumb123",
@@ -167,7 +172,7 @@ class AuthenticationTokenServiceTest < ActiveSupport::TestCase
   end
 
   test "encode backward compatible with session_public_id parameter" do
-    user = clients(:one)
+    user = TokenSubject.new(id: "client-subject")
     token = AuthenticationTokenService.encode(
       user, host: "example.com", session_public_id: "legacy_sid",
             resource_type: "client",
@@ -179,7 +184,7 @@ class AuthenticationTokenServiceTest < ActiveSupport::TestCase
   end
 
   test "encode uses oidc identifiers when provided" do
-    user = clients(:one)
+    user = TokenSubject.new(id: "client-subject")
     oidc_sid = "5b0d9bbf-963a-4e30-bc1c-a255ca44585a"
     oidc_jti = "6d0d34c8-f250-4480-92ef-154bcbfc9ec7"
     token = AuthenticationTokenService.encode(
@@ -472,7 +477,7 @@ class AuthenticationTokenServiceTest
 
   def load_jump_rt_env!
     @jump_rt_env_originals ||= {}
-    jump_rt_key = Base64.strict_encode64(OpenSSL::PKey::EC.generate("secp384r1").to_der)
+    jump_rt_key = Base64.strict_encode64(OpenSSL::PKey::RSA.generate(3_072).private_to_der)
     %w(AUTH_APP AUTH_ORG ACME_APP ACME_ORG CORE_APP CORE_ORG BASE_APP BASE_ORG).each do |namespace|
       ENV["JWT_#{namespace}_ACTIVE_KID"] = "#{namespace.downcase.tr("_", "-")}-test"
       ENV["JWT_#{namespace}_PRIVATE_KEY"] = jump_rt_key

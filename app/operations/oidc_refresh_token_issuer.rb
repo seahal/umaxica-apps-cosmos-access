@@ -184,7 +184,7 @@ class OidcRefreshTokenIssuer
     # transaction; the root is kept. Its participant row notifies the RP (D-26).
     unless usage.revoked?
       OpAuthorityStopCommitter.stop_grant(
-        grant: usage, cause: "refresh_reuse", principal_public_id: parent&.principal_public_id.to_s,
+        grant: usage, cause: "refresh_reuse", principal_public_id: parent&.subject_public_id.to_s,
         authority_evidence_ref: "refresh_reuse:#{usage.public_id}",
       )
     end
@@ -215,15 +215,13 @@ class OidcRefreshTokenIssuer
 
   def actor_identifier_key(parent)
     case parent
-    when ClientToken then :user_id
-    when OperatorToken then :staff_id
+    when ClientToken, OperatorToken then :subject_public_id
     end
   end
 
   def actor_identifier(parent)
     case parent
-    when ClientToken then parent.user_id
-    when OperatorToken then parent.staff_id
+    when ClientToken, OperatorToken then parent.subject_public_id
     end
   end
 
@@ -238,12 +236,8 @@ class OidcRefreshTokenIssuer
     parent = usage.parent_token
     return nil unless parent
 
-    case parent
-    when ClientToken
-      ClientOidcConnection.find_by(user_id: parent.user_id, client_id: usage.oidc_client_id)
-    when OperatorToken
-      OperatorOidcConnection.find_by(staff_id: parent.staff_id, client_id: usage.oidc_client_id)
-    end
+    connection = parent.oidc_connection
+    connection if connection&.client_id == usage.oidc_client_id
   end
 
   def connection_owner_for(klass)
@@ -278,4 +272,5 @@ class OidcRefreshTokenIssuer
       refresh_expires_at: nil,
     )
   end
+  public_class_method :call, :resolve
 end

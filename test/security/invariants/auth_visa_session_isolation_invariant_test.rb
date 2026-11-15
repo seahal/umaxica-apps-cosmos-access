@@ -27,7 +27,6 @@ class AuthVisaSessionIsolationInvariantTest < ActiveSupport::TestCase
         end
       end
 
-    assert_includes auth_session_keys, "auth_app_up_sequence_id"
     assert_empty offenders, "Visa must not consume Auth-owned Rails session keys:\n#{offenders.join("\n")}"
   end
 end

@@ -1,9 +1,9 @@
 # JWT key handling must be redesigned for the Cosmos split
 
-Status: Deferred; recorded at the owner's request on 2026-11-08. The owner gives priority to moving
-routes and code into the four repositories and keeps the existing key handling until then. This
-entry authorizes no change to credentials, keys, the local keyset installer, the JWT registry or
-client verification code. Work starts after the Cosmos repository split is complete.
+Status: Superseded 2026-11-13 by `plans/2026-11-13-access-ps256-migration-work-order.md` for the
+Access algorithm cut-over. The earlier staged ES384 overlap and Access key handling instructions
+below are historical; the accepted ADR's latest amendment and the work-order evidence control. AWS
+KMS signing remains deferred, and this record authorizes no credential or real-key changes.
 
 Decision record: `adr/cosmos-jwt-ps256-and-op-signing-in-aws-kms.md` (accepted 2026-11-09): PS256
 with RSA 3072-bit keys, OP signing through AWS KMS, EKS Pod Identity as the first candidate.

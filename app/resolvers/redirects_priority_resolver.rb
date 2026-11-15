@@ -13,6 +13,8 @@ class RedirectsPriorityResolver
     @default = default
   end
 
+  public
+
   def call
     Array(priority).each do |entry|
       result = resolve_entry(entry)
@@ -57,4 +59,5 @@ class RedirectsPriorityResolver
          result.failure_reason.to_s,
        )
   end
+  public_class_method :call
 end

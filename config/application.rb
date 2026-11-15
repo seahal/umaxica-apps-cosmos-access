@@ -163,7 +163,6 @@ module Jit
     # No processor delivery adapter is enabled until its authenticated request/receipt
     # contract is implemented. The empty registry is intentionally fail-closed: a notification
     # cannot become NOTIFIED merely because a processor key exists.
-    config.x.processor_erasure_notification_adapters = {}
 
     # Active Record Encryption Configuration
     if %w(test production development).include?(Rails.env)

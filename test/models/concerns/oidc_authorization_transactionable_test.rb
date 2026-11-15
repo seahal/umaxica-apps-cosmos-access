@@ -27,7 +27,7 @@ class OidcAuthorizationTransactionableTest < ActiveSupport::TestCase
     ].each do |transaction_class|
       transaction_class.where("login_challenge LIKE ?", "#{@transaction_prefix}-%").delete_all
     end
-    @secret_flow&.destroy!
+    @secret_flow&.reload&.destroy!
     %w(
       APP_SECRET_ISSUANCE_TTL_SECONDS APP_SECRET_PURGE_DELAY_SECONDS
       APP_SECRET_OUTBOX_RETENTION_SECONDS APP_SECRET_PROOF_RETENTION_SECONDS
@@ -49,8 +49,7 @@ class OidcAuthorizationTransactionableTest < ActiveSupport::TestCase
           surface: "app", intent: "authentication", client_id: "secret-reference-test",
           redirect_uri: "https://rp.example.test/callback", response_type: "code", scope: "openid",
           state: SecureRandom.hex(16), nonce: SecureRandom.hex(16),
-          code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
-          code_challenge_method: "S256", login_challenge: "#{@transaction_prefix}-secret-#{index}",
+          pkce: { code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", code_challenge_method: "S256" }, login_challenge: "#{@transaction_prefix}-secret-#{index}",
           login_challenge_expires_at: now + 15.minutes, expires_at: now + 15.minutes, now: now,
         )
       end
@@ -67,9 +66,12 @@ class OidcAuthorizationTransactionableTest < ActiveSupport::TestCase
       end
     end
     assert_raises(ActiveRecord::InvalidForeignKey) { transactions.last.update!(secret_sign_in_flow_id: -1) }
-    error = assert_raises(ActiveRecord::StatementInvalid) { @secret_flow.destroy! }
-
-    assert_kind_of PG::RestrictViolation, error.cause
+    assert_raises(ActiveRecord::DeleteRestrictionError) { @secret_flow.destroy! }
+    error =
+      assert_raises(ActiveRecord::StatementInvalid) do
+        ClientSignInFlow.transaction(requires_new: true) { @secret_flow.delete }
+      end
+    assert_instance_of PG::RestrictViolation, error.cause
     assert ClientSignInFlow.exists?(@secret_flow.id)
     due_at = ClientSignInFlow.database_now
     @secret_flow.update!(discard_at: due_at, purge_eligible_at: due_at)
@@ -91,8 +93,7 @@ class OidcAuthorizationTransactionableTest < ActiveSupport::TestCase
           surface: surface, intent: "authentication", client_id: "expiry-test",
           redirect_uri: "https://rp.example.test/callback", response_type: "code", scope: "openid",
           state: SecureRandom.hex(16), nonce: SecureRandom.hex(16),
-          code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
-          code_challenge_method: "S256", login_challenge: "#{@transaction_prefix}-#{surface}-#{microseconds}",
+          pkce: { code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", code_challenge_method: "S256" }, login_challenge: "#{@transaction_prefix}-#{surface}-#{microseconds}",
           login_challenge_expires_at: deadline, expires_at: deadline, now: deadline - 1.minute,
         )
 
@@ -135,8 +136,7 @@ class OidcAuthorizationTransactionableTest < ActiveSupport::TestCase
         surface: surface, intent: "authentication", client_id: "result-test",
         redirect_uri: "https://rp.example.test/callback", response_type: "code", scope: "openid",
         state: SecureRandom.hex(16), nonce: SecureRandom.hex(16),
-        code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
-        code_challenge_method: "S256", login_challenge: "#{@transaction_prefix}-result-#{surface}",
+        pkce: { code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", code_challenge_method: "S256" }, login_challenge: "#{@transaction_prefix}-result-#{surface}",
         login_challenge_expires_at: now + 20.seconds, expires_at: now + 30.seconds, now: now,
       )
       transaction =
@@ -201,7 +201,7 @@ class OidcAuthorizationTransactionableTest < ActiveSupport::TestCase
         scope: "openid email",
         state: "state-one",
         nonce: "nonce-one",
-        code_challenge: "challenge-one",
+        code_challenge: OidcPkce.challenge_for("verifier-one-#{"v" * 40}"),
         code_challenge_method: "S256",
       },
       transaction.authorize_params,
@@ -601,20 +601,62 @@ class OidcAuthorizationTransactionableTest < ActiveSupport::TestCase
     end
   end
 
+
+  [[ClientOidcAuthorizationTransaction, ClientOidcAuthorizationPkceChallenge, "app"],
+   [OperatorOidcAuthorizationTransaction, OperatorOidcAuthorizationPkceChallenge, "org"],].each do |model, pkce_model, surface|
+    test "#{surface}: a Code transaction stores its PKCE only in the child row" do
+      transaction = create_transaction(model, surface: surface, unique: "pkce-code")
+
+      assert_equal 1, pkce_model.where(oidc_authorization_transaction_id: transaction.id).count
+      assert_not model.column_names.include?("code_challenge")
+    end
+
+    test "#{surface}: a Code transaction without PKCE is refused" do
+      assert_raises(ArgumentError) { create_transaction(model, surface: surface, unique: "pkce-missing", pkce: nil) }
+    end
+
+    test "#{surface}: a Code transaction with a malformed challenge is refused with nothing persisted" do
+      before = model.count
+      assert_raises(ActiveRecord::RecordInvalid) do
+        create_transaction(
+          model, surface: surface, unique: "pkce-malformed",
+                 pkce: { code_challenge: "a" * 42, code_challenge_method: "S256" },
+        )
+      end
+      assert_equal before, model.count
+    end
+
+    test "#{surface}: an id_token transaction stores no PKCE and its parameters carry none" do
+      transaction = create_transaction(model, surface: surface, unique: "pkce-front", response_type: "id_token", pkce: nil)
+
+      assert_equal 0, pkce_model.where(oidc_authorization_transaction_id: transaction.id).count
+      assert_not transaction.authorize_params.key?(:code_challenge)
+      assert_equal "id_token", transaction.authorize_params.fetch(:response_type)
+    end
+
+    test "#{surface}: an id_token transaction with PKCE is refused" do
+      assert_raises(ArgumentError) do
+        create_transaction(model, surface: surface, unique: "pkce-front-extra", response_type: "id_token")
+      end
+    end
+  end
+
   private
 
-  def create_transaction(transaction_class, surface:, unique: "one", prompt: nil, max_age: nil)
+  def create_transaction(transaction_class, surface:, unique: "one", prompt: nil, max_age: nil, response_type: "code",
+                         pkce: :default)
+    pkce = { code_challenge: OidcPkce.challenge_for("verifier-#{unique}-#{"v" * 40}"), code_challenge_method: "S256" } if
+      pkce == :default
     transaction_class.create_transaction!(
       surface: surface,
       intent: "sign_in",
       client_id: "core-app-jp",
       redirect_uri: "https://example.test/callback",
-      response_type: "code",
+      response_type: response_type,
       scope: "openid email",
       state: "state-#{unique}",
       nonce: "nonce-#{unique}",
-      code_challenge: "challenge-#{unique}",
-      code_challenge_method: "S256",
+      pkce: pkce,
       login_challenge: "#{@transaction_prefix}-#{unique}",
       login_challenge_expires_at: 5.minutes.from_now,
       expires_at: 10.minutes.from_now,

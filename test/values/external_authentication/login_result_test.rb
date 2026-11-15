@@ -31,4 +31,13 @@ class ExternalAuthenticationLoginResultTest < ActiveSupport::TestCase
       )
     end
   end
+
+  test "signup-required results expose only the unauthenticated outcome" do
+    result = ExternalAuthentication::LoginResult.new(
+      status: :signup_required, user: nil, identity: nil, existing_account: false,
+    )
+
+    assert_predicate result, :signup_required?
+    assert_not_predicate result, :authenticated?
+  end
 end

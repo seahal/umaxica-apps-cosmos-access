@@ -33,8 +33,8 @@ module SignEntryClassification
   class UndeclaredClassificationError < StandardError; end
 
   # One declaration per class, inherited by subclasses that declare nothing and replaced by the
-  # subclass that declares its own. The declaration installs its readers on the declaring class
-  # explicitly; inclusion alone changes nothing.
+  # subclass that declares its own. Action overrides stay local to the class that declares them;
+  # inclusion alone changes nothing.
   class_methods do
     public
 
@@ -70,21 +70,21 @@ module SignEntryClassification
         raise MissingExcludedReasonError, "#{name} declared an excluded action without a reason"
       end
 
-      # Controller declarations run while classes load; these frozen values are never request state.
-      # rubocop:disable ThreadSafety/ClassAndModuleAttributes
-      class_attribute(
-        :sign_entry_classification_value, :sign_entry_classification_reason,
-        :sign_entry_classification_overrides, :sign_entry_standby_only, instance_accessor: false,
-      )
-      # rubocop:enable ThreadSafety/ClassAndModuleAttributes
-      self.sign_entry_classification_value = classification
-      self.sign_entry_classification_reason = declared_reason
-      self.sign_entry_classification_overrides = overrides
-      self.sign_entry_standby_only = standby_only
+      # Controller declarations run while classes load. Readers capture only immutable values and
+      # never store request state on a class or concern.
+      declaring_class = self
+      define_singleton_method(:sign_entry_classification_value) { classification }
+      define_singleton_method(:sign_entry_classification_value?) { !classification.nil? }
+      define_singleton_method(:sign_entry_classification_reason) { declared_reason }
+      define_singleton_method(:sign_entry_classification_reason?) { !declared_reason.nil? }
+      define_singleton_method(:sign_entry_standby_only?) { standby_only }
+      define_singleton_method(:sign_entry_classification_overrides) do
+        declaring_class.equal?(self) ? overrides : {}.freeze
+      end
     end
 
     def sign_entry_standby_only?
-      respond_to?(:sign_entry_standby_only) && sign_entry_standby_only == true
+      false
     end
 
     def sign_entry_classification_value
@@ -102,12 +102,10 @@ module SignEntryClassification
     # Action overrides belong to the class that owns the fixed table; a subclass that declares
     # nothing inherits the class-wide value without inheriting actions it may not implement.
     def sign_entry_classification_overrides
-      if superclass.respond_to?(:sign_entry_classification_overrides)
-        return superclass.sign_entry_classification_overrides
-      end
-
       {}.freeze
     end
+
+    private :sign_entry_classification!
   end
 
   private

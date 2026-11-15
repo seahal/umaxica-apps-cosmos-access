@@ -9,7 +9,7 @@ require "test_helper"
 module Visa
   module App
     class DefaultWebRateLimitProbeController < AuthorityController
-      AUTHENTICATION_MODE = :guest
+      AUTHENTICATION_MODE = :open
 
       def index
         render plain: "ok"
@@ -60,12 +60,16 @@ class DefaultWebRateLimitTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "every ApplicationController that includes RateLimit declares a default_web limit" do
+  test "every retained surface request root declares a default_web limit" do
     bases =
-      Rails.root.glob("app/controllers/**/application_controller.rb")
-        .select { |path| path.read.match?(/include ::RateLimit\b/) }
-
-    assert_equal 2, bases.size, "Auth owns the two retained ApplicationController roots"
+      %w(
+        app/controllers/auth/app/unavailable_ceremonies_controller.rb
+        app/controllers/auth/org/unavailable_ceremonies_controller.rb
+        app/controllers/visa/app/authority_controller.rb
+        app/controllers/visa/app/unavailable_ceremonies_controller.rb
+        app/controllers/visa/org/authority_controller.rb
+        app/controllers/visa/org/unavailable_ceremonies_controller.rb
+      ).map { |path| Rails.root.join(path) }
 
     missing =
       bases.reject do |path|

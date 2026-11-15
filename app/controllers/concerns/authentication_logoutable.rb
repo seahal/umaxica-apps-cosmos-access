@@ -18,14 +18,14 @@ module AuthenticationLogoutable
     when ClientToken
       AuthenticationAuditWriter.write_reference(
         ClientChronicle, ClientChronicleEvent::LOGGED_OUT,
-        subject_type: "Client", subject_id: root.user_id.to_s,
-        actor_type: "Client", actor_id: root.user_id.to_s,
+        subject_type: "Client", subject_id: root.subject_public_id,
+        actor_type: "Client", actor_id: root.subject_public_id,
       )
     when OperatorToken
       AuthenticationAuditWriter.write_reference(
         OperatorChronicle, OperatorChronicleEvent::LOGGED_OUT,
-        subject_type: "Operator", subject_id: root.staff_id.to_s,
-        actor_type: "Operator", actor_id: root.staff_id.to_s,
+        subject_type: "Operator", subject_id: root.subject_public_id,
+        actor_type: "Operator", actor_id: root.subject_public_id,
       )
     else
       raise ArgumentError, "logout audit requires an OP root session"

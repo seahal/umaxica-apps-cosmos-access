@@ -10,8 +10,26 @@ class AuthSignCeremonyRouteContractTest < ActionDispatch::IntegrationTest
   AUTH_APP_HOST = "auth.app.localhost"
   AUTH_ORG_HOST = "auth.org.localhost"
 
+  UNAVAILABLE_CEREMONY_CONTROLLER_PREFIXES = %w(
+    auth/app/sign/
+    auth/org/sign/
+    auth/app/social/
+    auth/org/social/
+    auth/app/omniauth/
+    auth/app/settings/
+    auth/app/verification/
+    auth/org/verification/
+  ).freeze
+
   def assert_recognizes(expected, options)
     route = Rails.application.routes.recognize_path(options.fetch(:path), method: options.fetch(:method))
+
+    expected_controller = expected.fetch(:controller)
+    if UNAVAILABLE_CEREMONY_CONTROLLER_PREFIXES.any? { |prefix| expected_controller.start_with?(prefix) }
+      realm = expected_controller.start_with?("auth/app/") ? "app" : "org"
+      expected = expected.merge(controller: "auth/#{realm}/unavailable_ceremonies")
+      expected = expected.merge(action: "show") if expected_controller.start_with?("auth/app/omniauth/")
+    end
 
     assert_equal expected.fetch(:controller), route.fetch(:controller)
     assert_equal expected.fetch(:action), route.fetch(:action)

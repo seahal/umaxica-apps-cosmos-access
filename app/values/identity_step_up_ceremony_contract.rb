@@ -33,7 +33,7 @@ module IdentityStepUpCeremonyContract
 
   module_function
 
-  ALGORITHM = "ES384"
+  ALGORITHM = JitSecurityJwtJwk::ALGORITHM
   SURFACES = %w(app org).freeze
   # Telephone OTP is deliberately absent: SMS is not an accepted step-up proof.
   METHODS = %w(passkey totp email_otp secret_credential).freeze

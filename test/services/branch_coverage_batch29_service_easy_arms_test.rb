@@ -6,12 +6,6 @@ require "test_helper"
 class BranchCoverageBatch29ServiceEasyArmsTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
-  test "SignSecretVerify blank stored digest mismatch path" do
-    result = SignSecretVerify.call(secret_credential: nil, raw_secret_credential: "secret")
-
-    assert_equal :secret_credential_mismatch, result.reason
-  end
-
   test "OidcAccessTokenAuthenticator blank token arms" do
     missing = OidcAccessTokenAuthenticator.new(
       access_token: nil, resource_type: "client", host: "example.test",
@@ -43,29 +37,8 @@ class BranchCoverageBatch29ServiceEasyArmsTest < ActiveSupport::TestCase
   end
 
   test "SignRiskEnforcer and SignRiskEmitter blank context arms" do
-    assert_nil SignRiskEnforcer.call(nil)
+    assert_raises(ArgumentError) { SignRiskEnforcer.call(nil) }
     assert_nil SignRiskEmitter.emit("test")
-  end
-
-  test "SocialAuthLoginHandler and LinkHandler blank provider arms" do
-    login_error = assert_raises(ArgumentError) { SocialAuthLoginHandler.new(provider: nil, actor: nil) }
-    link_error = assert_raises(ArgumentError) { SocialAuthLinkHandler.new(provider: nil, actor: nil) }
-
-    assert_match(/missing keyword/, login_error.message)
-    assert_match(/missing keyword/, link_error.message)
-  end
-
-  test "Policies SignUpStepGate and JumpRtReturnPolicy easy refuses" do
-    controller = Object.new
-    controller.define_singleton_method(:current_sign_up_flow_ticket) { nil }
-    controller.define_singleton_method(:session) { {} }
-    gate = SignUpStepGate.new(
-      controller: controller, surface: :app, family: "nope", step: :otp, mode: :show,
-    ).call
-
-    assert_equal :invalid, gate.status
-    assert_includes gate.errors, "unsupported sign-up route"
-    assert_nil JumpRtReturnPolicy.normalize_origin("javascript:alert(1)")
   end
 
   test "lib JitSecurityJwtJtiGenerator and KeyMaterial arms" do

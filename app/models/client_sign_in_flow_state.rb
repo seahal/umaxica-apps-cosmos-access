@@ -4,6 +4,8 @@
 class ClientSignInFlowState < OpBaseAppRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   PRIMARY_PENDING = 10
   MFA_PENDING = 20
   SESSION_LIMIT_PENDING = 30

@@ -11,6 +11,8 @@
 class ClientTokenBindingMethod < OpBaseAppRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   NOTHING = 0
   DBSC = 1
   LEGACY = 2
@@ -24,4 +26,5 @@ class ClientTokenBindingMethod < OpBaseAppRecord
   def self.ensure_defaults!
     insert_missing_fixed_ids!(DEFAULTS)
   end
+  public_class_method :ensure_defaults!
 end

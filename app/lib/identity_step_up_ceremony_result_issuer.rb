@@ -32,4 +32,5 @@ class IdentityStepUpCeremonyResultIssuer
       now: now,
     )
   end
+  public_class_method :issue!
 end

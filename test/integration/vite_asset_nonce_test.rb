@@ -2,7 +2,6 @@
 # frozen_string_literal: true
 
 require "test_helper"
-require_relative "../support/oidc_auth_admission_test_helper"
 
 # `script-src` carries `'strict-dynamic'`, which makes the browser ignore every host and scheme
 # source in that directive. A nonce is therefore the only thing that admits an asset tag, including
@@ -13,10 +12,8 @@ require_relative "../support/oidc_auth_admission_test_helper"
 # `nonce: true` renders the literal string "true" and the preload is refused. The layouts pass
 # `content_security_policy_nonce` for that reason; this test is what keeps them from drifting back.
 class ViteAssetNonceTest < ActionDispatch::IntegrationTest
-  include OidcAuthAdmissionTestHelper
-
   setup do
-    @host = ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
+    @host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
     host!(@host)
     https!
   end
@@ -27,7 +24,7 @@ class ViteAssetNonceTest < ActionDispatch::IntegrationTest
     # the built-asset path it exists to guard. Pin the probe rather than let an unrelated
     # process running on the machine decide what is verified.
     ViteRuby.instance.stub(:dev_server_running?, false) do
-      bootstrap_auth_sign_in_admission!
+      get visa_app_oidc_logout_path(ri: "jp")
     end
 
     assert_response :success

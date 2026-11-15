@@ -9,6 +9,8 @@ class SignInOtpResendPolicy
     @cap_seconds = cap_seconds
   end
 
+  public
+
   def evaluate(issued_timestamps:, now: Time.current)
     window_start = now - 5.minutes
     recent_issued = issued_timestamps.select { |value| value >= window_start }

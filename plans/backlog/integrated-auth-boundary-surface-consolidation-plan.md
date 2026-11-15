@@ -13,6 +13,14 @@ available, while authority-cutover, external RP registration, and deployment gat
 **Prepared:** 2026-09-13; status revalidated 2026-09-22 **Scope:** One coordinated implementation
 project in this Rails repository. No deployment, push, PR, or external write is included.
 
+### Owner amendment (2026-11-13): `private_key_jwt` algorithm
+
+The audit and REQ-008 below describe the algorithm observed when this plan was prepared. The owner
+has since confirmed that Governance, Sphere and Press sign client assertions with PS256. Access now
+accepts PS256 only, requires RSA moduli of at least 3072 bits, and advertises PS256 only. This
+supersedes REQ-008's ES384 algorithm while preserving its claim, audience, and replay requirements.
+See `adr/cosmos-jwt-ps256-and-op-signing-in-aws-kms.md` for the current contract.
+
 ### Current Base/Auth result-finalization amendment (2026-09-22)
 
 This amendment takes precedence over historical wording below that describes a signed or Valkey

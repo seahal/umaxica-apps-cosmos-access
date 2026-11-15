@@ -14,4 +14,5 @@ class SignUpArtifactCleanup
   def self.cleanup_pending_for(_cycle_class, now:, batch_size:)
     raise GovernanceLookupUnavailableError, "Governance sign-up artifact cleanup authority is unavailable"
   end
+  public_class_method :call, :cleanup_pending!, :cleanup_pending_for
 end

@@ -13,6 +13,8 @@ class SignInParticipantResult
 
   delegate :empty?, to: :stack
 
+  public
+
   def blocking?
     stack.any? { |item| item.blocking? && !item.cleared? }
   end

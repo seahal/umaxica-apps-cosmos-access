@@ -33,5 +33,4 @@ class Email::Org::ApplicationMailerTest < ActionMailer::TestCase
     assert_equal I18n.t("test.email.org.application_mailer.subject"), email.subject
     assert_equal "hello", email.body.encoded
   end
-
 end

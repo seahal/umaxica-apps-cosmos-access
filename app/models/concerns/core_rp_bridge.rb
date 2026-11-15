@@ -4,24 +4,7 @@
 module CoreRpBridge
   extend ActiveSupport::Concern
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    include ::PublicId
-
-    # rubocop:disable ThreadSafety/ClassAndModuleAttributes
-    class_attribute :core_actor_association_name, instance_accessor: false
-    class_attribute :core_actor_foreign_key, instance_accessor: false
-    class_attribute :core_default_client_id, instance_accessor: false
-    class_attribute :core_default_audience, instance_accessor: false
-    class_attribute :core_default_host, instance_accessor: false
-    # rubocop:enable ThreadSafety/ClassAndModuleAttributes
-
-    before_validation :assign_core_rp_defaults
-
-    validates :rp_client_id, presence: true, length: { maximum: 64 }
-    validates :audience, presence: true, length: { maximum: 128 }
-    validates :host, presence: true, length: { maximum: 255 }
-  end
+  include ::PublicId
 
   class_methods do
     def core_rp_bridge(actor_association_name:, actor_foreign_key:, client_id:, audience:, host:)
@@ -34,6 +17,8 @@ module CoreRpBridge
       validates actor_foreign_key, uniqueness: { scope: :rp_client_id }
     end
   end
+
+  public
 
   def actor
     public_send(self.class.core_actor_association_name)

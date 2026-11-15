@@ -9,6 +9,8 @@ class SignInActivationCandidateResolver
     @actor = actor
   end
 
+  public
+
   def candidates
     return [] unless resolved_actor
 

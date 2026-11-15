@@ -6,6 +6,8 @@ module FlowSignIn
 
   include FlowBase
 
+  public
+
   def sign_in_primary_pending?
     cycle_status?(state_id_for("PRIMARY_PENDING"))
   end

@@ -12,9 +12,10 @@ class RpStepUpState < RpBaseAppRecord
            class_name: "RpStepUpStateTransition",
            foreign_key: :owner_id,
            inverse_of: :owner,
-           dependent: :restrict_with_error
+           dependent: :restrict_with_exception
 
   validates :public_id, :state_digest, :browser_binding_digest, :nonce_digest, :pkce_challenge, presence: true
+  validates :public_id, :state_digest, uniqueness: true
   validates :public_id, length: { is: PUBLIC_ID_LENGTH }
   validates :state_digest, :browser_binding_digest, :nonce_digest, length: { maximum: 64 }
   validates :pkce_challenge, length: { maximum: 128 }

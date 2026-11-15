@@ -11,4 +11,5 @@ class SignUpCancellation
   def self.call(cycle:, actor_context:)
     SignUpTermination.call(cycle: cycle, event: :cancel, actor_context: actor_context)
   end
+  public_class_method :call
 end

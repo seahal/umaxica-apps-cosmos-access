@@ -10,4 +10,5 @@ class ExternalAuthenticationEntraRedirectUri
 
     "#{origin.chomp("/")}#{CALLBACK_PATH}"
   end
+  public_class_method :call
 end

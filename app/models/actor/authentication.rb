@@ -18,6 +18,8 @@ class Actor
       freeze
     end
 
+    public
+
     def null?
       login_public_id.blank? && access_claims.blank?
     end

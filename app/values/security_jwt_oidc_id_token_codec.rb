@@ -2,11 +2,13 @@
 # frozen_string_literal: true
 
 class SecurityJwtOidcIdTokenCodec
-  JWT_ALGORITHM = "ES384"
+  JWT_ALGORITHM = JitSecurityJwtJwk::ALGORITHM
   TOKEN_TTL = SecurityTokenLifetimes::OIDC_ID_TOKEN_TTL
   TOKEN_TYPE = "id-token+jwt"
 
   class << self
+    public
+
     def encode(payload, issuer_id:)
       JitSecurityJwtKeyring.encode(payload, typ: TOKEN_TYPE, issuer_id: issuer_id)
     end
@@ -71,11 +73,7 @@ class SecurityJwtOidcIdTokenCodec
       end
     end
 
-    def resource_type_for_client(client)
-      return "operator" if %w(operator staff).include?(client.resource_type)
-
-      "client"
-    end
+    delegate :resource_type_for_client, to: OidcIssuer
 
     def decode_options(client_id:, resource_type:, issuer:, allow_expired:)
       {

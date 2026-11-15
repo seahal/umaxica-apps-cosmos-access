@@ -118,7 +118,7 @@ module Sign
 
         ClientOccurrence.stub(:create!, ->(**) { raise ActiveRecord::ActiveRecordError, "db error" }) do
           assert_nothing_raised do
-          SignRiskEmitter.emit("auth_failed", user_id: @user_id)
+            SignRiskEmitter.emit("auth_failed", user_id: @user_id)
           end
         end
       ensure

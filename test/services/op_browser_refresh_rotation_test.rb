@@ -25,11 +25,11 @@ class OpBrowserRefreshRotationTest < ActiveSupport::TestCase
       assert_equal before, root_class.count
       result = AuthRefreshTokenIssuer.call(
         refresh_token: original, resource_type: type,
-        response_builder: ->(replacement, _) { { principal: replacement.principal_public_id } },
+        response_builder: ->(replacement, _) { { principal: replacement.subject_public_id } },
       )
 
       assert_predicate result, :success?, result.reason.to_s
-      assert_equal root.principal_public_id, result.response.fetch(:principal)
+      assert_equal root.subject_public_id, result.response.fetch(:principal)
       assert_equal root.device_session_id, result.token.device_session_id
       assert_not_equal original, result.refresh_token
       assert_equal result.token.id, root.device_session.reload.current_refresh_token_id

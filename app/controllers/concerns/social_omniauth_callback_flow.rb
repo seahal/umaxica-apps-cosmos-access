@@ -9,6 +9,8 @@
 module SocialOmniauthCallbackFlow
   extend ActiveSupport::Concern
 
+  public
+
   def omniauth
     auth = request.env["omniauth.auth"] || test_mode_omniauth_auth_hash
     Rails.logger.debug(

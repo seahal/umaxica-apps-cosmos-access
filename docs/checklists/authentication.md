@@ -175,19 +175,25 @@ verification results.
   [identity binding](../../adr/identity-resolution-and-credential-binding.md) and
   [enforcement](../../adr/unified-enforcement.md).
 
-- AUTH-33: Visa APP/ORG authorization and result/cancellation/switch endpoints share only their
-  realm-local protocol base. The base denies access by default; continuation endpoints expose only
-  their navigation action and retain request-size, rate-limit and browser-binding protections.
-  Public Visa roots remain passive, with no preference or authentication cookie issuance. See
+- AUTH-33: Visa APP/ORG authorization starts share `OidcAuthorizationStart` and the request-size,
+  rate-limit and request-error concerns; each realm controller declares its own surface, session
+  token class, resource type, Auth host and sentry route. The public start may create only the
+  host-local Rails session marker used to bind the Auth admission handoff. It issues no OP or Auth
+  credential cookie and performs no preference write. See
   [Visa OP boundary](../../adr/visa-op-host.md).
 
-- AUTH-34: Visa APP/ORG `/oauth/authorize` rejects HEAD and any result/cancellation/switch
-  continuation parameter, including empty values, before allocating a transaction. Its result,
-  cancellation, switch and silent-SSO display GETs validate and render a same-origin signed POST
-  continuation without committing. The existing authorization POST rechecks the browser and
-  transaction bindings and performs the one-shot result or requested operation. Foreign browsers,
-  missing navigation metadata, HEAD, invalid POSTs and replay cannot issue an additional root. See
-  [authorization request profile](../../adr/oidc-authorization-request-profile.md) and
+- AUTH-34: Visa APP/ORG `/oauth/authorize` accepts validated GET/POST starts only. It rejects HEAD,
+  known result/cancellation/switch/continuation fields, repeated recognized parameters, invalid
+  clients or redirects, profile-incompatible response types, profile-incompatible PKCE fields,
+  missing `state`/`nonce` and oversize input before transaction allocation. Code-profile clients
+  require PKCE S256; the two registered Base clients use `id_token` without PKCE. `prompt=none`
+  returns `login_required` without silent SSO; valid Code-profile starts persist one pending
+  transaction and admission binding, then return 303 through Jump to that realm's Auth sign-in
+  sentry. The Base `id_token` start currently returns 503 before allocation because issuance is not
+  complete. App `prompt=create` remains recorded but uses sign-in; Org `prompt=create` is refused.
+  Auth sentries/credential ceremonies and Visa result, cancellation and switch endpoints remain
+  unavailable, so current routes issue neither an authorization code nor a front-channel ID Token.
+  See [authorization request profile](../../adr/oidc-authorization-request-profile.md) and
   [continuation protocol](../../adr/sign-in-path-continuation-protocol.md).
 
 - AUTH-35: Auth/Visa APP/ORG browser HTML canonicalizes missing region on GET/HEAD before rendering,
@@ -242,6 +248,21 @@ verification results.
   freshness, current-policy and one-shot checks still apply, and registration proof grants no
   ordinary step-up freshness. See the
   [approved evidence-state amendment](../../adr/step-up-authentication-redesign.md#explicit-retained-evidence-state-2026-11-12).
+- AUTH-44: Base APP/ORG RP step-up state transitions and audit delivery attempts are not deleted as
+  a side effect of deleting their parent state or outbox. Parent deletion is refused while child
+  history exists at both the Active Record and PostgreSQL boundaries. See the
+  [database consistency work order](../../plans/2026-11-14-database-consistency-zero-work-order.md)
+  and [history-retention tests](../../test/models/rp_step_up_history_retention_test.rb).
+- AUTH-45: Visa authorization follows the registered client profile: non-Base clients use Code with
+  PKCE S256; `base-app-ww` and `base-org-ww` use `response_type=id_token` without PKCE for
+  sign-in/sign-up and require `state` and `nonce`. Base responses contain only `iss`, `sub`, `aud`,
+  `exp`, `iat`, `auth_time`, `nonce`, `jti`, `sid`, `acr`, and `amr`; their ID Token expires within
+  two minutes, carries a unique one-use `jti`, and returns through Jump within its 2,048-character
+  destination and 4,096-character `rt` limits. The RP consumes the `jti` once and immediately
+  redirects to a clean callback URL with `no-store` and `no-referrer`. Base does not call the Token
+  Endpoint for sign-in/sign-up; Discovery continues to advertise Code only. See the
+  [Base front-channel profile](../../adr/oidc-authorization-code-only-implicit-and-hybrid-non-adoption.md)
+  and [OIDC request profile](../../adr/oidc-authorization-request-profile.md).
 
 Sources:
 [authentication contract](../../.agents/harnesses/rules/generic/authentication-boundaries.mdc),

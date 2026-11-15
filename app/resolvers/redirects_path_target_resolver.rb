@@ -16,6 +16,8 @@ class RedirectsPathTargetResolver
     @source = source
   end
 
+  public
+
   def call
     return failure(:blank) unless value.is_a?(String) && value.present?
     return failure(:control_char) if value.match?(CONTROL_CHAR_PATTERN)
@@ -55,4 +57,5 @@ class RedirectsPathTargetResolver
   def failure(reason)
     RedirectsTargetResult.failure(kind: :pt, source: source, reason: reason, unsafe_value: value)
   end
+  public_class_method :call
 end

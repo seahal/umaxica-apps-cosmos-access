@@ -8,7 +8,7 @@ class StepUpEmailChallengeTest < ActiveSupport::TestCase
   setup do
     @token = client_tokens(:one)
     @transaction = ClientStepUpCeremonyTransaction.create_transaction!(
-      actor_ref: @token.device_session.principal_public_id, session_ref: @token.public_id,
+      actor_ref: @token.device_session.subject_public_id, session_ref: @token.public_id,
       required_scope: "settings_email",
       required_aal: "none", allowed_methods: ["email_otp"], return_to: "/identity/emails",
     )

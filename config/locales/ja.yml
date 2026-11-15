@@ -106,6 +106,8 @@ ja:
         source_manifest_digest: マニフェストのダイジェスト
       operator:
         security_mode: セキュリティモード
+      operator_chronicle:
+        sign_flow_halted_transaction_public_id: サインインフロー参照
       operator_identity:
         source_record_id: ソースレコードID
       operator_step_up_session:
@@ -311,6 +313,7 @@ ja:
     performant: パフォーマンスCookie
     persona_id: ペルソナID
     persona_public_id: ペルソナ参照
+    pkce_challenge: PKCEチャレンジ
     position: 表示順
     presented_at: 提示日時
     principal_effect: アカウントへの効果
@@ -351,6 +354,7 @@ ja:
     storage_key: 保存先参照
     subject: 主体参照
     subject_id: 対象ID
+    subject_public_id: サブジェクト参照
     subject_type: 対象種別
     target_operator: 対象オペレーター
     targetable: ターゲティングCookie

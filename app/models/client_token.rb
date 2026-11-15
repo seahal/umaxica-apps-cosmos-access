@@ -46,7 +46,7 @@
 #  selected_avatar_public_id          :string
 #  selected_collective_public_id      :string
 #  selected_collective_unit_public_id :string
-#  user_id                            :bigint           not null
+#  subject_public_id                  :string           not null
 #  user_token_binding_method_id       :bigint           default(0), not null
 #  user_token_dbsc_status_id          :bigint           default(0), not null
 #  user_token_kind_id                 :bigint           default(11), not null
@@ -69,8 +69,6 @@
 #  index_client_tokens_on_selected_account_public_id     (selected_account_public_id)
 #  index_client_tokens_on_selected_avatar_public_id      (selected_avatar_public_id)
 #  index_client_tokens_on_selected_collective_public_id  (selected_collective_public_id)
-#  index_client_tokens_on_user_id_and_last_step_up_at    (user_id,last_step_up_at)
-#  index_client_tokens_on_user_id_and_oidc_client_id     (user_id,oidc_client_id)
 #  index_client_tokens_on_user_token_binding_method_id   (user_token_binding_method_id)
 #  index_client_tokens_on_user_token_dbsc_status_id      (user_token_dbsc_status_id)
 #  index_client_tokens_on_user_token_kind_id             (user_token_kind_id)
@@ -87,12 +85,52 @@
 # Refresh tokens are persisted as digests only.
 # OIDC sid/jti are protocol identifiers; public_id remains the token row identifier.
 class ClientToken < OpBaseAppRecord
+  self.filter_attributes += [:refresh_token_digest]
+
   include ::PublicId
+
+  before_validation :generate_public_id, on: :create
+  before_validation :refresh_generated_public_id_after_collision, on: :create
+  before_validation :ensure_lapses_at, on: :create
+  before_validation :ensure_refresh_token_family_id, on: :create
+  before_validation :ensure_refresh_token_generation, on: :create
+  before_validation :ensure_device_session_record, on: :create
+  before_create :generate_public_id
+  around_create :retry_public_id_collision
+  validate :public_id_immutable_after_create, on: :update
+
+  validates :public_id, presence: true, length: { is: PublicId::GENERATION_SIZE }, uniqueness: true
   include ::RefreshTokenable
+
+  after_create :set_initial_device_session_current_token
+  validates :refresh_token_digest, uniqueness: true, allow_nil: true
   include ::SignedSessionReference
   include ::Retainable
+
+  attribute :discard_at, :datetime, default: -> { Retainable::SENTINEL }
+  attribute :purge_eligible_at, :datetime, default: -> { Retainable::SENTINEL }
+
+  validates :discard_at, presence: true
+  validates :purge_eligible_at, presence: true
+  validate :retention_order_valid
+  validate :retention_times_not_before_created_at, on: :update
+
+  Retainable.registry << self unless Retainable.registry.include?(self)
   include ::TokenStatusManagement
+
+  scope :session_inventory, ->(now = Time.current) { currently_usable_at(now) }
+  scope :active_status,
+        ->(now = Time.current) do
+          currently_usable_at(now).where(token_status_foreign_key => token_status_model::ACTIVE)
+        end
+  scope :restricted_status,
+        ->(now = Time.current) do
+          currently_usable_at(now).where(token_status_foreign_key => token_status_model::RESTRICTED)
+        end
+  scope :not_revoked, ->(now = Time.current) { session_inventory(now) }
   include ::DbscBindable
+
+  validates :dbsc_session_id, uniqueness: true, allow_blank: true
   include ::SelectedActorContext
 
   SELECTED_ACTOR_CONTEXT_COLUMNS = %i(
@@ -123,6 +161,16 @@ class ClientToken < OpBaseAppRecord
   # A root token can outlive its optional OIDC connection, which is nullified on connection deletion.
   belongs_to :oidc_connection, class_name: "ClientOidcConnection", optional: true
   belongs_to :device_session, class_name: "ClientDeviceSession", inverse_of: :client_tokens
+  has_many :auth_admission_bindings,
+           class_name: "ClientAuthAdmissionBinding",
+           foreign_key: :base_token_id,
+           inverse_of: :base_token,
+           dependent: :restrict_with_error
+  has_many :op_app_authority_stop_root_targets,
+           class_name: "OpAppAuthorityStopRootTarget",
+           foreign_key: :root_id,
+           inverse_of: :root,
+           dependent: :restrict_with_error
   has_one :emergency_sign_in_operation, class_name: "ClientEmergencySignInOperation",
                                         inverse_of: :client_token, strict_loading: false,
                                         dependent: :restrict_with_error
@@ -143,7 +191,7 @@ class ClientToken < OpBaseAppRecord
   validates :authentication_epoch, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
 
   validate :enforce_concurrent_session_limit, on: :create
-  validates :device_session_id, :user_id, exclusion: { in: [nil] }
+  validates :device_session_id, :subject_public_id, exclusion: { in: [nil] }
   # Unique indexes that include the primary key back composite references; checked only for an explicit id.
   validates :id, uniqueness: { scope: %i(device_session_id) }, allow_nil: true, if: :will_save_change_to_id?
 
@@ -164,9 +212,9 @@ class ClientToken < OpBaseAppRecord
   # Historical RESTRICTED rows do not authenticate and therefore do not consume root capacity.
   def enforce_concurrent_session_limit
     return if skip_session_limit_check
-    return unless user_id
+    return unless subject_public_id
 
-    operation = -> { self.class.active_status.where(user_id: user_id, rotated_at: nil).count }
+    operation = -> { self.class.active_status.where(subject_public_id: subject_public_id, rotated_at: nil).count }
     count = defined?(Prosopite) ? Prosopite.pause(&operation) : operation.call
 
     return if count < MAX_TOTAL_SESSIONS_PER_USER

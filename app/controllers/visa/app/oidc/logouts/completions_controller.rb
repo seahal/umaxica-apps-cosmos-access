@@ -10,7 +10,9 @@ module Visa
 
           AUTHENTICATION_MODE = :open
 
-          layout -> { @render_surface_erb_layout ? "visa/app/application" : "visa/app/inertia" }
+          layout "visa/app/inertia"
+          inertia_share chrome: -> { surface_chrome }
+          inertia_share clear_history: -> { session[:inertia_clear_history] == true }
           declare_authentication_mode! :open
 
           public

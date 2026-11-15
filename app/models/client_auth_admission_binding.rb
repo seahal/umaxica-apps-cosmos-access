@@ -4,6 +4,21 @@
 class ClientAuthAdmissionBinding < OpBaseAppRecord
   include AuthAdmissionBinding
 
+  has_many :visa_social_link_admissions,
+           class_name: "ClientVisaSocialLinkAdmission",
+           foreign_key: :auth_admission_binding_id,
+           inverse_of: :auth_admission_binding,
+           dependent: :restrict_with_error
+  has_many :visa_sensitive_admissions,
+           class_name: "ClientVisaSensitiveAdmission",
+           foreign_key: :auth_admission_binding_id,
+           inverse_of: :auth_admission_binding,
+           dependent: :restrict_with_error
+  has_many :sign_up_flows,
+           class_name: "ClientSignUpFlow",
+           foreign_key: :auth_admission_binding_id,
+           inverse_of: :auth_admission_binding,
+           dependent: :restrict_with_exception
   attribute :status_id, default: AuthAdmissionBinding::ISSUED_STATUS_ID
 
   belongs_to :authorization_transaction, class_name: "ClientOidcAuthorizationTransaction", optional: true
@@ -16,9 +31,23 @@ class ClientAuthAdmissionBinding < OpBaseAppRecord
 
   validates :entry_ref, presence: true, uniqueness: true
   validates :confirmation_ref, uniqueness: true, allow_nil: true
-  validates :authorization_transaction_id, :step_up_ceremony_transaction_id,
-            uniqueness: { scope: :purpose,
-                          conditions: -> { where(status_id: AuthAdmissionBinding::ACTIVE_STATUS_IDS) }, },
+  validates :authorization_transaction_id,
+            uniqueness: {
+              scope: :purpose,
+              conditions: -> {
+                where.not(authorization_transaction_id: nil)
+                  .where(status_id: AuthAdmissionBinding::ACTIVE_STATUS_IDS)
+              },
+            },
+            allow_nil: true, if: :active?
+  validates :step_up_ceremony_transaction_id,
+            uniqueness: {
+              scope: :purpose,
+              conditions: -> {
+                where.not(step_up_ceremony_transaction_id: nil)
+                  .where(status_id: AuthAdmissionBinding::ACTIVE_STATUS_IDS)
+              },
+            },
             allow_nil: true, if: :active?
   validates :purpose, presence: true
   validates :base_browser_digest, presence: true, length: { is: 64 }

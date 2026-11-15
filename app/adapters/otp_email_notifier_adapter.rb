@@ -8,6 +8,8 @@ class OtpEmailNotifierAdapter < OtpAdapter
     @surface = surface
   end
 
+  public
+
   def deliver(record:, otp_code:, verification_token: nil, public_id: nil, purpose: nil,
               auth_ceremony_session_ref: nil, auth_email_otp_generation: nil,
               sign_up_flow_ref: nil, sign_up_email_transaction_ref: nil, sign_up_email_otp_generation: nil,

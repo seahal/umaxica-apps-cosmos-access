@@ -40,7 +40,7 @@ module AuthEmailMfaHelper
     assert_response :found
     assert_equal URI.parse(challenge_path).path, URI.parse(response.location).path
 
-    cycle_class, principal_id = [ClientSignInFlow, email_record.user_id]
+    cycle_class, principal_id = [ClientSignInFlow, email_record.subject_public_id]
     cycle = cycle_class.where(principal_id: principal_id).order(id: :desc).first
     remember_sign_in_mfa_binding!(cycle, surface)
   end

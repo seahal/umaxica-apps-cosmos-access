@@ -43,6 +43,8 @@ module ExternalSignIn
         @clock = clock
       end
 
+      public
+
       def call
         fail!("missing_id_token") if id_token.blank?
         fail!("missing_nonce") if expected_nonce.blank?

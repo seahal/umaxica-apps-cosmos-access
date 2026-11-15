@@ -153,9 +153,14 @@ class SignUpFlowAdmissionOwnershipTest < ActiveSupport::TestCase
       )
       parent = own.fetch(:parent)
       binding = own.fetch(:binding)
+      locator = SignUpCycleLocator.new({}, surface: :app)
       retention = 1.second
       later = now + 3.hours
 
+      assert locator.unreleased_attempt?(admission_binding: binding, ceremony_session: own.fetch(:ceremony))
+      travel 16.minutes do
+        assert locator.unreleased_attempt?(admission_binding: binding, ceremony_session: own.fetch(:ceremony))
+      end
       assert_not AuthAdmissionBindingPurger.purge_for_parent!(parent: parent, now: later, retention_period: retention)
       assert flow_class.exists?(flow.id)
       assert binding.class.exists?(binding.id)
@@ -164,8 +169,11 @@ class SignUpFlowAdmissionOwnershipTest < ActiveSupport::TestCase
 
       assert_predicate flow.reload, :sign_up_cancelled?
       assert_not_predicate flow, :cleanup_completed?
+      assert locator.unreleased_attempt?(admission_binding: binding, ceremony_session: own.fetch(:ceremony))
       flow.discard_now!(purge_after: 2.hours)
 
+      assert_not_predicate flow.reload, :cleanup_completed?
+      assert locator.unreleased_attempt?(admission_binding: binding, ceremony_session: own.fetch(:ceremony))
       assert_not AuthAdmissionBindingPurger.purge_for_parent!(parent: parent, now: later, retention_period: retention)
       assert flow_class.exists?(flow.id)
       assert binding.class.exists?(binding.id)
@@ -229,9 +237,12 @@ class SignUpFlowAdmissionOwnershipTest < ActiveSupport::TestCase
       assert_not_equal flow.id, replacement.id
       assert_predicate flow.reload, :sign_up_cancelled?
       assert_equal 2, flow_class.where(auth_admission_binding_id: own.fetch(:binding).id).count
+      assert_raises(ActiveRecord::DeleteRestrictionError) { own.fetch(:binding).destroy! }
       error =
         assert_raises(ActiveRecord::StatementInvalid) do
-          own.fetch(:binding).class.transaction(requires_new: true) { own.fetch(:binding).destroy! }
+          own.fetch(:binding).class.transaction(requires_new: true) do
+            own.fetch(:binding).class.where(id: own.fetch(:binding).id).delete_all
+          end
         end
 
       assert_kind_of PG::RestrictViolation, error.cause

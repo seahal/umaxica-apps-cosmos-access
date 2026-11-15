@@ -9,4 +9,5 @@ class DpopNonceService
   def self.verify(nonce, resource_type: "client")
     DpopProofStateStore.for(resource_type).consume_nonce!(nonce)
   end
+  public_class_method :generate, :verify
 end

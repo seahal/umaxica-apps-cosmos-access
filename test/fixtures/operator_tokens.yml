@@ -36,7 +36,7 @@
 #  selected_account_public_id         :string
 #  selected_collective_public_id      :string
 #  selected_collective_unit_public_id :string
-#  staff_id                           :bigint           not null
+#  subject_public_id                  :string           not null
 #  staff_token_binding_method_id      :bigint           default(0), not null
 #  staff_token_dbsc_status_id         :bigint           default(0), not null
 #  staff_token_kind_id                :bigint           default(1), not null
@@ -77,7 +77,7 @@ _fixture:
 #
 one:
   authentication_epoch: 0
-  staff_id: <%= ActiveRecord::FixtureSet.identify(:one) %>
+  subject_public_id: "BCDE2345FGHJ67KM"
   device_session_id: <%= ActiveRecord::FixtureSet.identify(:one) %>
   staff_token_binding_method_id: <%= OperatorTokenBindingMethod::NOTHING %>
   staff_token_dbsc_status_id: <%= OperatorTokenDbscStatus::NOTHING %>
@@ -90,7 +90,7 @@ one:
   updated_at: <%= Time.current %>
 two:
   authentication_epoch: 0
-  staff_id: <%= ActiveRecord::FixtureSet.identify(:two) %>
+  subject_public_id: "DEFG2345HJKP67MN"
   device_session_id: <%= ActiveRecord::FixtureSet.identify(:two) %>
   staff_token_binding_method_id: <%= OperatorTokenBindingMethod::NOTHING %>
   staff_token_dbsc_status_id: <%= OperatorTokenDbscStatus::NOTHING %>

@@ -67,9 +67,9 @@ stated per record):
   redirected, unsupported `prompt` a direct 400, per-realm `prompt_values_supported`,
   `invalid_grant` for mismatches and PKCE failures, boot-time registration validation.
 - [RP OIDC state and return target](rp-oidc-state-and-return-target.md) — **RP Rails slice
-  implemented 2026-10-24 (WU-39).** ES384 JWS `state` (30 minutes), one pending entry per browser
-  and RP, path-only `target_link_uri` replacing the RP `pt`, Cancel and abnormal endings on
-  `GET /sign/interruption`; external Jump/Edge and deployment evidence remain separate.
+  implemented 2026-10-24 (WU-39), amended 2026-11-13.** PS256 JWS `state` (30 minutes), one pending
+  entry per browser and RP, path-only `target_link_uri` replacing the RP `pt`, Cancel and abnormal
+  endings on `GET /sign/interruption`; external Jump/Edge and deployment evidence remain separate.
 
 Current authentication Security Mode decision (accepted; not implemented):
 
@@ -441,7 +441,9 @@ Preference decisions:
 - `adr/preference-extended-option-reference-tables.md`
 - `adr/preference-browser-transport-family-capability.md` — historical host-local endpoint and
   family-capability decision; its control matrix and credential lifecycle are superseded.
-- `adr/preference-realm-jwt-and-host-bound-browser-binding.md`
+- `adr/preference-realm-jwt-and-host-bound-browser-binding.md` — historical for Access after
+  `adr/access-is-a-pure-openid-provider.md`, decision 17, assigned Preference state to Governance;
+  its Access Visa writer and JWT details are not current Access requirements.
 
 Current hierarchy / collective decisions:
 
@@ -534,6 +536,8 @@ Sign configuration decisions:
 - `adr/finite-nonnegative-rate-limit-counts.md`
 - `adr/sign-up-authentication-handoff-and-social-rt.md` — superseded where it assigns session,
   account, or authorization authority to `sign/id`.
+- `adr/sign-flow-terminology.md` — availability, ingress, eligibility and requirements replace
+  sentry, guard, guardrail and checkpoint (2026-11-14).
 - `adr/sign-up-checkpoint-turnstile-boundary.md`
 - `adr/sign-up-cycle-cancellation-retention.md` — superseded where it assigns account lifecycle to
   `sign/id`.

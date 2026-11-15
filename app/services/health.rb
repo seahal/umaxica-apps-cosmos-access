@@ -32,6 +32,8 @@ module Health
       @revision = revision.presence
     end
 
+    public
+
     def ok?
       http_status == 200
     end
@@ -85,6 +87,8 @@ module Health
       @message = message
     end
 
+    public
+
     def ok?
       status == :ok
     end
@@ -113,6 +117,8 @@ module Health
       @acceptable_degraded_kinds = acceptable_degraded_kinds.map(&:to_sym).freeze
     end
 
+    public
+
     def status_for(results)
       return :ok if results.all?(&:ok?)
       return :starting if results.any? { |result| result.status == :starting }
@@ -132,12 +138,15 @@ module Health
         result.status == :degraded_acceptable && acceptable_degraded_kinds.include?(result.kind)
       end
     end
+    public_class_method :http_status
   end
 
   module Checks
     # Startup check: confirms Rails finished initialization. Intentionally
     # lightweight; it must not touch external dependencies.
     class Boot
+      public
+
       def call
         return DependencyResult.new(kind: :boot, status: :ok) if Rails.application.initialized?
 
@@ -155,6 +164,8 @@ module Health
         @record_class = record_class
         @deadline = deadline
       end
+
+      public
 
       def call
         with_deadline { check_roles }
@@ -208,6 +219,8 @@ module Health
         @status_policy = status_policy
       end
 
+      public
+
       def readiness_checks
         record_classes.map { |record_class| Checks::Database.new(record_class: record_class) }
       end
@@ -257,6 +270,8 @@ module Health
       @profile = profile
     end
 
+    public
+
     def call
       status = Rails.application.initialized? ? :ok : :starting
 
@@ -266,6 +281,8 @@ module Health
     private
 
     attr_reader :profile
+
+    public_class_method :call
   end
 
   # Readiness probe: decides whether traffic may be routed to this instance.
@@ -279,6 +296,8 @@ module Health
     def initialize(profile:)
       @profile = profile
     end
+
+    public
 
     def call
       build_result
@@ -314,6 +333,7 @@ module Health
         .transform_keys(&:to_s)
         .transform_values { |kind_results| kind_results.all?(&:ok?) ? "ok" : "failed" }
     end
+    public_class_method :call
   end
 
   # Startup probe: confirms boot/initialization completed.
@@ -326,6 +346,8 @@ module Health
       @profile = profile
     end
 
+    public
+
     def call
       boot = Checks::Boot.new.call
       status = profile.status_policy.status_for([boot])
@@ -336,6 +358,8 @@ module Health
     private
 
     attr_reader :profile
+
+    public_class_method :call
   end
 
   # Aggregates liveness, readiness, and startup for the human-facing /health.
@@ -347,6 +371,8 @@ module Health
     def initialize(profile:)
       @profile = profile
     end
+
+    public
 
     def call
       sub_results = {
@@ -366,5 +392,7 @@ module Health
     private
 
     attr_reader :profile
+
+    public_class_method :call
   end
 end

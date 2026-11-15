@@ -2,9 +2,10 @@
 
 ## Status
 
-**Accepted (2026-10-23); amended 2026-10-24 for WU-39.** Owner decisions D-145, D-146, D-147, D-148,
-D-149 of the 2026-10 authentication cycle remain implementation work in WU-42 and WU-43; this record
-is the current request-validation contract and does not by itself certify runtime conformance.
+**Accepted (2026-10-23); amended 2026-10-24 for WU-39 and 2026-11-14 for the first-party Base
+front-channel ID Token profile.** Owner decisions D-145, D-146, D-147, D-148, D-149 of the 2026-10
+authentication cycle remain implementation work in WU-42 and WU-43; this record is the current
+request-validation contract and does not by itself certify runtime conformance.
 
 Flow-selection rationale and reconsideration criteria are extended by
 [OIDC Authorization Code Only](oidc-authorization-code-only-implicit-and-hybrid-non-adoption.md)
@@ -12,10 +13,15 @@ Flow-selection rationale and reconsideration criteria are extended by
 
 ## Decision
 
-1. **Required request parameters:** `response_type=code` (no implicit or hybrid), `client_id`,
-   `redirect_uri`, `scope` containing `openid`, `state`, `nonce`, `code_challenge`,
-   `code_challenge_method=S256`. Requiring `state` and `nonce` is a UMAXICA profile restriction the
-   specifications permit; every RP is first-party.
+1. **Required request parameters:** every client except `base-app-ww` and `base-org-ww` uses
+   `response_type=code`, `client_id`, `redirect_uri`, `scope` containing `openid`, `state`, `nonce`,
+   `code_challenge`, and `code_challenge_method=S256`. The two registered Base clients use only
+   `response_type=id_token` for sign-in and sign-up, with `client_id`, `redirect_uri`, `scope`
+   containing `openid`, `state`, and `nonce`; they MUST NOT send PKCE parameters. Base Code
+   fallback, `id_token` for another client, `id_token token`, and all Hybrid response types are
+   refused. Requiring `state` and `nonce` is a UMAXICA profile restriction the specifications
+   permit; every RP is first-party. The Base response and its mitigations are defined in the
+   [front-channel ID Token amendment](oidc-authorization-code-only-implicit-and-hybrid-non-adoption.md).
 2. **`redirect_uri`** (OIDC Core 1.0 §3.1.2.1, RFC 6749 §3.1.2, RFC 9700 §2.1, §4.1): compared with
    the URIs registered for the `client_id` by simple string comparison — no prefix, suffix,
    wildcard, normalization or added query. A missing, unregistered or mismatched `redirect_uri`, or
@@ -30,10 +36,10 @@ Flow-selection rationale and reconsideration criteria are extended by
    `create`; ORG `none`, `login`. An unsupported value or any combination of values gets a direct
    HTTP 400 `invalid_request` naming `prompt` (Prompt Create 1.0 §4.1); this is the one exception to
    point 3.
-5. **Token endpoint:** a `redirect_uri` or client mismatch and a `code_verifier` that does not match
-   the stored challenge are `invalid_grant` (RFC 6749 §5.2, RFC 7636 §4.6); a missing
-   `code_verifier` is `invalid_request`. A malformed `code_challenge` (not 43 base64url characters)
-   is `invalid_request`.
+5. **Token endpoint:** for Code clients, a `redirect_uri` or client mismatch and a `code_verifier`
+   that does not match the stored challenge are `invalid_grant` (RFC 6749 §5.2, RFC 7636 §4.6); a
+   missing `code_verifier` is `invalid_request`. A malformed `code_challenge` (not 43 base64url
+   characters) is `invalid_request`. Base sign-in and sign-up do not use the Token Endpoint.
 6. **Registration-time validation:** every registered `redirect_uri` is absolute, has no fragment,
    uses TLS for web RPs and carries no reserved query key (UMAXICA hardening). A doubtful
    registration fails the boot.

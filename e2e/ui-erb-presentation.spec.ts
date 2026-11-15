@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import { AxeBuilder } from "@axe-core/playwright";
+import type { Page } from "playwright";
 import { expect, test } from "playwright/test";
 
 // Actual ActionView output with the independent Propshaft stylesheet injected.
@@ -24,7 +25,7 @@ test.beforeAll(() => {
 
 for (const width of [320, 768, 1024, 1440]) {
   for (const theme of ["light", "dark", "system"] as const) {
-    test(`ERB confirmation reflows at ${width}px in ${theme}`, async ({ page }) => {
+    test(`ERB confirmation reflows at ${width}px in ${theme}`, async ({ page }: { page: Page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
       await page.route("**/*", (route) => route.abort());

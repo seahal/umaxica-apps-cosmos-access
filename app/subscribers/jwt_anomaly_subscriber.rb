@@ -5,6 +5,8 @@ class JwtAnomalySubscriber
   METADATA_KEYS = [].freeze
   MAX_ERROR_MESSAGE_LENGTH = 1000
 
+  public
+
   def emit(event)
     return unless event.respond_to?(:name) && event.name == "jwt.anomaly.detected"
 

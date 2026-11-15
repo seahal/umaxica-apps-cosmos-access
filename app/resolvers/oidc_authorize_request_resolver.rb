@@ -34,8 +34,8 @@ class OidcAuthorizeRequestResolver < ApplicationService
 
   SUPPORTED_PROMPTS = %w(login none create).freeze
   PROMPTS_BY_RESOURCE_TYPE = {
-    "client" => %w(none login create),
-    "operator" => %w(none login),
+    "client" => %w(none login create).map(&:freeze).freeze,
+    "operator" => %w(none login).map(&:freeze).freeze,
   }.freeze
   # RFC 7636 4.2: an S256 challenge is BASE64URL(SHA-256) without padding.
   CODE_CHALLENGE_PATTERN = /\A[A-Za-z0-9_-]{43}\z/
@@ -95,6 +95,8 @@ class OidcAuthorizeRequestResolver < ApplicationService
 
   # Order matters (D-147): only after `client_id` and `redirect_uri` are valid may an error be
   # redirected to the RP.
+  public
+
   def call
     if duplicate_parameters.intersect?(%w(client_id redirect_uri))
       raise ArgumentError, "authorization target parameters must be unique"
@@ -110,12 +112,12 @@ class OidcAuthorizeRequestResolver < ApplicationService
       raise DuplicateParameters, "authorization parameters must be unique"
     end
 
-    validate_response_type!
+    validate_response_type!(client)
     raise RequestError, "scope must include openid" unless scope_includes_openid?
 
     scope = validate_scope_allowlist!(client)
     prompt = validate_prompt!
-    validate_code_challenge!
+    validate_code_challenge!(client)
     max_age = normalize_max_age!
     validate_state_and_nonce!
     validate_resource!
@@ -129,11 +131,12 @@ class OidcAuthorizeRequestResolver < ApplicationService
 
   attr_reader :params, :resource, :given_resource_type, :duplicate_parameters
 
-  def validate_response_type!
+  def validate_response_type!(client)
     raise RequestError, "response_type is required" if params[:response_type].blank?
-    return if params[:response_type] == "code"
+    return if params[:response_type] == "id_token" && client.front_channel_id_token?
+    return if params[:response_type] == "code" && !client.front_channel_id_token?
 
-    raise RequestError.new("response_type must be 'code'", error: "unsupported_response_type")
+    raise RequestError.new("response_type is not supported for this client", error: "unsupported_response_type")
   end
 
   def validate_prompt!
@@ -145,12 +148,24 @@ class OidcAuthorizeRequestResolver < ApplicationService
     raise UnsupportedPrompt, "prompt value is not supported"
   end
 
-  def validate_code_challenge!
+  def validate_code_challenge!(client)
+    if params[:response_type] == "id_token" && client.front_channel_id_token?
+      raise RequestError, "PKCE parameters are not accepted for this client" if pkce_parameters_supplied?
+
+      return
+    end
+
     raise RequestError, "code_challenge is required" if params[:code_challenge].blank?
     raise RequestError, "code_challenge_method must be 'S256'" unless params[:code_challenge_method] == "S256"
     return if params[:code_challenge].to_s.match?(CODE_CHALLENGE_PATTERN)
 
     raise RequestError, "code_challenge must be 43 base64url characters"
+  end
+
+  def pkce_parameters_supplied?
+    %i(code_challenge code_challenge_method).any? do |key|
+      params.key?(key) || params.key?(key.to_s)
+    end
   end
 
   def normalize_max_age!

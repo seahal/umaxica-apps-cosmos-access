@@ -255,7 +255,7 @@ module AuthenticationHarness
 
     JWT.decode(
       token, JitSecurityJwtJwk.import_public_key(signing_jwk), true,
-      algorithms: ["ES384"], verify_iss: true, iss: OidcIssuer.for_resource_type(resource_type),
+      algorithms: ["PS256"], verify_iss: true, iss: OidcIssuer.for_resource_type(resource_type),
     )
   end
 

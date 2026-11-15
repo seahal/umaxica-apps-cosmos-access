@@ -10,12 +10,25 @@ class RpBaseOrgSession < RpBaseOrgRecord
 
   include PublicId
 
+  before_validation :generate_public_id, on: :create
+  before_validation :refresh_generated_public_id_after_collision, on: :create
+  before_create :generate_public_id
+  around_create :retry_public_id_collision
+  validate :public_id_immutable_after_create, on: :update
+
+  validates :public_id, presence: true, length: { is: PublicId::GENERATION_SIZE }, uniqueness: true
+
   belongs_to :op_session_binding, class_name: "RpBaseOrgOpSessionBinding", inverse_of: :sessions
   has_one :actor_selection,
           class_name: "RpBaseOrgSessionSelection",
           foreign_key: :rp_session_id,
           inverse_of: :rp_session,
           dependent: :destroy
+  has_many :step_up_states,
+           class_name: "RpBaseOrgStepUpState",
+           foreign_key: :rp_session_id,
+           inverse_of: :rp_session,
+           dependent: :restrict_with_error
 
   # The partial index counts every unrevoked row, including an expired one.
   validates :op_session_binding_id,

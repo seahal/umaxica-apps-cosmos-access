@@ -32,5 +32,4 @@ class SignInPathBrowserAllowlistTest < ActionDispatch::IntegrationTest
 
     assert_not_includes [404, 406], response.status
   end
-
 end

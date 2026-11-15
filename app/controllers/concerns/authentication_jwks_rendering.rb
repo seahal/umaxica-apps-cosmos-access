@@ -4,6 +4,8 @@
 module AuthenticationJwksRendering
   extend ActiveSupport::Concern
 
+  public
+
   def show
     expires_in(1.hour, public: true)
     render json: ::JitSecurityJwtJwksService.jwk_set(self.class::JWT_KEY_NAMESPACE)

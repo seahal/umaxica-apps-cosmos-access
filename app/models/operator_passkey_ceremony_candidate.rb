@@ -4,6 +4,11 @@
 class OperatorPasskeyCeremonyCandidate < OpBaseOrgRecord
   include IdentityCeremonyCandidateRecord
 
+  scope :active_at, ->(time) { where(arel_table[:expires_at].gt(time), consumed_at: nil) }
+
+  validates :ref, :digest, :surface, :actor_ref, :session_ref, :expires_at, presence: true
+  validates :ref, uniqueness: true
+
   validates :step_up_ceremony_transaction_ref, :webauthn_id, :public_key, :description, presence: true
   validates :step_up_ceremony_transaction_ref, uniqueness: true
   validates :surface, inclusion: { in: IdentityPasskeyCeremonyContract::SURFACES }

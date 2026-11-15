@@ -14,6 +14,8 @@ class OperatorTokenKind < OpBaseOrgRecord
 
   self.record_timestamps = false
 
+  self.record_timestamps = false
+
   BROWSER_WEB = 1
   CLIENT_IOS = 2
   CLIENT_ANDROID = 3

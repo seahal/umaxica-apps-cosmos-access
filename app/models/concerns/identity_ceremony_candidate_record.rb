@@ -48,14 +48,6 @@ module IdentityCeremonyCandidateRecord
     end
   end
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    scope :active_at, ->(time) { where(arel_table[:expires_at].gt(time), consumed_at: nil) }
-
-    validates :ref, :digest, :surface, :actor_ref, :session_ref, :expires_at, presence: true
-    validates :ref, uniqueness: true
-  end
-
   class_methods do
     def connection_owner
       return OpBaseAppRecord if self <= OpBaseAppRecord
@@ -74,6 +66,8 @@ module IdentityCeremonyCandidateRecord
       end
     end
   end
+
+  public
 
   def consume!(now:, error_class:, not_found_message:, expired_message:)
     self.class.connection_owner.connected_to(role: :writing) do

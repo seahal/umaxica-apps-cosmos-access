@@ -11,9 +11,11 @@
 # `AuthenticationToken` keep working through the alias defined
 # in `AuthenticationBase`.
 class AuthenticationToken
-  JWT_ALGORITHM = "ES384"
+  JWT_ALGORITHM = JitSecurityJwtJwk::ALGORITHM
 
   class << self
+    public
+
     def encode(resource, host:, session_public_id: nil, session_id: nil, base_session_public_id: nil,
                oidc_sid: nil, oidc_jti: nil,
                resource_type: nil, dpop_jkt: nil, expires_at: nil, acr: nil, amr: nil, jwt_issuer_id: nil,

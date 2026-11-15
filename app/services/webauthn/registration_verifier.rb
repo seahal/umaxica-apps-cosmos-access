@@ -77,5 +77,6 @@ module Webauthn
       transports.presence && Array(transports).map(&:to_s)
     end
     private_class_method :credential_transports
+    public_class_method :options_for, :verify!
   end
 end

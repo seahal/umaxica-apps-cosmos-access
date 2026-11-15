@@ -12,8 +12,8 @@ class OpAuthorityStopConcurrencyTest < ActiveSupport::TestCase
 
   setup do
     @principal_public_id = PublicId.generate
-    device = ClientDeviceSession.create!(user_id: 1001, principal_public_id: @principal_public_id)
-    @root = ClientToken.create!(authentication_epoch: 0, user_id: device.user_id, device_session: device)
+    device = ClientDeviceSession.create!(subject_public_id: @principal_public_id)
+    @root = ClientToken.create!(authentication_epoch: 0, subject_public_id: device.subject_public_id, device_session: device)
     @grant = OpAppGrant.create!(
       authentication_epoch: 0,
       client_token_id: @root.id, client_device_session: @root.device_session,

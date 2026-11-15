@@ -9,6 +9,12 @@ ownership decisions remain useful where they do not conflict with this ADR. The 
 credential scope clauses in [`cookie-domain-scope-by-surface.md`](cookie-domain-scope-by-surface.md)
 are also superseded.
 
+For Access, the assignment of Preference state and JWT signing to Visa is superseded by
+`adr/access-is-a-pure-openid-provider.md`, decision 17: Access owns OpenID Provider data only, and
+Governance owns preferences. The detailed contract below is retained as historical Access context;
+it does not authorize Access to persist Preference state or issue Preference JWTs. This status note
+does not define Governance's replacement implementation.
+
 ## Decision
 
 Each preference realm issues one signed Preference JWT on the `umaxica.<realm>` cookie domain and

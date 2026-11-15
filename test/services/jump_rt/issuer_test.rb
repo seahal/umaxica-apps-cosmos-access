@@ -19,12 +19,12 @@ class JumpRtIssuerTest < ActiveSupport::TestCase
     end
 
   setup do
-    @private_key = OpenSSL::PKey::EC.generate("secp384r1")
+    @private_key = OpenSSL::PKey::RSA.generate(3_072)
   end
 
-  test "issues ES384 jump rt jwt with expected claims" do
+  test "issues PS256 jump rt jwt with expected claims" do
     with_env(
-      "JWT_AUTH_APP_ACTIVE_KID" => "sign-app-es384-test-a",
+      "JWT_AUTH_APP_ACTIVE_KID" => "sign-app-ps256-test-a",
       "PRIVATE_AUTH_SERVICE_URL" => "sign.example.test",
     ) do
       JumpRtKeyring.stub(:private_key, @private_key) do
@@ -36,13 +36,13 @@ class JumpRtIssuerTest < ActiveSupport::TestCase
           jti: "jti-test",
         )
         JWT.decode(
-          token, @private_key.public_key, true, algorithms: ["ES384"], verify_iat: false,
+          token, @private_key.public_key, true, algorithms: ["PS256"], verify_iat: false,
                                                 verify_expiration: false, verify_not_before: false,
         )
         payload, header = JWT.decode(token, nil, false)
 
         assert_equal "JWT", header["typ"]
-        assert_equal "ES384", header["alg"]
+        assert_equal "PS256", header["alg"]
         assert_equal JitSecurityJwtRegistry.surface("AUTH_APP").current_kid, header["kid"]
         assert_equal 1, payload["schema"]
         assert_equal "jump-redirect", payload["sub"]
@@ -69,7 +69,7 @@ class JumpRtIssuerTest < ActiveSupport::TestCase
 
   test "returns nil for url with invalid percent encoding" do
     with_env(
-      "JWT_AUTH_APP_ACTIVE_KID" => "sign-app-es384-test-a",
+      "JWT_AUTH_APP_ACTIVE_KID" => "sign-app-ps256-test-a",
     ) do
       JumpRtKeyring.stub(:private_key, @private_key) do
         result = JumpRtIssuer.call(
@@ -86,7 +86,7 @@ class JumpRtIssuerTest < ActiveSupport::TestCase
   # Rack once raised on this query, which refused issuance by accident. Under the WHATWG contract
   # it is two ordinary pairs, so it is signed in order like any other query.
   test "signs a query whose bracketed keys Rack would treat as conflicting shapes" do
-    with_env("JWT_AUTH_APP_ACTIVE_KID" => "sign-app-es384-test-a") do
+    with_env("JWT_AUTH_APP_ACTIVE_KID" => "sign-app-ps256-test-a") do
       JumpRtKeyring.stub(:private_key, @private_key) do
         token = JumpRtIssuer.call(
           namespace: "AUTH_APP",

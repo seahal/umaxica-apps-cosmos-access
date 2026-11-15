@@ -44,6 +44,8 @@ class JitSecurityTurnstileVerifier
     @expected_cdata = expected_cdata
   end
 
+  public
+
   def verify
     return failure("missing cf-turnstile-response") if @token.blank?
 
@@ -181,4 +183,5 @@ class JitSecurityTurnstileVerifier
   def failure(message, unavailable: false)
     { "success" => false, "error" => message, "unavailable" => unavailable }
   end
+  public_class_method :verify, :verify_for_ceremony
 end

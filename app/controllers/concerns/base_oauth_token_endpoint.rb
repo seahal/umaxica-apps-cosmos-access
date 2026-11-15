@@ -4,6 +4,8 @@
 module BaseOauthTokenEndpoint
   extend ActiveSupport::Concern
 
+  public
+
   def create
     result = ::OidcTokenExchangeCoordinator.call(**token_exchange_arguments)
 

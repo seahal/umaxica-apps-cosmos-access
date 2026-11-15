@@ -34,6 +34,29 @@
 #
 class ClientTelephoneCeremonyTransaction < OpBaseAppRecord
   include TelephoneCeremonyTransactionable
+
+  scope :expired_at, ->(time) { where(arel_table[:expires_at].lteq(time)) }
+  scope :consumed, -> { where.not(consumed_at: nil).or(where(status: TelephoneCeremonyTransactionable::STATUS_CONSUMED)) }
+  scope :active_at, ->(time) {
+    where(arel_table[:expires_at].gt(time)).where(consumed_at: nil, status: TelephoneCeremonyTransactionable::STATUS_PENDING)
+  }
+  scope :pending, -> { where(status: TelephoneCeremonyTransactionable::STATUS_PENDING, consumed_at: nil) }
+  scope :purgeable_at, lambda { |time, retention_period: TelephoneCeremonyTransactionable::RETENTION_PERIOD|
+    cutoff = time - retention_period
+    where(arel_table[:expires_at].lteq(cutoff))
+      .or(where(arel_table[:consumed_at].lteq(cutoff)))
+  }
+
+  validates :transaction_id, :surface, :actor_ref, :session_ref, :operation, :status, :grant_jti, :expires_at,
+            presence: true
+  validates :transaction_id, uniqueness: true
+  validates :grant_jti, uniqueness: true
+  validates :result_jti, uniqueness: true, allow_nil: true
+  validates :surface, inclusion: { in: IdentityTelephoneCeremonyContract::SURFACES }
+  validates :operation, inclusion: { in: TelephoneCeremonyTransactionable::OPERATIONS }
+  validates :status, inclusion: { in: TelephoneCeremonyTransactionable::STATUSES }
+  validate :surface_matches_transaction_class
+  validate :consumed_transaction_has_result
   include TelephoneCeremonyOtp
 
   validate :immutable_telephone_otp_terminal_facts

@@ -178,7 +178,7 @@ class OidcClientRegistryTest < ActiveSupport::TestCase
     assert_equal "operator", client.resource_type
     assert_equal "tech-org-ww", client.aud
     assert_equal "TECH_ORG_WW", client.jwt_namespace
-    assert_equal OperatorCapabilityGrant::TECH_ACCESS, client.required_operator_capability
+    assert_equal "tech.access", client.required_operator_capability
     expected_hosts =
       [ENV.fetch("PUBLIC_TECH_STAFF_URL")].map do |origin|
         URI.parse(origin).host || URI.parse("//#{origin}").host
@@ -309,7 +309,7 @@ class OidcClientRegistryTest < ActiveSupport::TestCase
   end
 
   test "private_key_jwt configuration validation passes when signing keys exist" do
-    JitSecurityJwtRegistry.stub(:private_key_for, OpenSSL::PKey::EC.generate("secp384r1")) do
+    JitSecurityJwtRegistry.stub(:private_key_for, OpenSSL::PKey::RSA.generate(3_072)) do
       assert OidcClientRegistry.validate_private_key_jwt_configuration!
     end
   end
@@ -373,6 +373,19 @@ class OidcClientRegistryTest < ActiveSupport::TestCase
     assert_equal "client", client.resource_type
   end
 
+  test "only the Base App and Base Org registrations use the front-channel ID Token profile" do
+    app_client = OidcClientRegistry.find!("base-app-ww")
+    org_client = OidcClientRegistry.find!("base-org-ww")
+    other_client = OidcClientRegistry.find!("core-app-jp")
+
+    assert app_client.front_channel_id_token?
+    assert org_client.front_channel_id_token?
+    assert_equal "id_token", app_client.authorization_response_type
+    assert_equal "id_token", org_client.authorization_response_type
+    assert_not other_client.front_channel_id_token?
+    assert_equal "code", other_client.authorization_response_type
+  end
+
   private
 
   def visitor_account(overrides = {})
@@ -391,6 +404,7 @@ class OidcClientRegistryTest < ActiveSupport::TestCase
       metadata_token_endpoint_auth_method: "client_secret_post",
       jwt_namespace: nil,
       required_operator_capability: nil,
+      authorization_response_type: "code",
       **overrides,
     )
   end

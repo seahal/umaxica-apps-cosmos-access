@@ -16,18 +16,21 @@ class IdentityCeremonyContractGuardTest < ActiveSupport::TestCase
         contract.validate_header!({ "alg" => "HS256", "typ" => "grant", "kid" => "k" }, expected_type: "grant")
       end
       assert_raises(error_class) do
-        contract.validate_header!({ "alg" => "ES384", "typ" => "other", "kid" => "k" }, expected_type: "grant")
+        contract.validate_header!({ "alg" => "ES384", "typ" => "grant", "kid" => "k" }, expected_type: "grant")
       end
       assert_raises(error_class) do
-        contract.validate_header!({ "alg" => "ES384", "typ" => "grant", "kid" => "" }, expected_type: "grant")
+        contract.validate_header!({ "alg" => "PS256", "typ" => "other", "kid" => "k" }, expected_type: "grant")
+      end
+      assert_raises(error_class) do
+        contract.validate_header!({ "alg" => "PS256", "typ" => "grant", "kid" => "" }, expected_type: "grant")
       end
       assert_raises(error_class) do
         contract.validate_header!(
-          { "alg" => "ES384", "typ" => "grant", "kid" => "k", "jku" => "https://evil.example" },
+          { "alg" => "PS256", "typ" => "grant", "kid" => "k", "jku" => "https://evil.example" },
           expected_type: "grant",
         )
       end
-      contract.validate_header!({ "alg" => "ES384", "typ" => "grant", "kid" => "k" }, expected_type: "grant")
+      contract.validate_header!({ "alg" => "PS256", "typ" => "grant", "kid" => "k" }, expected_type: "grant")
     end
   end
 

@@ -59,6 +59,46 @@ class CeremonyTransactionableTest < ActiveSupport::TestCase
     end
   end
 
+  test "each app and org ceremony transaction declares its realm surface" do
+    classes = [
+      ClientEmailCeremonyTransaction, OperatorEmailCeremonyTransaction,
+      ClientTelephoneCeremonyTransaction, OperatorTelephoneCeremonyTransaction,
+      ClientPasskeyCeremonyTransaction, OperatorPasskeyCeremonyTransaction,
+      ClientSecretCredentialCeremonyTransaction, OperatorSecretCredentialCeremonyTransaction,
+      ClientTotpCeremonyTransaction,
+      ClientSocialCeremonyTransaction,
+      ClientStepUpCeremonyTransaction, OperatorStepUpCeremonyTransaction,
+    ]
+
+    classes.each do |model|
+      expected_surface = (model <= OpBaseAppRecord) ? "app" : "org"
+
+      assert_equal expected_surface, model.ceremony_surface
+      assert_predicate model.ceremony_surface, :frozen?
+      assert_raises(ArgumentError) { model.ceremony_surface("invalid") }
+    end
+
+    {
+      ClientOidcAuthorizationTransaction => "app",
+      OperatorOidcAuthorizationTransaction => "org",
+    }.each do |model, expected_surface|
+      assert_equal expected_surface, model.oidc_authorization_surface
+      assert_predicate model.oidc_authorization_surface, :frozen?
+      assert_raises(ArgumentError) { model.oidc_authorization_surface("invalid") }
+    end
+  end
+
+  test "app and org sign-in flows read their lifecycle status column" do
+    {
+      ClientSignInFlow => :state_id,
+      OperatorSignInFlow => :state_id,
+    }.each do |model, column|
+      marker = 987_654
+
+      assert_equal marker, model.new(column => marker).cycle_status_id
+    end
+  end
+
   test "passkey ceremony transactions issue separate NanoID references" do
     transaction = ClientPasskeyCeremonyTransaction.create_transaction!(
       actor_ref: "passkey-actor-reference",

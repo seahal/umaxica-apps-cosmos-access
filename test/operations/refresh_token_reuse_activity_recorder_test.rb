@@ -44,15 +44,15 @@ class RefreshTokenReuseActivityRecorderTest < ActiveSupport::TestCase
   def create_token(surface)
     case surface
     when :app
-      ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
+      token = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
     when :org
-      OperatorToken.find(ActiveRecord::FixtureSet.identify(:one))
+      token = OperatorToken.find(ActiveRecord::FixtureSet.identify(:one))
     end
+    token.update!(refresh_token_family_id: SecureRandom.uuid)
+    token
   end
 
   def activity_subject_id(token)
-    return token.user_id if token.respond_to?(:user_id)
-
-    token.staff_id
+    token.subject_public_id
   end
 end

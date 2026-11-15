@@ -178,6 +178,28 @@ class SocialCeremonyTransactionableTest < ActiveSupport::TestCase
     end
   end
 
+  test "expiration closes a pending social transaction at the writer clock" do
+    created_at = ClientSocialCeremonyTransaction.database_now
+    transaction = ClientSocialCeremonyTransaction.create_transaction!(
+      actor_ref: "actor-expire",
+      session_ref: "session-expire",
+      operation: "link",
+      provider: "google",
+      expires_at: created_at + 1.hour,
+      now: created_at,
+    )
+    decision_time = created_at + 1.minute
+
+    result = ClientSocialCeremonyTransaction.stub(:database_now, decision_time) { transaction.expire! }
+
+    assert_same transaction, result
+    transaction.reload
+
+    assert_equal decision_time, transaction.expires_at
+    assert transaction.expired?(now: decision_time)
+    assert_not_includes ClientSocialCeremonyTransaction.active_at(decision_time), transaction
+  end
+
   test "social transaction connection owner falls back for a generic model" do
     generic_transaction_class =
       Class.new(ApplicationRecord) do

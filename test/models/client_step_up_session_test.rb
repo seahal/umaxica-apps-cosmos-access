@@ -129,9 +129,9 @@ class ClientStepUpSessionTest < ActiveSupport::TestCase
   private
 
   def create_client_token
-    device = ClientDeviceSession.create!(user_id: @user_id, principal_public_id: "client-#{@user_id}")
+    device = ClientDeviceSession.create!(subject_public_id: "client-#{@user_id}")
     ClientToken.create!(
-      authentication_epoch: 0, user_id: @user_id, device_session: device,
+      authentication_epoch: 0, subject_public_id: device.subject_public_id, device_session: device,
       user_token_status_id: ClientTokenStatus::ACTIVE,
     )
   end

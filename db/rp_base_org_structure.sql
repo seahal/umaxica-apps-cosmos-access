@@ -931,20 +931,6 @@ CREATE INDEX index_rp_op_session_bindings_on_identity_binding_id ON public.rp_op
 
 
 --
--- Name: index_rp_step_up_audit_outbox_attempts_on_outbox_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_rp_step_up_audit_outbox_attempts_on_outbox_id ON public.rp_step_up_audit_outbox_attempts USING btree (outbox_id);
-
-
---
--- Name: index_rp_step_up_audit_outboxes_on_delivery_state_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_rp_step_up_audit_outboxes_on_delivery_state_id ON public.rp_step_up_audit_outboxes USING btree (delivery_state_id);
-
-
---
 -- Name: index_rp_step_up_state_transitions_on_from_state_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -985,7 +971,7 @@ ALTER TABLE ONLY public.rp_step_up_states
 --
 
 ALTER TABLE ONLY public.rp_step_up_state_transitions
-    ADD CONSTRAINT fk_rails_42bc1ac3a0 FOREIGN KEY (owner_id) REFERENCES public.rp_step_up_states(id) ON DELETE CASCADE;
+    ADD CONSTRAINT fk_rails_42bc1ac3a0 FOREIGN KEY (owner_id) REFERENCES public.rp_step_up_states(id) ON DELETE RESTRICT;
 
 
 --
@@ -1017,7 +1003,7 @@ ALTER TABLE ONLY public.rp_step_up_states
 --
 
 ALTER TABLE ONLY public.rp_step_up_audit_outbox_attempts
-    ADD CONSTRAINT fk_rails_9735bc9c9b FOREIGN KEY (outbox_id) REFERENCES public.rp_step_up_audit_outboxes(id) ON DELETE CASCADE;
+    ADD CONSTRAINT fk_rails_9735bc9c9b FOREIGN KEY (outbox_id) REFERENCES public.rp_step_up_audit_outboxes(id) ON DELETE RESTRICT;
 
 
 --
@@ -1083,6 +1069,9 @@ ALTER TABLE ONLY public.rp_sessions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261114081210'),
+('20261114080944'),
+('20261114010242'),
 ('20261106143215'),
 ('20261106143211'),
 ('20261106143207'),

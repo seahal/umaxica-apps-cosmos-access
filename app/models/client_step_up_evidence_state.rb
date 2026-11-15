@@ -3,6 +3,8 @@
 class ClientStepUpEvidenceState < OpBaseAppRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   ABSENT = IdentityStepUpCeremonyContract::EVIDENCE_ABSENT
   RECORDED = IdentityStepUpCeremonyContract::EVIDENCE_RECORDED
   DEFAULTS = [ABSENT, RECORDED].freeze

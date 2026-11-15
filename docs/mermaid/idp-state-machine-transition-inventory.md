@@ -1,9 +1,12 @@
 # Persisted State And Transition Inventory
 
-> **Current route scope (2026-11-10):** Access retains Auth APP/ORG, Visa APP/ORG, and operator
-> tools. Visa OIDC, JWKS, and DBSC endpoints remain local. This inventory preserves state/schema and
-> transition history; a listed model or former writer is not evidence of a current route,
-> controller, or writer. Base and other removed RP surface axes are retained for the separate
+> **Current route scope (2026-11-14):** Access retains Auth APP/ORG, Visa APP/ORG, and operator
+> tools. Visa App and Org expose the validated OIDC authorization start and pending handoff; Auth
+> sentries/credential ceremonies and Visa result/cancellation/switch completion remain unavailable.
+> Visa's registered Base `id_token` request profile is accepted by the resolver but still returns
+> 503 before a transaction is allocated. JWKS and DBSC routes remain local. This inventory preserves
+> state/schema and transition history; a listed model or former writer is not evidence of a current
+> route, controller, or writer. Base and other removed RP surface axes are retained for the separate
 > model/database report and follow-up ownership decision. External RP registrations remain available
 > through Visa, while their local session state and callbacks belong to their owning repositories.
 
@@ -16,11 +19,11 @@ session status or RP step-up policy. Implementation and observed verification re
 [Access-only remediation](../../specs/access-database-consistency/spec.md). The rows below record
 the accepted writers and guards; they do not claim a deployed migration or a passing test run.
 
-| Axis | Realm / owner | Carrier / column | Reference table | Diagram |
-| --- | --- | --- | --- | --- |
-| Token evidence presence | APP / `ClientToken` | `client_tokens.evidence_state_id` | `client_step_up_evidence_states` | [APP evidence](./idp-client-step-up-evidence.mmd) |
-| Ceremony evidence presence | APP / `ClientStepUpCeremonyTransaction` | `client_step_up_ceremony_transactions.evidence_state_id` | `client_step_up_evidence_states` | [APP evidence](./idp-client-step-up-evidence.mmd) |
-| Token evidence presence | ORG / `OperatorToken` | `operator_tokens.evidence_state_id` | `operator_step_up_evidence_states` | [ORG evidence](./idp-operator-step-up-evidence.mmd) |
+| Axis                       | Realm / owner                             | Carrier / column                                           | Reference table                    | Diagram                                             |
+| -------------------------- | ----------------------------------------- | ---------------------------------------------------------- | ---------------------------------- | --------------------------------------------------- |
+| Token evidence presence    | APP / `ClientToken`                       | `client_tokens.evidence_state_id`                          | `client_step_up_evidence_states`   | [APP evidence](./idp-client-step-up-evidence.mmd)   |
+| Ceremony evidence presence | APP / `ClientStepUpCeremonyTransaction`   | `client_step_up_ceremony_transactions.evidence_state_id`   | `client_step_up_evidence_states`   | [APP evidence](./idp-client-step-up-evidence.mmd)   |
+| Token evidence presence    | ORG / `OperatorToken`                     | `operator_tokens.evidence_state_id`                        | `operator_step_up_evidence_states` | [ORG evidence](./idp-operator-step-up-evidence.mmd) |
 | Ceremony evidence presence | ORG / `OperatorStepUpCeremonyTransaction` | `operator_step_up_ceremony_transactions.evidence_state_id` | `operator_step_up_evidence_states` | [ORG evidence](./idp-operator-step-up-evidence.mmd) |
 
 Both realm-local reference tables use `ABSENT = 10` and `RECORDED = 20`. The FK and six affected
@@ -33,23 +36,23 @@ The following legal transitions apply independently to APP and ORG; initial cons
 from a subsequent transition. All mutation rows retain their existing owner locks, transaction and
 owning-database-clock checks.
 
-| Transition ID | Carrier | From | Writer / trigger | To | Guard and effect |
-| --- | --- | --- | --- | --- | --- |
-| retained-step-up-evidence:T001 | token and ceremony | no row | ordinary initial construction | ABSENT | Initialize false flags; creation does not assert proof |
-| retained-step-up-evidence:T002 | ceremony | ABSENT | `record_verification!` | RECORDED | Pending, unexpired allowed ceremony; validate actual method, credential and verification facts before the single workflow transition |
-| retained-step-up-evidence:T003 | ceremony | ABSENT | `record_registration_verification!` or accepted pending `commit_registration_consumption!` | RECORDED | Original registration permission and proof; false UV is recorded negative evidence and grants no step-up freshness |
-| retained-step-up-evidence:T004 | ceremony | ABSENT or RECORDED | existing cancellation, expiry or revocation writer; result delivery or verified consumption | unchanged | Preserve whether proof existed; pending registration consumption is T003; terminal workflow states cannot later record or rewrite proof |
-| retained-step-up-evidence:T005 | token | ABSENT or RECORDED | `IdentityStepUpCeremonyFreshnessCommitter` | RECORDED | Revalidate current ceremony, requirement and exact token binding; install state and actual flags in the same update |
-| retained-step-up-evidence:T006 | token | RECORDED | `consume_step_up_evidence!` | ABSENT | Owner-bound satisfied requirement and one-shot locked consumption; clear flags atomically without changing root status or deadline |
-| retained-step-up-evidence:T007 | token | ABSENT or RECORDED | `revoke_step_up_authority!` | ABSENT | Existing ordered revocation boundary; clear token evidence while preserving each ceremony's recorded history |
+| Transition ID                  | Carrier            | From               | Writer / trigger                                                                            | To        | Guard and effect                                                                                                                        |
+| ------------------------------ | ------------------ | ------------------ | ------------------------------------------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| retained-step-up-evidence:T001 | token and ceremony | no row             | ordinary initial construction                                                               | ABSENT    | Initialize false flags; creation does not assert proof                                                                                  |
+| retained-step-up-evidence:T002 | ceremony           | ABSENT             | `record_verification!`                                                                      | RECORDED  | Pending, unexpired allowed ceremony; validate actual method, credential and verification facts before the single workflow transition    |
+| retained-step-up-evidence:T003 | ceremony           | ABSENT             | `record_registration_verification!` or accepted pending `commit_registration_consumption!`  | RECORDED  | Original registration permission and proof; false UV is recorded negative evidence and grants no step-up freshness                      |
+| retained-step-up-evidence:T004 | ceremony           | ABSENT or RECORDED | existing cancellation, expiry or revocation writer; result delivery or verified consumption | unchanged | Preserve whether proof existed; pending registration consumption is T003; terminal workflow states cannot later record or rewrite proof |
+| retained-step-up-evidence:T005 | token              | ABSENT or RECORDED | `IdentityStepUpCeremonyFreshnessCommitter`                                                  | RECORDED  | Revalidate current ceremony, requirement and exact token binding; install state and actual flags in the same update                     |
+| retained-step-up-evidence:T006 | token              | RECORDED           | `consume_step_up_evidence!`                                                                 | ABSENT    | Owner-bound satisfied requirement and one-shot locked consumption; clear flags atomically without changing root status or deadline      |
+| retained-step-up-evidence:T007 | token              | ABSENT or RECORDED | `revoke_step_up_authority!`                                                                 | ABSENT    | Existing ordered revocation boundary; clear token evidence while preserving each ceremony's recorded history                            |
 
 Sources: `app/models/concerns/step_up_ceremony_transactionable.rb`,
 `app/models/concerns/token_status_management.rb`, `app/resolvers/step_up_resolver.rb`, and
-`app/operations/identity_step_up_ceremony_freshness_committer.rb`.
-The existing ceremony `status` axes below remain separate: pending and verified can both reach
-canceled, expired or revoked, so terminal status cannot reconstruct evidence presence. Signed
-external evidence and token-claim formats remain unchanged. Incoherent pre-migration evidence must
-stop migration instead of being coerced into an invented state.
+`app/operations/identity_step_up_ceremony_freshness_committer.rb`. The existing ceremony `status`
+axes below remain separate: pending and verified can both reach canceled, expired or revoked, so
+terminal status cannot reconstruct evidence presence. Signed external evidence and token-claim
+formats remain unchanged. Incoherent pre-migration evidence must stop migration instead of being
+coerced into an invented state.
 
 ## O-9 persisted sensitive-admission axes (deferred local ownership)
 
@@ -96,19 +99,19 @@ public ID, the verified grant public ID when a hint was provided, the optional r
 and state, and a five-minute expiry. A stored payload at or past expiry is treated as stale; expiry
 does not mutate the cookie by itself.
 
-| From      | To        | Public boundary and effect                                                                                              |
-| --------- | --------- | ----------------------------------------------------------------------------------------------------------------------- |
-| empty     | pending   | A validated end-session GET/POST with the current device stages a request; a hint must identify a grant of that device. |
-| pending   | pending   | Refusal, rolled-back stop or unknown commit preserves the request; a repeated valid request keeps the original.         |
-| pending   | expired   | The stored expiry is reached; the parser no longer accepts the pending payload.                                         |
-| pending   | completed | A committed stop or an already-revoked stored device clears browser state and records the completion marker.            |
-| pending   | empty     | Browser session reset or expiry removes its transport fields.                                                           |
-| expired   | expired   | A stale confirmation is refused without changing authority.                                                             |
-| expired   | pending   | A new valid end-session request replaces the expired payload.                                                           |
-| expired   | empty     | Browser session reset or expiry removes its transport fields.                                                           |
-| completed | completed | A repeated confirmation without a current session reports already signed out.                                           |
-| completed | pending   | A new valid request clears the completion marker before staging.                                                        |
-| completed | empty     | Browser session reset or expiry removes the marker.                                                                     |
+| From      | To        | Public boundary and effect                                                                                                                                                                                                                                                                                         |
+| --------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| empty     | pending   | A validated end-session GET/POST with the current device stages a request; a hint must identify a grant of that device.                                                                                                                                                                                            |
+| pending   | pending   | Same resolved request or context-only redirect continuation renders the original confirmation; a distinct client, grant, return URI, OIDC state, `ui_locales` or legacy return-region claim is refused with 403 and leaves the original payload unchanged. A rolled-back stop or unknown commit also preserves it. |
+| pending   | expired   | The stored expiry is reached; the parser no longer accepts the pending payload.                                                                                                                                                                                                                                    |
+| pending   | completed | A committed stop or an already-revoked stored device clears browser state and records the completion marker.                                                                                                                                                                                                       |
+| pending   | empty     | Browser session reset or expiry removes its transport fields.                                                                                                                                                                                                                                                      |
+| expired   | expired   | A stale confirmation is refused without changing authority.                                                                                                                                                                                                                                                        |
+| expired   | pending   | A new valid end-session request replaces the expired payload.                                                                                                                                                                                                                                                      |
+| expired   | empty     | Browser session reset or expiry removes its transport fields.                                                                                                                                                                                                                                                      |
+| completed | completed | A repeated confirmation without a current session reports already signed out.                                                                                                                                                                                                                                      |
+| completed | pending   | A new valid request clears the completion marker before staging.                                                                                                                                                                                                                                                   |
+| completed | empty     | Browser session reset or expiry removes the marker.                                                                                                                                                                                                                                                                |
 
 Sources: `app/controllers/concerns/sign_oidc_logout.rb`, `app/services/oidc_end_session_request.rb`.
 Public coverage: `test/integration/oidc_current_device_logout_test.rb` and the three Visa logout
@@ -1863,12 +1866,19 @@ Source binding commits.
 
 ## idp-client-oidc-authorization
 
-The Visa result, cancellation and switch endpoints use GET only to validate and render a same-origin
-continuation form. The form POST carries a purpose-bound, short-lived signed continuation; Rails
-CSRF and Origin/Fetch Metadata checks are still required. Transaction finalization, cancellation,
-switching, Preference sign-in application and authorization-code issuance occur on that POST. A
-continuation cannot outlive its parent transaction and expires within 60 seconds. A Preference write
-failure leaves authentication committed and withholds the authorization code.
+The current HTTP writer is `Visa::App::Oauth::AuthorizationsController`, which uses the shared
+`OidcAuthorizationStart` concern. A valid App authorization start creates a pending transaction and
+browser-bound admission binding, then returns `303` through Jump to the Auth App sign-in sentry.
+Auth sentry/credential flows and Visa result, cancellation and switch endpoints remain unavailable;
+the current route does not issue authorization codes or perform silent SSO.
+
+The historical Visa result, cancellation and switch endpoints use GET only to validate and render a
+same-origin continuation form. The form POST carries a purpose-bound, short-lived signed
+continuation; Rails CSRF and Origin/Fetch Metadata checks are still required. Transaction
+finalization, cancellation, switching, Preference sign-in application and authorization-code
+issuance occur on that POST. A continuation cannot outlive its parent transaction and expires within
+60 seconds. A Preference write failure leaves authentication committed and withholds the
+authorization code.
 
 Implementation: `OidcAuthorizationTransactionable`. Storage:
 `client_oidc_authorization_transactions` / `client_oidc_authorization_transaction_statuses` /
@@ -1882,15 +1892,18 @@ Sources: `app/models/concerns/oidc_authorization_transactionable.rb`,
 Tests read: `test/models/concerns/oidc_authorization_transactionable_test.rb`,
 `test/services/oidc_authorization_transaction_service_test.rb`.
 
-| Transition ID                      | Mutation kind         | From                    | Event / Trigger               | To            | Guard                                                                                                                            | Side effect                                                             | Source file                                                                                                | Confidence |
-| ---------------------------------- | --------------------- | ----------------------- | ----------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------- |
-| idp-client-oidc-authorization:T001 | DOCUMENTED_TRANSITION | pending                 | register_authentication!      | authenticated | pending; transaction/login-challenge DB clock deadlines; row lock                                                                | actor/method/authentication time                                        | app/models/concerns/oidc_authorization_transactionable.rb                                                  | CONFIRMED  |
-| idp-client-oidc-authorization:T002 | DOCUMENTED_TRANSITION | authenticated           | prepare_result_delivery!      | authenticated | unexpired/unfinalized; digest                                                                                                    | generation +1; reset result_consumed_at; bounded TTL                    | app/models/concerns/oidc_authorization_transactionable.rb                                                  | CONFIRMED  |
-| idp-client-oidc-authorization:T003 | DOCUMENTED_TRANSITION | authenticated           | consume!                      | consumed      | authenticated; unexpired; row lock                                                                                               | consumed_at                                                             | app/models/concerns/oidc_authorization_transactionable.rb                                                  | CONFIRMED  |
-| idp-client-oidc-authorization:T004 | DOCUMENTED_TRANSITION | authenticated           | finalize_base! success        | consumed      | authenticated or previously finalized; matching generation; successful session reference                                         | browser_session_ref; result_consumed_at; base_finalized_at; consumed_at | app/models/concerns/oidc_authorization_transactionable.rb                                                  | CONFIRMED  |
-| idp-client-oidc-authorization:T005 | DOCUMENTED_TRANSITION | consumed                | claim_authorization_grant!    | consumed      | finalized; unexpired; grant not redeemed                                                                                         | authorization_grant_redeemed_at                                         | app/models/concerns/oidc_authorization_transactionable.rb                                                  | CONFIRMED  |
-| idp-client-oidc-authorization:T006 | DOCUMENTED_TRANSITION | pending / authenticated | prepare_cancellation_handoff! | same state    | Called only inside `issue_cancellation!`'s parent transaction; bound handoff is not separately committed                         | cancellation_handoff_ref; cancellation_handoff_ciphertext               | app/models/concerns/oidc_authorization_transactionable.rb                                                  | CONFIRMED  |
-| idp-client-oidc-authorization:T007 | DOCUMENTED_TRANSITION | pending / authenticated | issue_cancellation! / cancel! | canceled (90) | unexpired; unfinalized; parent row lock; handoff and canceled status commit in one Ticket transaction; same digest is idempotent | status_id; canceled_at; cancellation_handoff_digest                     | app/services/base_auth_admission_coordinator.rb; app/models/concerns/oidc_authorization_transactionable.rb | CONFIRMED  |
+| Transition ID                       | Mutation kind         | From                    | Event / Trigger                                | To            | Guard                                                                                                                            | Side effect                                                             | Source file                                                                                                      | Confidence |
+| ----------------------------------- | --------------------- | ----------------------- | ---------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------- |
+| idp-client-oidc-authorization:T000  | DOCUMENTED_TRANSITION | no row                  | validated Code-profile Visa GET/POST start     | pending       | App client/redirect, response, scope, state, nonce and S256 PKCE valid; prompt is not `none`; no unsupported step-up request     | authorization transaction plus bound Auth admission; 303 through Jump   | app/controllers/concerns/oidc_authorization_start.rb; app/services/oidc_authorization_transaction_coordinator.rb | CONFIRMED  |
+| idp-client-oidc-authorization:T000B | DOCUMENTED_REFUSAL    | no row                  | registered Base `response_type=id_token` start | no row        | Resolver accepts Base profile; front-channel issuance remains unavailable                                                        | HTTP 503 before transaction allocation                                  | app/controllers/concerns/oidc_authorization_start.rb                                                             | CONFIRMED  |
+| idp-client-oidc-authorization:T000C | DOCUMENTED_REFUSAL    | no row                  | Base Code or non-Base `id_token` start         | no row        | Response type does not match the registered client profile                                                                       | `unsupported_response_type`; no transaction allocation                  | app/resolvers/oidc_authorize_request_resolver.rb                                                                 | CONFIRMED  |
+| idp-client-oidc-authorization:T001  | DOCUMENTED_TRANSITION | pending                 | register_authentication!                       | authenticated | pending; transaction/login-challenge DB clock deadlines; row lock                                                                | actor/method/authentication time                                        | app/models/concerns/oidc_authorization_transactionable.rb                                                        | CONFIRMED  |
+| idp-client-oidc-authorization:T002  | DOCUMENTED_TRANSITION | authenticated           | prepare_result_delivery!                       | authenticated | unexpired/unfinalized; digest                                                                                                    | generation +1; reset result_consumed_at; bounded TTL                    | app/models/concerns/oidc_authorization_transactionable.rb                                                        | CONFIRMED  |
+| idp-client-oidc-authorization:T003  | DOCUMENTED_TRANSITION | authenticated           | consume!                                       | consumed      | authenticated; unexpired; row lock                                                                                               | consumed_at                                                             | app/models/concerns/oidc_authorization_transactionable.rb                                                        | CONFIRMED  |
+| idp-client-oidc-authorization:T004  | DOCUMENTED_TRANSITION | authenticated           | finalize_base! success                         | consumed      | authenticated or previously finalized; matching generation; successful session reference                                         | browser_session_ref; result_consumed_at; base_finalized_at; consumed_at | app/models/concerns/oidc_authorization_transactionable.rb                                                        | CONFIRMED  |
+| idp-client-oidc-authorization:T005  | DOCUMENTED_TRANSITION | consumed                | claim_authorization_grant!                     | consumed      | finalized; unexpired; grant not redeemed                                                                                         | authorization_grant_redeemed_at                                         | app/models/concerns/oidc_authorization_transactionable.rb                                                        | CONFIRMED  |
+| idp-client-oidc-authorization:T006  | DOCUMENTED_TRANSITION | pending / authenticated | prepare_cancellation_handoff!                  | same state    | Called only inside `issue_cancellation!`'s parent transaction; bound handoff is not separately committed                         | cancellation_handoff_ref; cancellation_handoff_ciphertext               | app/models/concerns/oidc_authorization_transactionable.rb                                                        | CONFIRMED  |
+| idp-client-oidc-authorization:T007  | DOCUMENTED_TRANSITION | pending / authenticated | issue_cancellation! / cancel!                  | canceled (90) | unexpired; unfinalized; parent row lock; handoff and canceled status commit in one Ticket transaction; same digest is idempotent | status_id; canceled_at; cancellation_handoff_digest                     | app/services/base_auth_admission_coordinator.rb; app/models/concerns/oidc_authorization_transactionable.rb       | CONFIRMED  |
 
 OIDC `state` is request CSRF correlation, not lifecycle status. Fixed status IDs are 10 pending, 20
 authenticated, 30 consumed and 90 canceled; the NOT NULL reference FK is the lifecycle authority.
@@ -1948,12 +1961,18 @@ redemption creates RP session. No target external_result event is inferred.
 
 ## idp-operator-oidc-authorization
 
-The Visa result and cancellation endpoints use GET only to validate and render a same-origin
-continuation form. The form POST carries a purpose-bound, short-lived signed continuation; Rails
-CSRF and Origin/Fetch Metadata checks are still required. Transaction finalization, cancellation,
-Preference sign-in application and authorization-code issuance occur on that POST. A continuation
-cannot outlive its parent transaction and expires within 60 seconds. A Preference write failure
-leaves authentication committed and withholds the authorization code.
+The current HTTP writer is `Visa::Org::Oauth::AuthorizationsController`, which uses the shared
+`OidcAuthorizationStart` concern. A valid Org authorization start creates a pending transaction and
+browser-bound admission binding, then returns `303` through Jump to the Auth Org sign-in sentry.
+Auth sentry/credential flows and Visa result and cancellation endpoints remain unavailable; the
+current route does not issue authorization codes or perform silent SSO.
+
+The historical Visa result and cancellation endpoints use GET only to validate and render a
+same-origin continuation form. The form POST carries a purpose-bound, short-lived signed
+continuation; Rails CSRF and Origin/Fetch Metadata checks are still required. Transaction
+finalization, cancellation, Preference sign-in application and authorization-code issuance occur on
+that POST. A continuation cannot outlive its parent transaction and expires within 60 seconds. A
+Preference write failure leaves authentication committed and withholds the authorization code.
 
 Implementation: `OidcAuthorizationTransactionable`. Storage:
 `operator_oidc_authorization_transactions` / `operator_oidc_authorization_transaction_statuses` /
@@ -1967,15 +1986,18 @@ Sources: `app/models/concerns/oidc_authorization_transactionable.rb`,
 Tests read: `test/models/concerns/oidc_authorization_transactionable_test.rb`,
 `test/services/oidc_authorization_transaction_service_test.rb`.
 
-| Transition ID                        | Mutation kind         | From                    | Event / Trigger               | To            | Guard                                                                                                                            | Side effect                                                             | Source file                                                                                                | Confidence |
-| ------------------------------------ | --------------------- | ----------------------- | ----------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------- |
-| idp-operator-oidc-authorization:T001 | DOCUMENTED_TRANSITION | pending                 | register_authentication!      | authenticated | pending; transaction/login-challenge DB clock deadlines; row lock                                                                | actor/method/authentication time                                        | app/models/concerns/oidc_authorization_transactionable.rb                                                  | CONFIRMED  |
-| idp-operator-oidc-authorization:T002 | DOCUMENTED_TRANSITION | authenticated           | prepare_result_delivery!      | authenticated | unexpired/unfinalized; digest                                                                                                    | generation +1; reset result_consumed_at; bounded TTL                    | app/models/concerns/oidc_authorization_transactionable.rb                                                  | CONFIRMED  |
-| idp-operator-oidc-authorization:T003 | DOCUMENTED_TRANSITION | authenticated           | consume!                      | consumed      | authenticated; unexpired; row lock                                                                                               | consumed_at                                                             | app/models/concerns/oidc_authorization_transactionable.rb                                                  | CONFIRMED  |
-| idp-operator-oidc-authorization:T004 | DOCUMENTED_TRANSITION | authenticated           | finalize_base! success        | consumed      | authenticated or previously finalized; matching generation; successful session reference                                         | browser_session_ref; result_consumed_at; base_finalized_at; consumed_at | app/models/concerns/oidc_authorization_transactionable.rb                                                  | CONFIRMED  |
-| idp-operator-oidc-authorization:T005 | DOCUMENTED_TRANSITION | consumed                | claim_authorization_grant!    | consumed      | finalized; unexpired; grant not redeemed                                                                                         | authorization_grant_redeemed_at                                         | app/models/concerns/oidc_authorization_transactionable.rb                                                  | CONFIRMED  |
-| idp-operator-oidc-authorization:T006 | DOCUMENTED_TRANSITION | pending / authenticated | prepare_cancellation_handoff! | same state    | Called only inside `issue_cancellation!`'s parent transaction; bound handoff is not separately committed                         | cancellation_handoff_ref; cancellation_handoff_ciphertext               | app/models/concerns/oidc_authorization_transactionable.rb                                                  | CONFIRMED  |
-| idp-operator-oidc-authorization:T007 | DOCUMENTED_TRANSITION | pending / authenticated | issue_cancellation! / cancel! | canceled (90) | unexpired; unfinalized; parent row lock; handoff and canceled status commit in one Ticket transaction; same digest is idempotent | status_id; canceled_at; cancellation_handoff_digest                     | app/services/base_auth_admission_coordinator.rb; app/models/concerns/oidc_authorization_transactionable.rb | CONFIRMED  |
+| Transition ID                         | Mutation kind         | From                    | Event / Trigger                                | To            | Guard                                                                                                                            | Side effect                                                             | Source file                                                                                                      | Confidence |
+| ------------------------------------- | --------------------- | ----------------------- | ---------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------- |
+| idp-operator-oidc-authorization:T000  | DOCUMENTED_TRANSITION | no row                  | validated Code-profile Visa GET/POST start     | pending       | Org client/redirect, response, scope, state, nonce and S256 PKCE valid; prompt is not `none`; no unsupported step-up request     | authorization transaction plus bound Auth admission; 303 through Jump   | app/controllers/concerns/oidc_authorization_start.rb; app/services/oidc_authorization_transaction_coordinator.rb | CONFIRMED  |
+| idp-operator-oidc-authorization:T000B | DOCUMENTED_REFUSAL    | no row                  | registered Base `response_type=id_token` start | no row        | Resolver accepts Base profile; front-channel issuance remains unavailable                                                        | HTTP 503 before transaction allocation                                  | app/controllers/concerns/oidc_authorization_start.rb                                                             | CONFIRMED  |
+| idp-operator-oidc-authorization:T000C | DOCUMENTED_REFUSAL    | no row                  | Base Code or non-Base `id_token` start         | no row        | Response type does not match the registered client profile                                                                       | `unsupported_response_type`; no transaction allocation                  | app/resolvers/oidc_authorize_request_resolver.rb                                                                 | CONFIRMED  |
+| idp-operator-oidc-authorization:T001  | DOCUMENTED_TRANSITION | pending                 | register_authentication!                       | authenticated | pending; transaction/login-challenge DB clock deadlines; row lock                                                                | actor/method/authentication time                                        | app/models/concerns/oidc_authorization_transactionable.rb                                                        | CONFIRMED  |
+| idp-operator-oidc-authorization:T002  | DOCUMENTED_TRANSITION | authenticated           | prepare_result_delivery!                       | authenticated | unexpired/unfinalized; digest                                                                                                    | generation +1; reset result_consumed_at; bounded TTL                    | app/models/concerns/oidc_authorization_transactionable.rb                                                        | CONFIRMED  |
+| idp-operator-oidc-authorization:T003  | DOCUMENTED_TRANSITION | authenticated           | consume!                                       | consumed      | authenticated; unexpired; row lock                                                                                               | consumed_at                                                             | app/models/concerns/oidc_authorization_transactionable.rb                                                        | CONFIRMED  |
+| idp-operator-oidc-authorization:T004  | DOCUMENTED_TRANSITION | authenticated           | finalize_base! success                         | consumed      | authenticated or previously finalized; matching generation; successful session reference                                         | browser_session_ref; result_consumed_at; base_finalized_at; consumed_at | app/models/concerns/oidc_authorization_transactionable.rb                                                        | CONFIRMED  |
+| idp-operator-oidc-authorization:T005  | DOCUMENTED_TRANSITION | consumed                | claim_authorization_grant!                     | consumed      | finalized; unexpired; grant not redeemed                                                                                         | authorization_grant_redeemed_at                                         | app/models/concerns/oidc_authorization_transactionable.rb                                                        | CONFIRMED  |
+| idp-operator-oidc-authorization:T006  | DOCUMENTED_TRANSITION | pending / authenticated | prepare_cancellation_handoff!                  | same state    | Called only inside `issue_cancellation!`'s parent transaction; bound handoff is not separately committed                         | cancellation_handoff_ref; cancellation_handoff_ciphertext               | app/models/concerns/oidc_authorization_transactionable.rb                                                        | CONFIRMED  |
+| idp-operator-oidc-authorization:T007  | DOCUMENTED_TRANSITION | pending / authenticated | issue_cancellation! / cancel!                  | canceled (90) | unexpired; unfinalized; parent row lock; handoff and canceled status commit in one Ticket transaction; same digest is idempotent | status_id; canceled_at; cancellation_handoff_digest                     | app/services/base_auth_admission_coordinator.rb; app/models/concerns/oidc_authorization_transactionable.rb       | CONFIRMED  |
 
 OIDC `state` is request CSRF correlation, not lifecycle status. Fixed status IDs are 10 pending, 20
 authenticated, 30 consumed and 90 canceled; the NOT NULL reference FK is the lifecycle authority.

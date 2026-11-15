@@ -7,14 +7,14 @@ class SignedSessionReferenceTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
   setup do
-    @user_device = ClientDeviceSession.create!(user_id: 9_700_001, principal_public_id: "historical-client")
-    staff_device = OperatorDeviceSession.create!(staff_id: 9_700_002, principal_public_id: "historical-operator")
+    @user_device = ClientDeviceSession.create!(subject_public_id: "historical-client")
+    staff_device = OperatorDeviceSession.create!(subject_public_id: "historical-operator")
     @user_token = ClientToken.create!(
-      user_id: 9_700_001, device_session: @user_device, authentication_epoch: 0,
+      subject_public_id: @user_device.subject_public_id, device_session: @user_device, authentication_epoch: 0,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
     @staff_token = OperatorToken.create!(
-      staff_id: 9_700_002, device_session: staff_device, authentication_epoch: 0,
+      subject_public_id: staff_device.subject_public_id, device_session: staff_device, authentication_epoch: 0,
       staff_token_kind_id: OperatorTokenKind::BROWSER_WEB,
     )
   end
@@ -39,7 +39,7 @@ class SignedSessionReferenceTest < ActiveSupport::TestCase
 
   test "find_from_signed_refs returns matching tokens for valid refs" do
     second_token = ClientToken.create!(
-      user_id: 9_700_001, device_session: @user_device, authentication_epoch: 0,
+      subject_public_id: @user_device.subject_public_id, device_session: @user_device, authentication_epoch: 0,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
 

@@ -40,6 +40,8 @@ class IdentityTotpCeremonyCandidateStore
     new.delete(ref)
   end
 
+  public
+
   def store!(surface:, actor_ref:, session_ref:, private_key:, title:, last_otp_at:, expires_at:)
     raise IdentityTotpCeremonyContract::Error, "TOTP candidate secret is required" if private_key.blank?
 
@@ -111,4 +113,5 @@ class IdentityTotpCeremonyCandidateStore
   def digest_for(private_key)
     OpenSSL::HMAC.hexdigest("SHA256", Rails.application.secret_key_base, private_key.to_s)
   end
+  public_class_method :store!, :fetch!, :consume!, :delete
 end

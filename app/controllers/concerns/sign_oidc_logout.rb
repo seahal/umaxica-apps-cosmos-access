@@ -6,25 +6,13 @@ module SignOidcLogout
 
   OIDC_LOGOUT_REQUEST_SESSION_KEY = :oidc_logout_request
   OIDC_LOGOUT_COMPLETED_SESSION_KEY = :oidc_logout_completed
+  OIDC_LOGOUT_PROTOCOL_PARAMETERS = %i(
+    id_token_hint logout_request client_id post_logout_redirect_uri state ui_locales
+  ).freeze
   OIDC_LOGOUT_REALMS = {
     "app" => { device: ClientDeviceSession, grant: OpAppGrant, resource_type: "client" },
     "org" => { device: OperatorDeviceSession, grant: OpOrgGrant, resource_type: "operator" },
   }.freeze
-
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    after_action :sign_out_notice_cache_headers!, only: %i(show create)
-  end
-
-  public
-
-  def show
-    handle_oidc_end_session_request
-  end
-
-  def create
-    handle_oidc_end_session_request
-  end
 
   private
 
@@ -76,7 +64,11 @@ module SignOidcLogout
 
     pending = oidc_logout_pending_request
     if pending
-      return render_oidc_end_session_forbidden unless pending.device_session_public_id == device.public_id
+      unless pending_oidc_logout_request_matches?(
+        pending, @oidc_end_session_request, device: device, grant: grant,
+      )
+        return render_oidc_end_session_forbidden
+      end
 
       return render_oidc_confirmation_page!
     end
@@ -277,6 +269,24 @@ module SignOidcLogout
     OidcLogoutPendingRequest.new(**payload.symbolize_keys)
   end
 
+  def pending_oidc_logout_request_matches?(pending, result, device:, grant:)
+    return false unless pending.device_session_public_id == device.public_id
+    return true if oidc_logout_confirmation_continuation?(result, grant)
+
+    pending.client_id == result.client_id &&
+      pending.grant_public_id == grant&.public_id &&
+      pending.post_logout_redirect_uri == result.post_logout_redirect_uri &&
+      pending.state == result.state &&
+      pending.ui_locales == result.ui_locales &&
+      pending.legacy_ri == result.legacy_ri
+  end
+
+  def oidc_logout_confirmation_continuation?(result, grant)
+    result.source == OidcEndSessionRequest::SOURCE_NO_HINT && grant.nil? &&
+      request.query_parameters.keys.all? { |key| %w(ri lx).include?(key) } &&
+      OIDC_LOGOUT_PROTOCOL_PARAMETERS.none? { |key| params[key].present? }
+  end
+
   def store_oidc_logout_request!(result, device:, grant:)
     session.delete(OIDC_LOGOUT_COMPLETED_SESSION_KEY)
     session[OIDC_LOGOUT_REQUEST_SESSION_KEY] = oidc_logout_request_payload(result, device: device, grant: grant)
@@ -312,18 +322,10 @@ module SignOidcLogout
       grant = grant_class.find_by(public_id: result.sid, oidc_client_id: result.client_id)
       return unless grant && grant.device_session_id == device.id
 
-      subject = "#{OidcSubject.prefix_for(realm.fetch(:resource_type))}_#{device.principal_public_id}"
+      subject = "#{OidcSubject.prefix_for(realm.fetch(:resource_type))}_#{device.subject_public_id}"
       return unless result.subject == subject
 
       grant
-    end
-  end
-
-  def sign_out_confirmation_form_path
-    case sign_surface_name
-    when "app" then visa_app_oidc_logout_confirmation_path(ri: params[:ri])
-    when "org" then visa_org_oidc_logout_confirmation_path(ri: params[:ri])
-    else raise ArgumentError, "unsupported Visa logout surface: #{sign_surface_name.inspect}"
     end
   end
 

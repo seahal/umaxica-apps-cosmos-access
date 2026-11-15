@@ -13,9 +13,9 @@ module Jit
 
         setup do
           @original_issuers = JitSecurityJwtRegistry.instance_variable_get(:@issuers)
-          @auth_key = OpenSSL::PKey::EC.generate("secp384r1")
-          @auth_legacy_key = OpenSSL::PKey::EC.generate("secp384r1")
-          @surface_key = OpenSSL::PKey::EC.generate("secp384r1")
+          @auth_key = OpenSSL::PKey::RSA.generate(3_072)
+          @auth_legacy_key = OpenSSL::PKey::RSA.generate(3_072)
+          @surface_key = OpenSSL::PKey::RSA.generate(3_072)
         end
 
         teardown do
@@ -117,8 +117,9 @@ module Jit
               assert_empty JitSecurityJwtRegistry::PRIVATE_JWK_FIELDS & jwk.keys
               assert_equal JitSecurityJwtRegistry::ALGORITHM, jwk.fetch("alg")
               assert_equal "sig", jwk.fetch("use")
-              assert_equal "EC", jwk.fetch("kty")
-              assert_equal JitSecurityJwtRegistry::CURVE, jwk.fetch("crv")
+              assert_equal "RSA", jwk.fetch("kty")
+              assert jwk.key?("n")
+              assert jwk.key?("e")
             end
           end
         end
@@ -132,7 +133,7 @@ module Jit
         end
 
         test "rejects current public jwk that does not match current private key" do
-          wrong_key = OpenSSL::PKey::EC.generate("secp384r1")
+          wrong_key = OpenSSL::PKey::RSA.generate(3_072)
           wrong_jwk = JitSecurityJwtRegistry.export_public_jwk(wrong_key, kid: "sign-app-kid")
 
           with_registry_inputs("JWT_AUTH_APP_PUBLIC_KEYSET" => JSON.generate([wrong_jwk])) do
@@ -174,7 +175,7 @@ module Jit
 
         test "rejects reserved environment kid markers outside local environments" do
           Rails.env.stub(:local?, false) do
-            with_registry_inputs("AUTH_JWT_ACTIVE_KID" => "development-auth-es384-a") do
+            with_registry_inputs("AUTH_JWT_ACTIVE_KID" => "development-auth-ps256-a") do
               error = assert_raises(JitSecurityJwtRegistry::ConfigurationError) { JitSecurityJwtRegistry.reload! }
 
               assert_match(/reserved environment markers/, error.message)
@@ -183,7 +184,7 @@ module Jit
         end
 
         test "allows reserved environment kid markers in local environments" do
-          with_registry_inputs("AUTH_JWT_ACTIVE_KID" => "development-auth-es384-a") do
+          with_registry_inputs("AUTH_JWT_ACTIVE_KID" => "development-auth-ps256-a") do
             assert_nothing_raised { JitSecurityJwtRegistry.reload! }
           end
         end
@@ -340,7 +341,7 @@ module Jit
 
         def registry_input_env(extra_env)
           legacy_jwk = JitSecurityJwtRegistry.export_public_jwk(
-            OpenSSL::PKey::EC.generate("secp384r1"),
+            OpenSSL::PKey::RSA.generate(3_072),
             kid: "legacy-kid",
           )
           env = {
@@ -421,7 +422,7 @@ module Jit
         end
 
         def base64_der(key)
-          Base64.strict_encode64(key.to_der)
+          Base64.strict_encode64(key.private_to_der)
         end
       end
     end

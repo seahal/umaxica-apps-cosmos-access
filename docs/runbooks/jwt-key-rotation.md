@@ -40,13 +40,12 @@ present in JWKS. Optional surface records with no active kid and no keys may rem
 {
   "keys": [
     {
-      "kty": "EC",
-      "crv": "P-384",
+      "kty": "RSA",
       "kid": "...",
-      "alg": "ES384",
+      "alg": "PS256",
       "use": "sig",
-      "x": "...",
-      "y": "..."
+      "n": "...",
+      "e": "AQAB"
     }
   ]
 }
@@ -117,18 +116,27 @@ JWT_<NAMESPACE>_PUBLIC_KEYSET
 JWT_<NAMESPACE>_REVOKED_KIDS
 ```
 
+The currently registered Access issuer namespaces are `AUTH_APP`, `AUTH_ORG`, `VISA_APP`, and
+`VISA_ORG`. Their private keys use the names above. Access's local RP assertion and signed-state
+keys use `OIDC_CLIENT_<NAMESPACE>_ACTIVE_KID` and `OIDC_CLIENT_<NAMESPACE>_PRIVATE_KEY`; those
+private values must also be RSA 3072-bit or larger PKCS#8. External RP assertion verification keys
+remain in the corresponding public keyset and must use PS256 with RSA moduli of at least 3072 bits.
+Access refuses ES384 and other algorithms for client assertions. Governance, Sphere and Press sign
+PS256; each RP owner is responsible for its own private key and published public JWKS.
+
 Production should source private material from the production secret backend. Rails credentials are
 acceptable for development and test. Only currently deployed Visa APP/ORG and Auth APP/ORG
 namespaces are in local rotation scope; external RP key material remains with each RP owner.
 
 ## Rotation Procedure
 
-1. Generate a P-384 ES384 key.
-2. Choose a globally unique `kid`.
+1. Generate an unencrypted RSA 3072-bit or larger private key in PKCS#8 format.
+2. Choose a globally unique `kid` identifying the PS256 key generation, for example
+   `visa-app-ps256-prod-2026-11-a`.
 3. Store the new private key in the secret backend.
 4. Publish the new public JWK as a grace key.
 5. Deploy and confirm boot validation passes.
-6. Switch `ACTIVE_KID` to the new `kid`.
+6. Switch the relevant `ACTIVE_KID` to the new `kid`.
 7. Deploy all signers.
 8. Confirm new tokens use the new `kid`.
 9. Keep old public keys until `max token TTL + leeway + CDN max stale`.

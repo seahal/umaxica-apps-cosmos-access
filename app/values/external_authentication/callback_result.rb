@@ -43,8 +43,11 @@ module ExternalAuthentication
       super
     end
 
+    public
+
     def verified? = status == :verified
 
     def failed? = status == :failed
+    public_class_method :verified, :failed
   end
 end

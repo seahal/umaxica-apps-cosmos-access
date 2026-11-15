@@ -10,6 +10,8 @@ class AuthenticationTokenService
   VALID_RESOURCE_TYPES = SecurityJwtAuthAccessTokenCodec::VALID_RESOURCE_TYPES
 
   class << self
+    public
+
     def encode(...)
       codec.encode(...)
     end

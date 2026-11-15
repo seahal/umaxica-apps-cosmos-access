@@ -5,7 +5,10 @@ require "timeout"
 
 class GovernanceRevocationReceiptConcurrencyTest < ActiveSupport::TestCase
   self.use_transactional_tests = false
-  self.fixture_table_names = []
+  self.fixture_table_names = %w(
+    client_token_binding_methods client_token_dbsc_statuses client_token_kinds client_token_statuses
+    operator_token_binding_methods operator_token_dbsc_statuses operator_token_kinds operator_token_statuses
+  )
 
   setup do
     @command_ids = []
@@ -34,8 +37,8 @@ class GovernanceRevocationReceiptConcurrencyTest < ActiveSupport::TestCase
 
   test "refresh waiting on a command's device lock cannot rotate after the authority stop commits" do
     [
-      ["app", "client", ClientDeviceSession, ClientToken, OpAppGrant, :user_id, :client_token_id, "core-app-jp"],
-      ["org", "operator", OperatorDeviceSession, OperatorToken, OpOrgGrant, :staff_id, :operator_token_id,
+      ["app", "client", ClientDeviceSession, ClientToken, OpAppGrant, :subject_public_id, :client_token_id, "core-app-jp"],
+      ["org", "operator", OperatorDeviceSession, OperatorToken, OpOrgGrant, :subject_public_id, :operator_token_id,
        "core-org-jp",],
     ].each do |realm, resource_type, device_class, root_class, grant_class, actor_key, root_key, client_id|
       kind_key, kind_id = {
@@ -45,9 +48,8 @@ class GovernanceRevocationReceiptConcurrencyTest < ActiveSupport::TestCase
       principal = PublicId.generate
       @principals << principal
       device_id = device_class.insert_all!(
-        [{ actor_key => 9_500_001,
-           :public_id => PublicId.generate,
-           :principal_public_id => principal,
+        [{ :public_id => PublicId.generate,
+           :subject_public_id => principal,
            :created_at => Time.current,
            :updated_at => Time.current, }],
       ).rows.first.first
@@ -65,6 +67,7 @@ class GovernanceRevocationReceiptConcurrencyTest < ActiveSupport::TestCase
       device_class.where(id: device_id).update_all(current_refresh_token_id: root_id)
       grant_id = grant_class.insert_all!(
         [{ root_key => root_id,
+           :subject_public_id => principal,
            :device_session_id => device_id,
            :public_id => PublicId.generate,
            :authentication_epoch => 0,
@@ -173,16 +176,16 @@ class GovernanceRevocationReceiptConcurrencyTest < ActiveSupport::TestCase
 
   test "browser root rotation and Governance stop serialize in either order on the stable device" do
     [
-      ["app", "client", ClientDeviceSession, ClientToken, OpAppGrant, :user_id, :client_token_id, "core-app-jp"],
-      ["org", "operator", OperatorDeviceSession, OperatorToken, OpOrgGrant, :staff_id, :operator_token_id,
+      ["app", "client", ClientDeviceSession, ClientToken, OpAppGrant, :subject_public_id, :client_token_id, "core-app-jp"],
+      ["org", "operator", OperatorDeviceSession, OperatorToken, OpOrgGrant, :subject_public_id, :operator_token_id,
        "core-org-jp",],
     ].each do |realm, resource_type, devices, roots, grants, actor_key, root_key, client_id|
       %i(rotation command).each do |first_action|
         principal = PublicId.generate
         @principals << principal
-        device = devices.create!(actor_key => 9_500_002, :principal_public_id => principal)
+        device = devices.create!(:subject_public_id => principal)
         root = roots.create!(
-          actor_key => 9_500_002, :device_session => device, :authentication_epoch => 0,
+          :subject_public_id => device.subject_public_id, :device_session => device, :authentication_epoch => 0,
           :discard_at => 2.days.from_now,
         )
         grant = grants.create!(
@@ -304,15 +307,15 @@ class GovernanceRevocationReceiptConcurrencyTest < ActiveSupport::TestCase
 
   test "browser refresh refuses a root reparented while it waits for its initially selected device" do
     [
-      ["client", ClientDeviceSession, ClientToken, :user_id],
-      ["operator", OperatorDeviceSession, OperatorToken, :staff_id],
+      ["client", ClientDeviceSession, ClientToken, :subject_public_id],
+      ["operator", OperatorDeviceSession, OperatorToken, :subject_public_id],
     ].each do |resource_type, devices, roots, actor_key|
       principal = PublicId.generate
       @principals << principal
-      original_device = devices.create!(actor_key => 9_500_003, :principal_public_id => principal)
-      replacement_device = devices.create!(actor_key => 9_500_003, :principal_public_id => principal)
+      original_device = devices.create!(:subject_public_id => principal)
+      replacement_device = devices.create!(:subject_public_id => principal)
       root = roots.create!(
-        actor_key => 9_500_003, :device_session => original_device, :authentication_epoch => 0,
+        :subject_public_id => original_device.subject_public_id, :device_session => original_device, :authentication_epoch => 0,
         :discard_at => 2.days.from_now,
       )
       refresh_token = root.rotate_refresh_token!

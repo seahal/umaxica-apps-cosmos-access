@@ -12,7 +12,6 @@ module JitSecurityJwtRegistry
   module_function
 
   ALGORITHM = JitSecurityJwtJwk::ALGORITHM
-  CURVE = JitSecurityJwtJwk::CURVE
   REQUIRED_JWK_FIELDS = JitSecurityJwtJwk::REQUIRED_PUBLIC_FIELDS
   PRIVATE_JWK_FIELDS = JitSecurityJwtJwk::PRIVATE_FIELDS
   SURFACE_NAMESPACES = %w(AUTH_APP AUTH_ORG VISA_APP VISA_ORG).freeze

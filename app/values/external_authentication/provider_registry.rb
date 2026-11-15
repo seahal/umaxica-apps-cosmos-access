@@ -126,5 +126,6 @@ module ExternalAuthentication
 
       value
     end
+    public_class_method :fetch, :providers, :tenant_id, :issuer_for, :audience
   end
 end

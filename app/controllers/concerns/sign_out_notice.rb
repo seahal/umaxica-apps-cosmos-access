@@ -2,17 +2,6 @@
 # frozen_string_literal: true
 
 module SignOutNotice
-  extend ActiveSupport::Concern
-
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    helper_method :sign_out_active_context_present?,
-                  :sign_out_confirmation_form_path,
-                  :sign_out_home_path,
-                  :sign_out_completed_description,
-                  :sign_out_post_path
-  end
-
   SIGN_OUT_NOTICE_SESSION_KEY = :sign_out_notice
   SIGN_OUT_NOTICE_TTL = 5.minutes
   SIGN_OUT_NOTICE_CACHE_CONTROL = "no-store, no-cache, must-revalidate, private"
@@ -22,7 +11,7 @@ module SignOutNotice
   private
 
   def prepare_sign_out_completion_notice!(state: nil)
-    @sign_out_actor_ref = current_session&.principal_public_id
+    @sign_out_actor_ref = current_session&.subject_public_id
     @sign_out_session_public_id = current_session_public_id
     @sign_out_state = state
   end
@@ -71,14 +60,6 @@ module SignOutNotice
     public_send("#{sign_out_route_helper_prefix}_sign_out_path", **sign_out_route_params, **options.compact)
   end
 
-  def sign_out_home_path(**options)
-    public_send("#{sign_out_route_helper_prefix}_root_path", **sign_out_route_params, **options.compact)
-  end
-
-  def sign_out_confirmation_form_path
-    sign_out_post_path
-  end
-
   def sign_out_notice_cache_headers!
     response.headers["Cache-Control"] = SIGN_OUT_NOTICE_CACHE_CONTROL
     response.headers["Pragma"] = "no-cache"
@@ -98,14 +79,6 @@ module SignOutNotice
     # costs a server round trip on Back, so the unknown outcome takes the signed-out side.
     session[:inertia_clear_history] = true
     render_oidc_rp_logout_indeterminate
-  end
-
-  # REQ-008: completion wording states the global result only. It never states an end time, and an
-  # origin whose own cleanup did not finish says so without calling the sign-out a failure.
-  def sign_out_completed_description
-    return t("sign.shared.sign_out.cleanup_incomplete_description") if @sign_out_cleanup_incomplete
-
-    t("sign.shared.sign_out.completed_description")
   end
 
   def parse_sign_out_notice_time(value)

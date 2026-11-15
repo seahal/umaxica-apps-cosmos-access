@@ -7,4 +7,5 @@ class DpopJtiReplayGuard
 
     DpopProofStateStore.for(resource_type).record_jti!(jti: jti, jkt: jkt, htm: htm, htu: htu)
   end
+  public_class_method :record!
 end

@@ -46,7 +46,7 @@ class ClientChronicleTest < ActiveSupport::TestCase
   self.fixture_table_names = %w(client_tokens client_device_sessions client_chronicle_events client_chronicle_levels)
 
   def setup
-    @subject_id = client_tokens(:one).user_id
+    @subject_id = 1001
     @audit_event = ClientChronicleEvent.find(ClientChronicleEvent::LOGIN_SUCCESS)
     @level = ClientChronicleLevel.find_or_create_by!(id: ClientChronicleLevel::INFO)
     @audit = ClientChronicle.create!(

@@ -8,6 +8,8 @@ class ApplicationForm
 
   # Form objects are not saved directly to the database.
   # Therefore, this method returns false by default.
+  public
+
   def persisted?
     false
   end

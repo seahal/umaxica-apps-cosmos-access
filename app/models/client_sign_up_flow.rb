@@ -58,8 +58,51 @@
 #
 class ClientSignUpFlow < OpBaseAppRecord
   include SignFlow
+
+  before_validation :generate_public_id, on: :create
+  before_validation :refresh_generated_public_id_after_collision, on: :create
+  before_validation :normalize_completed_requirements
+  before_validation :default_cleanup_status
+  before_validation :cap_expiry_at_admission_curfew, on: :create
+  before_validation :assign_default_status_id
+  before_validation :sync_legacy_state_from_status
+  before_create :generate_public_id
+  around_create :retry_public_id_collision
+  validate :public_id_immutable_after_create, on: :update
+
+  validates :public_id, presence: true, length: { is: PublicId::GENERATION_SIZE }, uniqueness: true
+  attribute :discard_at, :datetime, default: -> { Retainable::SENTINEL }
+  attribute :purge_eligible_at, :datetime, default: -> { Retainable::SENTINEL }
+
+  validates :discard_at, presence: true
+  validates :purge_eligible_at, presence: true
+  validate :retention_order_valid
+  validate :retention_times_not_before_created_at, on: :update
+
+  Retainable.registry << self unless Retainable.registry.include?(self)
+  attribute :issued_at, :datetime, default: -> { Time.current }
+  attribute :expires_at, :datetime, default: -> { default_ttl.from_now }
+
+  validates :nonce_digest, presence: true
+  validates :issued_at, :expires_at, presence: true
+  validate :expires_after_issued_at
+
+  scope :recent_first, -> { order(created_at: :desc) }
+  scope :current,
+        -> do
+          where(arel_table[:discard_at].gt(Time.current))
+            .where(arel_table[:expires_at].gt(Time.current))
+        end
   include FlowSignUp
+
   include SignUpFlowTicket
+
+  validates :entry_method, presence: true, inclusion: { in: ->(record) { record.class::ENTRY_METHODS } }
+  validates :pending_contact_type, inclusion: { in: SignUpFlowTicket::CONTACT_TYPES }, allow_nil: true
+  validates :completed_requirements, exclusion: { in: [nil] }
+  validate :completed_requirements_is_object
+  validate :return_to_is_safe_internal_path
+  validate :completed_requirements_exclude_secret_credential_material
 
   cycle_status_column :status_id
 
@@ -166,9 +209,6 @@ class ClientSignUpFlow < OpBaseAppRecord
   validates :social_provider, inclusion: { in: SOCIAL_ENTRY_METHODS }, allow_nil: true
   validates :result_digest, length: { maximum: 64 }, uniqueness: true, allow_nil: true
 
-  before_validation :assign_default_status_id
-  before_validation :sync_legacy_state_from_status
-
   def self.cleanup_status_class
     ClientSignUpFlowCleanupStatus
   end
@@ -196,4 +236,5 @@ class ClientSignUpFlow < OpBaseAppRecord
 
     super
   end
+  public_class_method :cleanup_status_class
 end

@@ -4,6 +4,8 @@
 class SecretCredentialCeremonyTransactionPurgeJob < ApplicationJob
   queue_as :retention
 
+  public
+
   def perform
     IdentitySecretCredentialCeremonyTransactionPurger.new.call
   end

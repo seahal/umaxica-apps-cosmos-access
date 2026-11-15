@@ -63,6 +63,8 @@ class SignUpRequirementRegistry
 
   delegate :surface, :entry_method, :requirements, :social?, to: :definition
 
+  public
+
   def requirement?(requirement)
     requirements.include?(requirement.to_sym)
   end
@@ -93,4 +95,5 @@ class SignUpRequirementRegistry
 
     requirement_state.is_a?(Hash) && requirement_state["cleared"] == true
   end
+  public_class_method :for_ticket, :for_entry, :surface_for_ticket
 end

@@ -17,24 +17,12 @@ module Security
     class MfaAccountRateLimitInvariantTest < ActiveSupport::TestCase
       self.fixture_table_names = []
 
-      # WU-30 removed the APP TOTP second factor; every sign-in second factor is now a Passkey,
-      # which is not guessable. A new guessable factor must bring back a per-account limit keyed on
-      # the pending MFA actor.
-      test "sign-in second-factor controllers are Passkey ceremonies only" do
+      # Auth ceremonies are unavailable until Governance lookup is connected.
+      test "no Auth sign-in challenge controller remains mounted" do
         controllers = Rails.root.glob("app/controllers/auth/*/sign/in/challenge/*_controller.rb")
           .map { |path| path.basename.to_s }.uniq
 
-        assert_equal ["passkeys_controller.rb"], controllers
-      end
-
-      test "the pending MFA session entry keeps no attempt counter that reads as a control" do
-        source = Rails.root.join("app/controllers/concerns/authentication_base.rb").read
-        set_pending_mfa = source[/def set_pending_mfa!.*?\n  end\n/m].to_s
-
-        assert_not_includes set_pending_mfa, '"attempts" => 0',
-                            "A session-scoped attempt counter bounds nothing (the attacker starts a new " \
-                            "session) and reads as protection in review. The per-account rate_limit rules " \
-                            "are the control."
+        assert_empty controllers
       end
     end
   end

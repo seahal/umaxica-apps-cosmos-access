@@ -48,7 +48,7 @@ class RpSessionRevoker < ApplicationService
       OpAuthorityStopCommitter::REALMS.fetch(OpAuthorityStopCommitter.realm_for_root(root))
         .then { |config| config.fetch(:grant).where(:revoked_at => nil, config.fetch(:root_key) => root.id).count }
     OpAuthorityStopCommitter.stop_root(
-      root:, cause:, principal_public_id: root.principal_public_id, authority_evidence_ref:,
+      root:, cause:, principal_public_id: root.subject_public_id, authority_evidence_ref:,
     )
     grant_count
   end
@@ -65,7 +65,7 @@ class RpSessionRevoker < ApplicationService
 
     root = grant.parent_token
     result = OpAuthorityStopCommitter.stop_grant(
-      grant:, cause:, principal_public_id: root&.principal_public_id.to_s, authority_evidence_ref:,
+      grant:, cause:, principal_public_id: root&.subject_public_id.to_s, authority_evidence_ref:,
     )
     (result.stopped? && !result.replayed?) ? 1 : 0
   end

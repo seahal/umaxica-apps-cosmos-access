@@ -106,6 +106,8 @@ en:
         source_manifest_digest: Source manifest digest
       operator:
         security_mode: Security mode
+      operator_chronicle:
+        sign_flow_halted_transaction_public_id: Sign-in flow reference
       operator_identity:
         source_record_id: Source record ID
       operator_step_up_session:
@@ -310,6 +312,7 @@ en:
     performant: Performance
     persona_id: Persona ID
     persona_public_id: Persona reference
+    pkce_challenge: PKCE challenge
     position: Position
     presented_at: Presented at
     principal_effect: Principal effect
@@ -350,6 +353,7 @@ en:
     storage_key: Storage reference
     subject: Subject reference
     subject_id: Subject
+    subject_public_id: Subject reference
     subject_type: Subject type
     target_operator: Target operator
     targetable: Targeting

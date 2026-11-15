@@ -14,12 +14,6 @@ class BranchCoverageBatch34MassReturnsTest < ActiveSupport::TestCase
     assert_kind_of String, JumpRtReturnPolicy.normalize_origin("https://www.umaxica.app")
   end
 
-  test "ExternalAuthenticationUnlinkUseCase requires user" do
-    assert_raises(SocialAuth::UnauthorizedError) do
-      ExternalAuthenticationUnlinkUseCase.call(provider: "google", user: nil)
-    end
-  end
-
   test "DbscRegistrationService record missing and blank jwk path" do
     result = DbscRegistrationService.new(record: nil, proof: "p").call
 
@@ -55,37 +49,11 @@ class BranchCoverageBatch34MassReturnsTest < ActiveSupport::TestCase
     assert_nil OidcLogoutRequest.verify("")
   end
 
-  test "SignUpStepGate blank and terminal cycle" do
-    controller = ApplicationController.new
-    controller.set_request!(ActionDispatch::TestRequest.create)
-    controller.set_response!(ActionDispatch::TestResponse.new)
-    missing_ticket = SignUpStepGate.new(
-      controller: controller, surface: :app, family: "email", step: :otp, mode: :show,
-    ).call
-    unsupported = SignUpStepGate.new(
-      controller: controller, surface: :app, family: "nope", step: :otp, mode: :show,
-    ).call
-
-    assert_equal :refused, missing_ticket.status
-    assert_equal :no_active_flow, missing_ticket.refusal
-    assert_equal :invalid, unsupported.status
-    assert_includes unsupported.errors, "unsupported sign-up route"
-  end
-
   test "OidcTokenRevoker digest and client mismatch" do
     result = OidcTokenRevoker.new(token: "t", client_id: "c", client_secret: "s").call
 
     assert_equal "invalid_client", result.error
     assert_not result.success?
-  end
-
-  test "EnforcementCaseEndOperation blank principal operator" do
-    error =
-      assert_raises(ArgumentError) do
-        EnforcementCaseEndOperation.call(enforcement_case: Object.new, reason: "not-a-reason")
-      end
-
-    assert_match(/reason must be one of/, error.message)
   end
 
   test "LocalEnvironment load fallbacks with missing UMAXICA_ENV_FILE" do

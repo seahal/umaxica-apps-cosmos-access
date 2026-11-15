@@ -12,6 +12,8 @@
 class VisitorOccurrenceStatus < OccurrenceRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   include OccurrenceStatus
 
   NOTHING = 0

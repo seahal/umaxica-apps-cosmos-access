@@ -23,6 +23,8 @@ module ExternalSignIn
     # Returns a proc compatible with JWT.decode's jwks: option.
     # Receives {kid_not_found: true} from the JWT gem when the signing key is absent
     # from the cached set; responds by invalidating and re-fetching once.
+    public
+
     def loader
       ->(options) {
         Rails.cache.delete(cache_key) if options[:kid_not_found] || options[:invalidate]

@@ -8,7 +8,7 @@ module Auth
     self.fixture_table_names = []
 
     test "Token class has JWT_ALGORITHM constant" do
-      assert_equal "ES384", AuthenticationToken::JWT_ALGORITHM
+      assert_equal "PS256", AuthenticationToken::JWT_ALGORITHM
     end
 
     test "Token.extract_subject returns nil for nil payload" do

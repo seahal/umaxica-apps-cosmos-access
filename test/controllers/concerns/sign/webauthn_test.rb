@@ -6,6 +6,16 @@ require "test_helper"
 module Sign
   class WebauthnTest < ActionDispatch::IntegrationTest
     class TestController < ApplicationController
+      class << self
+        public
+
+        def declared_webauthn_surface_key = @declared_webauthn_surface_key
+
+        def declared_webauthn_surface_key=(value)
+          @declared_webauthn_surface_key = value
+        end
+      end
+
       include PasskeyCeremonyContext
 
       webauthn_surface :app
@@ -44,6 +54,12 @@ module Sign
       assert_respond_to @controller, :webauthn_relying_party_config
       assert_not_includes @controller.private_methods, :webauthn_surface
       assert_not_includes @controller.private_methods, :webauthn_relying_party_config
+
+      config = Webauthn::RelyingPartyConfig.new(rp_id: "auth.example.test", origin: "https://auth.example.test")
+      Webauthn::RelyingPartyConfigResolver.stub(:resolve, config) do
+        assert_same config, @controller.webauthn_relying_party_config
+        assert_same config, @controller.webauthn_relying_party_config
+      end
     end
   end
 end

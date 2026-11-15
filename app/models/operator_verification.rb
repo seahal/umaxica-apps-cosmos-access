@@ -26,6 +26,16 @@
 #
 class OperatorVerification < OpBaseOrgRecord
   include Retainable
+
+  attribute :discard_at, :datetime, default: -> { Retainable::SENTINEL }
+  attribute :purge_eligible_at, :datetime, default: -> { Retainable::SENTINEL }
+
+  validates :discard_at, presence: true
+  validates :purge_eligible_at, presence: true
+  validate :retention_order_valid
+  validate :retention_times_not_before_created_at, on: :update
+
+  Retainable.registry << self unless Retainable.registry.include?(self)
   include RefreshTokenShared
   include VerificationCookieable
 
@@ -64,7 +74,10 @@ class OperatorVerification < OpBaseOrgRecord
     [verification, raw_token]
   end
 
+  public
+
   def active?
     discard_at.present? && discard_at > Time.current
   end
+  public_class_method :digest_token, :issue_for_token!
 end

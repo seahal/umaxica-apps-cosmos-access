@@ -7,8 +7,8 @@ class OpAuthorityStopDeliveryUniquenessTest < ActiveSupport::TestCase
 
   test "each realm keeps exactly one epoch cutoff per stop while allowing different stops" do
     [
-      ["app", client_tokens(:one).device_session.principal_public_id, OpAppAuthorityStopEpochCutoff],
-      ["org", operator_tokens(:one).device_session.principal_public_id, OpOrgAuthorityStopEpochCutoff],
+      ["app", client_tokens(:one).device_session.subject_public_id, OpAppAuthorityStopEpochCutoff],
+      ["org", operator_tokens(:one).device_session.subject_public_id, OpOrgAuthorityStopEpochCutoff],
     ].each do |realm, principal_public_id, model|
       stops =
         %w(first second).map do |event|
@@ -33,10 +33,12 @@ class OpAuthorityStopDeliveryUniquenessTest < ActiveSupport::TestCase
 
   test "delivery participants are unique by stop and grant on each realm" do
     [
-      ["app", client_tokens(:one).device_session.principal_public_id, client_tokens(:one), OpAppGrant, :client_token_id,
+      ["app", client_tokens(:one).device_session.subject_public_id, client_tokens(:one), OpAppGrant, :client_token_id,
        OpAppAuthorityStopParticipant, %w(core-app-jp warp-app-jp),],
-      ["org", operator_tokens(:one).device_session.principal_public_id, operator_tokens(:one), OpOrgGrant, :operator_token_id,
-       OpOrgAuthorityStopParticipant, %w(core-org-jp warp-org-jp),],
+      [
+        "org", operator_tokens(:one).device_session.subject_public_id, operator_tokens(:one), OpOrgGrant,
+        :operator_token_id, OpOrgAuthorityStopParticipant, %w(core-org-jp warp-org-jp),
+      ],
     ].each do |realm, principal_public_id, root, grant_model, parent_key, model, client_ids|
       grants =
         client_ids.map do |client_id|
@@ -73,10 +75,12 @@ class OpAuthorityStopDeliveryUniquenessTest < ActiveSupport::TestCase
 
   test "epoch and participant database uniqueness and required references survive bypassed validations" do
     [
-      ["app", client_tokens(:one).device_session.principal_public_id, client_tokens(:one), OpAppGrant, :client_token_id,
+      ["app", client_tokens(:one).device_session.subject_public_id, client_tokens(:one), OpAppGrant, :client_token_id,
        OpAppAuthorityStopEpochCutoff, OpAppAuthorityStopParticipant, "core-app-jp",],
-      ["org", operator_tokens(:one).device_session.principal_public_id, operator_tokens(:one), OpOrgGrant, :operator_token_id,
-       OpOrgAuthorityStopEpochCutoff, OpOrgAuthorityStopParticipant, "core-org-jp",],
+      [
+        "org", operator_tokens(:one).device_session.subject_public_id, operator_tokens(:one), OpOrgGrant,
+        :operator_token_id, OpOrgAuthorityStopEpochCutoff, OpOrgAuthorityStopParticipant, "core-org-jp",
+      ],
     ].each do |realm, principal_public_id, root, grant_model, parent_key, epoch_model, participant_model, client_id|
       grant_model.create!(**{ parent_key => root.id }, authentication_epoch: 0, oidc_client_id: client_id)
       stop = OpAuthorityStopCommitter.stop_principal(

@@ -14,6 +14,8 @@ class SignSecretVerify
     @now = now
   end
 
+  public
+
   def call
     return failure(:secret_credential_mismatch) if @secret_credential.blank?
     return failure(:secret_credential_mismatch) if @raw_secret_credential.blank?
@@ -153,4 +155,5 @@ class SignSecretVerify
   def secure_compare(left, right)
     ActiveSupport::SecurityUtils.secure_compare(left, right)
   end
+  public_class_method :call
 end

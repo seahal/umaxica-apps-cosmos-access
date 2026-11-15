@@ -100,4 +100,5 @@ class ApplicationRecord < ActiveRecord::Base
     end
   end
   private_class_method :pluck_fixed_ids
+  public_class_method :clear_fixed_id_seed_cache!, :insert_missing_fixed_ids!
 end

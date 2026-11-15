@@ -24,6 +24,12 @@ class SignFlowTest < ActiveSupport::TestCase
     assert_operator OperatorSignUpFlow, :<, OpBaseOrgRecord
   end
 
+  test "app sign-up ticket exposes the persisted checkpoint version" do
+    flow = ClientSignUpFlow.new(checkpoint_version: 7)
+
+    assert_equal 7, flow.checkpoint_version
+  end
+
   test "sign-in cycles accept expected protocol boundary states" do
     SIGN_IN_CLASSES.each do |cycle_class|
       states = cycle_class::STATE_MODEL.where(id: cycle_class::STATE_IDS).index_by(&:id)
@@ -40,6 +46,17 @@ class SignFlowTest < ActiveSupport::TestCase
 
       assert_equal "DASHBOARD_PENDING", cycle_class.state_name_for(cycle_class::STATE_MODEL::DASHBOARD_PENDING)
       assert_equal "RETURN_PENDING", cycle_class.state_name_for(cycle_class::STATE_MODEL::RETURN_PENDING)
+    end
+  end
+
+  test "sign-in state names and ids map consistently on the class and flow" do
+    SIGN_IN_CLASSES.each do |cycle_class|
+      expected_ids = [cycle_class::STATE_MODEL::DASHBOARD_PENDING, cycle_class::STATE_MODEL::RETURN_PENDING]
+      flow = build_cycle(cycle_class)
+
+      assert_equal expected_ids, cycle_class.state_ids_for("DASHBOARD_PENDING", "RETURN_PENDING")
+      assert_equal expected_ids, flow.state_ids_for("DASHBOARD_PENDING", "RETURN_PENDING")
+      assert_equal "DASHBOARD_PENDING", flow.state_name_for(expected_ids.first)
     end
   end
 
@@ -69,6 +86,38 @@ class SignFlowTest < ActiveSupport::TestCase
     end
   end
 
+  test "sign-in state predicates match each persisted app and org state" do
+    predicates = {
+      "PRIMARY_PENDING" => :sign_in_primary_pending?,
+      "MFA_PENDING" => :sign_in_mfa_pending?,
+      "GUARDRAIL_PENDING" => :sign_in_guardrail_pending?,
+      "SESSION_ISSUANCE_PENDING" => :sign_in_session_issuance_pending?,
+      "CHECKPOINT_PENDING" => :sign_in_checkpoint_pending?,
+      "SELECTOR_PENDING" => :sign_in_selector_pending?,
+      "COMPLETED" => :sign_in_completed?,
+      "FAILED" => :sign_in_failed?,
+      "EXPIRED" => :sign_in_expired?,
+      "CANCELLED" => :sign_in_cancelled?,
+      "HALTED" => :sign_in_halted?,
+    }
+
+    SIGN_IN_CLASSES.each do |cycle_class|
+      predicates.each_key do |state_name|
+        flow = cycle_class.create!(
+          cycle_attrs(cycle_class).merge(
+            state_id: cycle_class.state_id_for(state_name),
+            completed_at: (Time.current if state_name == "COMPLETED"),
+          ),
+        )
+
+        predicates.each do |candidate_state, candidate_predicate|
+          assert_equal state_name == candidate_state, flow.public_send(candidate_predicate),
+                       "#{cycle_class.name} #{state_name} #{candidate_predicate}"
+        end
+      end
+    end
+  end
+
   test "sign-in cycle defaults expose the configured ttl and expiry window" do
     # WU-06: a Flow lives at least as long as its Admission's 30-minute curfew.
     assert_equal 30.minutes, ClientSignInFlow.default_ttl
@@ -84,6 +133,24 @@ class SignFlowTest < ActiveSupport::TestCase
 
       assert_not cycle.valid?, cycle_class.name
       assert_not_empty cycle.errors[:status_id]
+    end
+  end
+
+  test "sign-up status lookups and transitions share the persisted status vocabulary" do
+    SIGN_UP_CLASSES.each do |flow_class|
+      started = flow_class::STATUS_MODEL::STARTED
+      contact_pending = flow_class::STATUS_MODEL::CONTACT_PENDING
+      flow = flow_class.new(status_id: started)
+
+      assert_equal [started, contact_pending], flow_class.status_ids_for("STARTED", "CONTACT_PENDING")
+      assert_equal [started, contact_pending], flow.status_ids_for("STARTED", "CONTACT_PENDING")
+      assert_equal "STARTED", flow.status_name_for(started)
+      assert(flow.can_transition_to?(contact_pending))
+      assert(flow.can_transition_to?("CONTACT_PENDING"))
+
+      flow.status_id = flow_class::STATUS_MODEL::COMPLETED
+
+      assert_not(flow.can_transition_to?(started))
     end
   end
 
@@ -206,6 +273,46 @@ class SignFlowTest < ActiveSupport::TestCase
     assert_not registry.requirement?(:social_signup)
   end
 
+  test "sign-up requirements advance in declared order and build only owned contexts" do
+    registry = SignUpRequirementRegistry.for_entry(surface: :app, entry_method: "telephone")
+    completed = {}
+
+    assert_equal "telephone", registry.entry_method
+    assert_equal %i(otp passkey birthdate), registry.requirements
+    assert_equal :otp, registry.next_requirement(completed)
+    assert_not registry.prior_requirements_cleared?(completed, :passkey)
+
+    completed["otp"] = { "cleared" => true }
+
+    assert registry.prior_requirements_cleared?(completed, :passkey)
+    assert_equal :passkey, registry.next_requirement(completed)
+
+    completed["passkey"] = { "cleared" => true }
+
+    assert_equal :birthdate, registry.next_requirement(completed)
+    assert_empty registry.prior_requirements(:unsupported)
+
+    ticket = ClientSignUpFlow.create!(cycle_attrs(ClientSignUpFlow))
+    context = SignUpRequirementContext.build(
+      surface: :app,
+      actor_authentication: Actor::Authentication::NULL,
+      ticket:,
+      requirement: :birthdate,
+    )
+
+    assert_equal :app, context.surface
+    assert_equal :birthdate, context.requirement
+    assert_equal ticket, context.ticket
+    assert_raises(ArgumentError) do
+      SignUpRequirementContext.build(
+        surface: :app,
+        actor_authentication: Actor::Authentication::NULL,
+        ticket:,
+        requirement: :passkey,
+      )
+    end
+  end
+
   test "sign-up cycles require requirement state to be an object" do
     cycle = build_cycle(ClientSignUpFlow, completed_requirements: ["birthdate"])
 
@@ -311,8 +418,36 @@ class SignFlowTest < ActiveSupport::TestCase
     SIGN_IN_CLASSES.each do |cycle_class|
       cycle = cycle_class.create!(cycle_attrs(cycle_class))
 
-      assert_raises(GovernanceLookupUnavailableError, cycle_class.name) { cycle.advance_sign_in_to_mfa! }
-      assert_equal cycle_class::STATE_IDS.first, cycle.reload.state_id, cycle_class.name
+      %i(
+        advance_sign_in_to_mfa!
+        advance_sign_in_to_guardrail!
+        advance_sign_in_to_checkpoint!
+        advance_sign_in_to_selector!
+        advance_sign_in_to_session_issuance!
+        complete_sign_in!
+      ).each do |transition|
+        assert_raises(GovernanceLookupUnavailableError, "#{cycle_class.name} #{transition}") do
+          cycle.public_send(transition)
+        end
+        assert_equal cycle_class::STATE_IDS.first, cycle.reload.state_id, "#{cycle_class.name} #{transition}"
+      end
+    end
+  end
+
+  test "sign-in expiry and halt transitions persist their owned terminal states" do
+    SIGN_IN_CLASSES.each do |cycle_class|
+      now = cycle_class.database_now
+      expired = cycle_class.create!(
+        cycle_attrs(cycle_class).merge(issued_at: now - 2.minutes, expires_at: now - 1.minute),
+      )
+      expired.expire_sign_in!
+
+      assert_predicate expired, :sign_in_expired?, cycle_class.name
+
+      halted = cycle_class.create!(cycle_attrs(cycle_class))
+      halted.halt_sign_in!
+
+      assert_predicate halted, :sign_in_halted?, cycle_class.name
     end
   end
 
@@ -381,13 +516,8 @@ class SignFlowTest < ActiveSupport::TestCase
         )
 
         model.stub(:database_now, now) do
-          if microseconds.positive?
-            assert_raises(GovernanceLookupUnavailableError) { flow.advance_sign_in_to_mfa! }
-            assert_equal model::STATE_MODEL::PRIMARY_PENDING, flow.reload.state_id
-          else
-            assert_raises(GovernanceLookupUnavailableError) { flow.advance_sign_in_to_mfa! }
-            assert_equal model::STATE_MODEL::PRIMARY_PENDING, flow.reload.state_id
-          end
+          assert_raises(GovernanceLookupUnavailableError) { flow.advance_sign_in_to_mfa! }
+          assert_equal model::STATE_MODEL::PRIMARY_PENDING, flow.reload.state_id
         end
       end
     end
@@ -440,7 +570,9 @@ class SignFlowTest < ActiveSupport::TestCase
 
       original_status = flow.status_id
 
-      assert_raises(GovernanceLookupUnavailableError) { model.transaction(requires_new: true) { flow.complete_sign_up! } }
+      assert_raises(GovernanceLookupUnavailableError) do
+        model.transaction(requires_new: true) { flow.complete_sign_up! }
+      end
       assert_equal original_status, flow.reload.status_id
     end
   end
@@ -458,6 +590,36 @@ class SignFlowTest < ActiveSupport::TestCase
 
     assert_raises(GovernanceLookupUnavailableError) { cycle.advance_sign_up_to_contact! }
     assert_equal ClientSignUpFlowStatus::STARTED, cycle.reload.status_id
+  end
+
+  test "sign-up cycles can be halted while Governance sign-up issuance remains unavailable" do
+    SIGN_UP_CLASSES.each do |cycle_class|
+      cycle = cycle_class.create!(cycle_attrs(cycle_class))
+
+      cycle.halt_sign_up!
+
+      assert_predicate cycle, :sign_up_halted?, cycle_class.name
+      assert_equal cycle_class::STATUS_MODEL::HALTED, cycle.reload.status_id, cycle_class.name
+    end
+  end
+
+  test "active-cycle guard returns live cycles and persists expiry before refusing expired cycles" do
+    SIGN_IN_CLASSES.each do |cycle_class|
+      active = cycle_class.create!(cycle_attrs(cycle_class))
+
+      assert_same active, active.require_active_cycle!
+
+      now = cycle_class.database_now
+      expired = cycle_class.create!(
+        cycle_attrs(cycle_class).merge(issued_at: now - 2.minutes, expires_at: now - 1.minute),
+      )
+
+      expiry = expired.require_active_cycle!
+
+      assert_instance_of FlowTransitionResult, expiry, cycle_class.name
+      assert_predicate expiry, :expired?, cycle_class.name
+      assert_predicate expired.reload, :sign_in_expired?, cycle_class.name
+    end
   end
 
   test "expired reflects expires_at and discard_at boundaries" do
@@ -480,11 +642,11 @@ class SignFlowTest < ActiveSupport::TestCase
     token = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
 
     cycle = ClientSignInFlow.create!(
-      cycle_attrs(ClientSignInFlow).merge(principal_id: token.user_id, token: token),
+      cycle_attrs(ClientSignInFlow).merge(principal_id: token.subject_public_id, token: token),
     )
 
     assert_equal token, cycle.token
-    assert_equal token.user_id, cycle.principal_id
+    assert_equal token.subject_public_id, cycle.principal_id
   end
 
   test "named sign-in transitions derive the step from the status" do
@@ -492,6 +654,52 @@ class SignFlowTest < ActiveSupport::TestCase
 
     assert_raises(GovernanceLookupUnavailableError) { cycle.advance_sign_in_to_mfa! }
     assert_equal ClientSignInFlow.state_id_for("PRIMARY_PENDING"), cycle.reload.state_id
+  end
+
+  test "blocked sign-in participants return their public decision without advancing the cycle" do
+    ClientSignInFlowState.ensure_defaults!
+    blocker = SignInParticipantItem.new(key: :identity_unavailable, blocking: true, cleared: false)
+    checkpoint_flow = ClientSignInFlow.create!(
+      cycle_attrs(ClientSignInFlow).merge(state_id: ClientSignInFlow.state_id_for("CHECKPOINT_PENDING")),
+    )
+    checkpoint_before = checkpoint_flow.reload.attributes
+    checkpoint = SignInCheckpointParticipant.new(
+      cycle: checkpoint_flow,
+      actor: nil,
+      evaluators: [->(**) { blocker }],
+    )
+
+    checkpoint_result = checkpoint.evaluate
+
+    assert_equal :checkpoint, checkpoint_result.participant
+    assert_predicate checkpoint_result, :blocking?
+    assert_equal "SELECTOR_PENDING", checkpoint_result.next_status
+    checkpoint_advance_result = checkpoint.advance_if_clear!
+
+    assert_predicate checkpoint_advance_result, :blocking?
+    assert_equal checkpoint_result.stack, checkpoint_advance_result.stack
+    assert_equal checkpoint_before, checkpoint_flow.reload.attributes
+
+    guardrail_flow = ClientSignInFlow.create!(
+      cycle_attrs(ClientSignInFlow).merge(state_id: ClientSignInFlow.state_id_for("GUARDRAIL_PENDING")),
+    )
+    guardrail_before = guardrail_flow.reload.attributes
+    guardrail = SignInGuardrailParticipant.new(
+      cycle: guardrail_flow,
+      actor: nil,
+      evaluators: [->(**) { blocker }],
+    )
+
+    guardrail_result = guardrail.evaluate
+
+    assert_equal :guardrail, guardrail_result.participant
+    assert_predicate guardrail_result, :blocking?
+    assert_equal "CHECKPOINT_PENDING", guardrail_result.next_status
+    guardrail_advance_result = guardrail.advance_if_clear!
+
+    assert_predicate guardrail_advance_result, :blocking?
+    assert_equal guardrail_result.stack, guardrail_advance_result.stack
+    assert_equal guardrail_before, guardrail_flow.reload.attributes
   end
 
   private

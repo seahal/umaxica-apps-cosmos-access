@@ -14,6 +14,7 @@ module Visa
           AUTHENTICATION_MODE = :open
           REALM = "app"
 
+          prepend_before_action :enforce_fqdn_availability!
           prepend_before_action :apply_default_no_store
           rate_limit(
             to: 20, within: 1.minute, by: -> { request.remote_ip },

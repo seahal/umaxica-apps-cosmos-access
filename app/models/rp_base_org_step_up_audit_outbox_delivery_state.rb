@@ -5,6 +5,8 @@ class RpBaseOrgStepUpAuditOutboxDeliveryState < RpBaseOrgRecord
 
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   PENDING = 10
   DELIVERED = 20
   DEFAULTS = [PENDING, DELIVERED].freeze

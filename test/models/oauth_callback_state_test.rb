@@ -30,6 +30,17 @@ class OauthCallbackStateTest < ActiveSupport::TestCase
     assert_not SocialAuthCallbackStateStore.consume!(state: "state-three", provider: "google_#{"com"}")
   end
 
+  test "callback state lookup identifies issued APP state for stale-cookie protection" do
+    assert_not SocialAuthCallbackStateStore.issued?(state: "", provider: "google")
+    assert_not SocialAuthCallbackStateStore.issued?(state: "state-four", provider: "google_org")
+
+    SocialAuthCallbackStateStore.issue!(state: "state-four", provider: "google", intent: "login")
+
+    assert SocialAuthCallbackStateStore.issued?(state: "state-four", provider: "google")
+    assert SocialAuthCallbackStateStore.consume!(state: "state-four", provider: "google")
+    assert SocialAuthCallbackStateStore.issued?(state: "state-four", provider: "google")
+  end
+
   test "issue recovers from a race-condition uniqueness violation" do
     ClientOauthCallbackState.issue!(state: "race-state", provider: "google_app", intent: "login")
     existing = ClientOauthCallbackState.find_by!(state_digest: ClientOauthCallbackState.digest_state("race-state"))

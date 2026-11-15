@@ -110,7 +110,7 @@ class AuthRefreshTokenIssuer
     roots = @token_class.where(device_session_id: device.id).order(:id).lock.to_a
     roots.each do |root|
       OpAuthorityStopCommitter.stop_root(
-        root: root, cause: "risk", principal_public_id: device.principal_public_id,
+        root: root, cause: "risk", principal_public_id: device.subject_public_id,
         authority_evidence_ref: "browser_refresh_reuse:#{token.public_id}",
       )
       raise OpAuthorityStopCommitter::Refused, "browser replay stop did not revoke its root" unless root.reload.revoked?
@@ -118,9 +118,9 @@ class AuthRefreshTokenIssuer
     device.revoke!(reason: "refresh_token_reuse")
     case token
     when ClientToken
-      SignRiskEmitter.emit("refresh_reuse_detected", user_id: token.user_id, user_token_id: token.public_id)
+      SignRiskEmitter.emit("refresh_reuse_detected", user_id: token.subject_public_id, user_token_id: token.public_id)
     when OperatorToken
-      SignRiskEmitter.emit("refresh_reuse_detected", staff_id: token.staff_id, user_token_id: token.public_id)
+      SignRiskEmitter.emit("refresh_reuse_detected", staff_id: token.subject_public_id, user_token_id: token.public_id)
     else
       raise ArgumentError, "unsupported browser replay root"
     end
@@ -131,4 +131,5 @@ class AuthRefreshTokenIssuer
   def failure(reason, token: nil)
     Result.new(success: false, token: token, refresh_token: nil, previous_token: nil, reason: reason, response: nil)
   end
+  public_class_method :call
 end

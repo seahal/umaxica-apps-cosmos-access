@@ -35,14 +35,6 @@ class UnsupportedInputRefusalsTest < ActiveSupport::TestCase
     Rails.application.config.x.turnstile.verifier = configured
   end
 
-  test "quota policies refuse a principal from another surface" do
-    account_policy = Acme::AccountQuotaPolicy.new(surface: :app, principal: Operator.new(security_mode_id: SecurityModeConfigurable::ADVANCED))
-    organization_policy = Acme::OrganizationQuotaPolicy.new(surface: :org, principal: Client.new(security_mode_id: SecurityModeConfigurable::NORMAL))
-
-    assert_raises(ArgumentError) { account_policy.current_count }
-    assert_raises(ArgumentError) { organization_policy.current_count }
-  end
-
   # A decision has to carry when it was observed, because staleness is what
   # decides whether it may still be trusted.
   test "an availability decision without an observation time is refused" do
@@ -66,18 +58,5 @@ class UnsupportedInputRefusalsTest < ActiveSupport::TestCase
       end
 
     assert_match(/signup required result cannot contain an account/, error.message)
-  end
-
-  # Linking from a social callback is only ever done from a principal something already verified;
-  # anything else is refused at construction. Sign-up finalizes in Auth (SocialAuthSignupFinalizer).
-  test "linking requires an already-verified principal" do
-    error =
-      assert_raises(ArgumentError) do
-        ExternalAuthenticationLinkUseCase.new(
-          principal: "not-verified", credential_candidate: nil, user: nil, ceremony_started_at: Time.current,
-        )
-      end
-
-    assert_match(/verified principal is required/, error.message)
   end
 end

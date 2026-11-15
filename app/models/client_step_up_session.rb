@@ -29,6 +29,16 @@
 #
 class ClientStepUpSession < OpBaseAppRecord
   include Retainable
+
+  attribute :discard_at, :datetime, default: -> { Retainable::SENTINEL }
+  attribute :purge_eligible_at, :datetime, default: -> { Retainable::SENTINEL }
+
+  validates :discard_at, presence: true
+  validates :purge_eligible_at, presence: true
+  validate :retention_order_valid
+  validate :retention_times_not_before_created_at, on: :update
+
+  Retainable.registry << self unless Retainable.registry.include?(self)
   include StepUpSessionConsumable
   include StepUpEmailChallenge
 
@@ -51,6 +61,8 @@ class ClientStepUpSession < OpBaseAppRecord
   scope :for_user_token, ->(user_token) { where(user_token_id: user_token.id) }
   scope :recent_first, -> { order(created_at: :desc) }
   scope :pending, -> { where(status: "PENDING") }
+
+  public
 
   def expired?
     discard_at <= Time.current

@@ -151,9 +151,9 @@ class OperatorStepUpSessionTest < ActiveSupport::TestCase
   private
 
   def create_operator_token(staff_id: @staff_id)
-    device = OperatorDeviceSession.create!(staff_id: staff_id, principal_public_id: "operator-#{staff_id}")
+    device = OperatorDeviceSession.create!(subject_public_id: "operator-#{staff_id}")
     OperatorToken.create!(
-      authentication_epoch: 0, staff_id: staff_id, device_session: device,
+      authentication_epoch: 0, subject_public_id: device.subject_public_id, device_session: device,
       staff_token_status_id: OperatorTokenStatus::ACTIVE,
     )
   end

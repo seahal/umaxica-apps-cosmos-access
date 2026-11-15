@@ -14,6 +14,8 @@
 module Session
   extend ActiveSupport::Concern
 
+  public
+
   def reset_flash
     nil
   end

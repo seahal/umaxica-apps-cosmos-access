@@ -11,9 +11,9 @@ class StepUpTransactionReferenceUniquenessTest < ActiveSupport::TestCase
 
   CELLS.each do |device_class, root_class, owner_key, session_class, session_token_key, transaction_class|
     test "#{session_class.name} keeps nullable transaction references and raw unique enforcement" do
-      device = device_class.create!(owner_key => 9_700_001, :principal_public_id => "historical-subject")
-      first_root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
-      second_root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
+      device = device_class.create!(:subject_public_id => "historical-subject")
+      first_root = root_class.create!(:subject_public_id => device.subject_public_id, :authentication_epoch => 0, :device_session => device)
+      second_root = root_class.create!(:subject_public_id => device.subject_public_id, :authentication_epoch => 0, :device_session => device)
       metadata = { scope: "settings_birthdate",
                    return_to: "/identity/birthdate",
                    status: "PENDING",
@@ -37,9 +37,9 @@ class StepUpTransactionReferenceUniquenessTest < ActiveSupport::TestCase
       first.save!
 
       assert_equal reference, first.reload.step_up_ceremony_transaction_ref
-      other_device = device_class.create!(owner_key => 9_700_002, :principal_public_id => "other-historical-subject")
+      other_device = device_class.create!(:subject_public_id => "other-historical-subject")
       third_root = root_class.create!(
-        owner_key => 9_700_002, :authentication_epoch => 0,
+        :subject_public_id => other_device.subject_public_id, :authentication_epoch => 0,
         :device_session => other_device,
       )
       third_transaction = transaction_class.create_transaction!(
@@ -69,9 +69,9 @@ class StepUpTransactionReferenceUniquenessTest < ActiveSupport::TestCase
     end
 
     test "#{session_class.name} refuses a duplicate transaction reference on creation" do
-      device = device_class.create!(owner_key => 9_700_001, :principal_public_id => "historical-subject")
-      first_root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
-      second_root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
+      device = device_class.create!(:subject_public_id => "historical-subject")
+      first_root = root_class.create!(:subject_public_id => device.subject_public_id, :authentication_epoch => 0, :device_session => device)
+      second_root = root_class.create!(:subject_public_id => device.subject_public_id, :authentication_epoch => 0, :device_session => device)
       transaction = transaction_class.create_transaction!(
         actor_ref: "historical-subject", session_ref: first_root.public_id, required_scope: "settings_birthdate",
         required_aal: "none", allowed_methods: ["passkey"], return_to: "/identity/birthdate",
@@ -90,9 +90,9 @@ class StepUpTransactionReferenceUniquenessTest < ActiveSupport::TestCase
     end
 
     test "#{session_class.name} validates transaction reference changes on reused persisted rows" do
-      device = device_class.create!(owner_key => 9_700_001, :principal_public_id => "historical-subject")
-      first_root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
-      second_root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
+      device = device_class.create!(:subject_public_id => "historical-subject")
+      first_root = root_class.create!(:subject_public_id => device.subject_public_id, :authentication_epoch => 0, :device_session => device)
+      second_root = root_class.create!(:subject_public_id => device.subject_public_id, :authentication_epoch => 0, :device_session => device)
       transaction = transaction_class.create_transaction!(
         actor_ref: "historical-subject", session_ref: first_root.public_id, required_scope: "settings_birthdate",
         required_aal: "none", allowed_methods: ["passkey"], return_to: "/identity/birthdate",

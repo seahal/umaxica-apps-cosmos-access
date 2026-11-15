@@ -6,7 +6,7 @@ class OpBrowserSessionResolverTest < ActiveSupport::TestCase
   self.fixture_table_names = %w(client_tokens operator_tokens client_device_sessions operator_device_sessions)
 
   test "signed existing browser credentials resolve real OP roots without actor models" do
-    [["client", ClientToken, :user_id], ["operator", OperatorToken, :staff_id]].each do |type, model, actor_key|
+    [["client", ClientToken, :subject_public_id], ["operator", OperatorToken, :subject_public_id]].each do |type, model, actor_key|
       root = model.includes(:device_session).find(ActiveRecord::FixtureSet.identify(:one))
       root.update!(authentication_context: "normal") if type == "operator"
       issuer_id = OidcIssuer.jwt_issuer_id_for_resource_type(type)
@@ -43,7 +43,7 @@ class OpBrowserSessionResolverTest < ActiveSupport::TestCase
   test "an expired access credential can reduce authority through logout but cannot authenticate an API" do
     root = ClientToken.includes(:device_session).find(ActiveRecord::FixtureSet.identify(:one))
     payload = AuthorizationTokenClaims.build(
-      resource: nil, subject: root.user_id.to_s, resource_type: "client",
+      resource: nil, subject: root.subject_public_id.to_s, resource_type: "client",
       issued_at: 5.minutes.ago, access_token_ttl: 60.seconds,
       session_public_id: root.device_session.public_id,
       oidc_jti: root.oidc_jti,

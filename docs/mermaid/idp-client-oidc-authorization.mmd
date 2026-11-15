@@ -5,7 +5,7 @@ stateDiagram-v2
     state "authenticated (status_id 20)" as authenticated
     state "consumed (status_id 30)" as consumed
     state "canceled (status_id 90)" as canceled
-    [*] --> pending
+    [*] --> pending: validated Visa authorization start / issue Auth handoff
     pending --> authenticated: register_authentication!
     authenticated --> authenticated: prepare_result_delivery!
     authenticated --> consumed: consume!
@@ -17,6 +17,11 @@ stateDiagram-v2
     canceled --> [*]
     consumed --> [*]
     note right of pending
+        Visa App currently exposes the validated Code-profile authorization start and pending handoff.
+        The registered Base id_token request passes resolver validation but receives an explicit
+        503 before transaction allocation; Base Code and id_token for other clients are refused.
+        Auth sentry and credential ceremonies still return 503; result, cancellation, switching,
+        silent SSO and front-channel ID Token issuance are not reachable through current routes.
         Auth proof returns through opaque result to Base finalization.
         Visa result GET validates and displays a same-origin POST continuation only;
         authenticated finalization and code issuance occur on that protected POST.

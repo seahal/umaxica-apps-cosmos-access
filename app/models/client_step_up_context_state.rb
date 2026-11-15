@@ -3,6 +3,8 @@
 class ClientStepUpContextState < OpBaseAppRecord
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   PENDING = 10
   COMMITTED = 20
   CANCELLED = 90

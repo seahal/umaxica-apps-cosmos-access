@@ -25,8 +25,8 @@ class AuthRefreshTokenIssuerTest < ActiveSupport::TestCase
   test "rotation increments generation counter" do
     token = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ),
       discard_at: 1.day.from_now,
       purge_eligible_at: 2.days.from_now,
@@ -47,8 +47,8 @@ class AuthRefreshTokenIssuerTest < ActiveSupport::TestCase
   test "rotation preserves device_session and advances current refresh token pointer" do
     token = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ),
       discard_at: 1.day.from_now,
       purge_eligible_at: 2.days.from_now,
@@ -69,8 +69,8 @@ class AuthRefreshTokenIssuerTest < ActiveSupport::TestCase
     jkt = "dpop-jkt-#{SecureRandom.hex(8)}"
     token = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ),
       discard_at: 1.day.from_now,
       purge_eligible_at: 2.days.from_now,
@@ -86,8 +86,8 @@ class AuthRefreshTokenIssuerTest < ActiveSupport::TestCase
 
   test "reuse detection revokes all actor tokens" do
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      authentication_epoch: 0, subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ), discard_at: 1.day.from_now,
       purge_eligible_at: 2.days.from_now,
     )
@@ -133,8 +133,8 @@ class AuthRefreshTokenIssuerTest < ActiveSupport::TestCase
 
   test "reuse detection revokes the token family while the request is readonly" do
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      authentication_epoch: 0, subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ), discard_at: 1.day.from_now,
       purge_eligible_at: 2.days.from_now,
     )
@@ -156,8 +156,8 @@ class AuthRefreshTokenIssuerTest < ActiveSupport::TestCase
   test "revoked tokens stay invalid without marking compromise" do
     token = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ),
       discard_at: 1.day.from_now,
       purge_eligible_at: 2.days.from_now,
@@ -176,8 +176,8 @@ class AuthRefreshTokenIssuerTest < ActiveSupport::TestCase
 
   test "invalid verifier for known public id does not revoke actor tokens" do
     token = ClientToken.create!(
-      authentication_epoch: 0, user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      authentication_epoch: 0, subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ), discard_at: 1.day.from_now,
       purge_eligible_at: 2.days.from_now,
     )
@@ -198,8 +198,8 @@ class AuthRefreshTokenIssuerTest < ActiveSupport::TestCase
     database_time = ClientToken.database_now
     token = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ),
       discard_at: database_time + 5.minutes,
       purge_eligible_at: database_time + 1.day,
@@ -227,8 +227,8 @@ class AuthRefreshTokenIssuerTest < ActiveSupport::TestCase
 
     token = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ),
       discard_at: 1.day.from_now,
       purge_eligible_at: 2.days.from_now,
@@ -250,8 +250,8 @@ class AuthRefreshTokenIssuerTest < ActiveSupport::TestCase
     # even when using SELECT ... FOR UPDATE
     token = ClientToken.create!(
       authentication_epoch: 0,
-      user_id: 1001, device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: "refresh-principal",
+      subject_public_id: "refresh-principal", device_session: ClientDeviceSession.create!(
+        subject_public_id: "refresh-principal",
       ),
       discard_at: 1.day.from_now,
       purge_eligible_at: 2.days.from_now,

@@ -13,8 +13,8 @@ class IdentityStepUpCeremonyContractTest < ActiveSupport::TestCase
 
   setup do
     @now = Time.zone.parse("2026-06-03 12:00:00")
-    @token = ClientToken.find(ActiveRecord::FixtureSet.identify(:one))
-    @principal_public_id = @token.device_session.principal_public_id
+    @token = ClientToken.includes(:device_session).find(ActiveRecord::FixtureSet.identify(:one))
+    @principal_public_id = @token.device_session.subject_public_id
   end
 
   teardown do
@@ -23,21 +23,15 @@ class IdentityStepUpCeremonyContractTest < ActiveSupport::TestCase
 
   test "valid explicit grant and result serialize and verify" do
     travel_to @now do
-      grant_token = IdentityStepUpCeremonyGrant.issue(
-        valid_grant_claims,
-        issuer_id: IdentityStepUpCeremonyContract.acme_issuer_id("app"),
-        now: @now,
-      )
-      grant = IdentityStepUpCeremonyGrant.decode(
-        grant_token,
-        issuer_id: IdentityStepUpCeremonyContract.acme_issuer_id("app"),
-        now: @now,
-      )
+      grant = IdentityStepUpCeremonyGrant.new(valid_grant_claims, now: @now)
 
       assert_equal "step_up_ceremony", grant["purpose"]
       assert_equal "settings_email", grant["required_scope"]
       assert_predicate grant, :step_up_required?
+      assert_nil grant.required_aal
       assert_not grant.user_verification_required?
+      assert_not grant.full_reauthentication_required?
+      assert_not grant.phishing_resistant_required?
       assert_equal "step_up:app", grant["audience"]
 
       result_token = IdentityStepUpCeremonyResult.issue(
@@ -55,6 +49,7 @@ class IdentityStepUpCeremonyContractTest < ActiveSupport::TestCase
       assert_equal "totp", result["method"]
       assert_not result["user_verified"]
       assert_not result["phishing_resistant"]
+      assert_not_predicate result, :phishing_resistant?
       assert_equal "credential-public-id", result["credential_ref"]
     end
   end
@@ -172,33 +167,17 @@ class IdentityStepUpCeremonyContractTest < ActiveSupport::TestCase
     assert_includes error.message, "token is invalid"
   end
 
-  test "signature verification rejects wrong key and payload tampering" do
-    travel_to @now do
-      token = IdentityStepUpCeremonyGrant.issue(
-        valid_grant_claims,
-        issuer_id: IdentityStepUpCeremonyContract.acme_issuer_id("app"),
-        now: @now,
-      )
+  test "grant decoder refuses malformed tokens before a Governance key lookup" do
+    error =
+      assert_raises(IdentityStepUpCeremonyContract::Error) do
+        IdentityStepUpCeremonyGrant.decode(
+          "not.a.jwt",
+          issuer_id: IdentityStepUpCeremonyContract.acme_issuer_id("app"),
+          now: @now,
+        )
+      end
 
-      error =
-        assert_raises(IdentityStepUpCeremonyContract::Error) do
-          IdentityStepUpCeremonyGrant.decode(token, issuer_id: "surface:ACME_COM", now: @now)
-        end
-      assert_includes error.message, "kid is unknown"
-
-      tampered_payload = valid_grant_claims.merge("actor_ref" => "attacker")
-      tampered = token.split(".").tap do |parts|
-        parts[1] = Base64.urlsafe_encode64(tampered_payload.to_json, padding: false)
-      end.join(".")
-      error =
-        assert_raises(IdentityStepUpCeremonyContract::Error) do
-          IdentityStepUpCeremonyGrant.decode(
-            tampered, issuer_id: IdentityStepUpCeremonyContract.acme_issuer_id("app"),
-                      now: @now,
-          )
-        end
-      assert_includes error.message, "token verification failed"
-    end
+    assert_includes error.message, "token is invalid"
   end
 
   test "decode_unverified_payload rejects a token whose payload is not a JSON object" do

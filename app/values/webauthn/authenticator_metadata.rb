@@ -35,5 +35,6 @@ module Webauthn
         metadata_source: resolution&.source,
       }
     end
+    public_class_method :permit, :attributes_from
   end
 end

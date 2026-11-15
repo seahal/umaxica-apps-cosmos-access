@@ -10,9 +10,9 @@ class SignInTokenUniquenessTest < ActiveSupport::TestCase
 
   CELLS.each do |device_class, root_class, owner_key, flow_class|
     test "#{flow_class.name} preserves nil parents raw uniqueness and unchanged-key query budget" do
-      device = device_class.create!(owner_key => 9_700_001, :principal_public_id => "historical-subject")
-      first_root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
-      second_root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
+      device = device_class.create!(:subject_public_id => "historical-subject")
+      first_root = root_class.create!(:subject_public_id => device.subject_public_id, :authentication_epoch => 0, :device_session => device)
+      second_root = root_class.create!(:subject_public_id => device.subject_public_id, :authentication_epoch => 0, :device_session => device)
       now = flow_class.database_now
       metadata = { principal_id: 9_700_001,
                    state_id: flow_class.state_id_for("SESSION_ISSUANCE_PENDING"),
@@ -56,8 +56,8 @@ class SignInTokenUniquenessTest < ActiveSupport::TestCase
     end
 
     test "#{flow_class.name} refuses duplicate roots before a new flow is persisted" do
-      device = device_class.create!(owner_key => 9_700_001, :principal_public_id => "historical-subject")
-      root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
+      device = device_class.create!(:subject_public_id => "historical-subject")
+      root = root_class.create!(:subject_public_id => device.subject_public_id, :authentication_epoch => 0, :device_session => device)
       now = flow_class.database_now
       metadata = { principal_id: 9_700_001,
                    state_id: flow_class.state_id_for("SESSION_ISSUANCE_PENDING"),
@@ -74,9 +74,9 @@ class SignInTokenUniquenessTest < ActiveSupport::TestCase
     end
 
     test "#{flow_class.name} validates token attachment to a reused flow" do
-      device = device_class.create!(owner_key => 9_700_001, :principal_public_id => "historical-subject")
-      first_root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
-      second_root = root_class.create!(owner_key => 9_700_001, :authentication_epoch => 0, :device_session => device)
+      device = device_class.create!(:subject_public_id => "historical-subject")
+      first_root = root_class.create!(:subject_public_id => device.subject_public_id, :authentication_epoch => 0, :device_session => device)
+      second_root = root_class.create!(:subject_public_id => device.subject_public_id, :authentication_epoch => 0, :device_session => device)
       now = flow_class.database_now
       metadata = { principal_id: 9_700_001,
                    state_id: flow_class.state_id_for("SESSION_ISSUANCE_PENDING"),

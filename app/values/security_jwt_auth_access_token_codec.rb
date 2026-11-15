@@ -15,6 +15,8 @@ class SecurityJwtAuthAccessTokenCodec
   DEFAULT_JWT_ISSUER_ID = "auth"
 
   class << self
+    public
+
     def encode(resource, host:, resource_type:, dpop_jkt: nil, expires_at: nil,
                session_public_id: nil, session_id: nil, base_session_public_id: nil,
                oidc_sid: nil, oidc_jti: nil, scopes: nil, acr: nil,
@@ -22,7 +24,7 @@ class SecurityJwtAuthAccessTokenCodec
                jwt_issuer_id: nil, issuer: nil, audiences: nil,
                subject: nil, auth_time: nil, step_up_until: nil, client_id: nil,
                authentication_context: nil)
-      return nil unless valid_encode_params?(resource_type, subject, host)
+      return nil unless valid_encode_params?(resource, resource_type, subject, host)
 
       oidc_jti ||= oidc_jti_for_session(resource_type, session_public_id)
 
@@ -206,10 +208,12 @@ class SecurityJwtAuthAccessTokenCodec
 
     private
 
-    def valid_encode_params?(resource_type, subject, host)
+    def valid_encode_params?(resource, resource_type, subject, host)
       return false if host.blank? || VALID_RESOURCE_TYPES.exclude?(resource_type.to_s)
 
-      subject.is_a?(String) && subject.present?
+      return subject.is_a?(String) && subject.present? unless subject.nil?
+
+      resource&.id.present?
     end
 
     def oidc_jti_for_session(resource_type, session_public_id)

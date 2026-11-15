@@ -31,6 +31,17 @@ describe("TextField", () => {
     expect(screen.getByLabelText("Address").tagName).toBe("INPUT");
   });
 
+  it("forwards a supplied placeholder to the labelled input", () => {
+    render(
+      <TextField
+        label="Address"
+        placeholder="name@example.test"
+      />,
+    );
+
+    expect(screen.getByLabelText("Address").getAttribute("placeholder")).toBe("name@example.test");
+  });
+
   it("renders a textarea when asked, still labelled", () => {
     render(
       <TextField

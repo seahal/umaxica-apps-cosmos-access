@@ -7,8 +7,8 @@ class StepUpEvidenceStateContractTest < ActiveSupport::TestCase
 
   test "PostgreSQL enforces token boolean state and reference invariants through bulk updates" do
     [
-      [ClientToken, ClientStepUpEvidenceState, :user_id],
-      [OperatorToken, OperatorStepUpEvidenceState, :staff_id],
+      [ClientToken, ClientStepUpEvidenceState, :subject_public_id],
+      [OperatorToken, OperatorStepUpEvidenceState, :subject_public_id],
     ].each do |model, catalog, owner_key|
       historical = model.find(ActiveRecord::FixtureSet.identify(:one))
       token = model.create!(
@@ -124,8 +124,8 @@ class StepUpEvidenceStateContractTest < ActiveSupport::TestCase
 
   test "token evidence revocation clears its explicit state while retaining root authority" do
     [
-      [ClientToken, :user_id],
-      [OperatorToken, :staff_id],
+      [ClientToken, :subject_public_id],
+      [OperatorToken, :subject_public_id],
     ].each do |model, owner_key|
       historical = model.find(ActiveRecord::FixtureSet.identify(:one))
       token = model.create!(

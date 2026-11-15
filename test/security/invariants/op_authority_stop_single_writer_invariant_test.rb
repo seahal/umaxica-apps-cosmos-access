@@ -20,9 +20,14 @@ class OpAuthorityStopSingleWriterInvariantTest < ActiveSupport::TestCase
     %r{\Aapp/controllers/concerns/withdrawal_ceremony_authentication\.rb:\s*ceremony\.revoke!\z},
     %r{\Aapp/operations/op_identity_event_invalidator\.rb:.*device_session_record&\.revoke!\(reason:},
     %r{\Aapp/controllers/concerns/authentication_logout_current_session\.rb:\s*device_session&\.revoke!\(reason:},
-    %r{\Aapp/controllers/concerns/authentication_logout_current_session\.rb:\s*SignRiskEnforcer\.revoke!\(actor\)},
+    %r{\Aapp/operations/auth_refresh_token_issuer\.rb:\s*device\.revoke!\(reason: "refresh_token_reuse"\)\z},
+    %r{
+      \Aapp/operations/governance_revocation_command\.rb:
+      \s*devices\.each\s*\{\s*\|device\|\s*device\.revoke!
+      \(reason:\s*"governance_revocation",
+    }x,
+    %r{\Aapp/services/sign_risk_enforcer\.rb:.*devices\.each \{ \|device\| device\.revoke!\(reason: "sign_risk"\) \}},
     %r{\Aapp/operations/client_secret_revocation_committer\.rb:\s*revoke!\(actor_context,},
-    %r{\Aapp/services/sign_risk_enforcer\.rb:\s*revoke!\(resource\)},
     %r{\Aapp/operations/org_iam_owner_mutation\.rb:\s*current\.revoke!\(by: locked_actor, reason_code:\)},
   ].freeze
 

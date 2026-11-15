@@ -105,7 +105,7 @@ class GovernanceRevocationCommand
   def lock_targets!
     case command.scope
     when "all_sessions"
-      devices = config.fetch(:device).where(principal_public_id: command.principal_public_id).order(:id).lock.to_a
+      devices = config.fetch(:device).where(subject_public_id: command.principal_public_id).order(:id).lock.to_a
       roots = config.fetch(:root).where(device_session_id: devices.map(&:id)).order(:id).lock.to_a
       [devices, roots]
     when "session"
@@ -114,7 +114,7 @@ class GovernanceRevocationCommand
 
       device = config.fetch(:device).lock.find(candidate.device_session_id)
       raise Forbidden, "requested session does not belong to the command subject" unless
-        device.principal_public_id == command.principal_public_id
+        device.subject_public_id == command.principal_public_id
 
       # A device is the stable parent of its grants. Ending one root ends the authority of that
       # device, so lock every root of the device before the existing stop primitive takes grants.

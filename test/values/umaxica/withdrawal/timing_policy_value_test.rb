@@ -57,6 +57,19 @@ class UmaxicaWithdrawalTimingPolicyValueTest < ActiveSupport::TestCase
     assert_equal 31.days.to_i, policy.retention_period_seconds
   end
 
+  test "current resolves the active Rails environment through the same validation contract" do
+    expected = Umaxica::Withdrawal::TimingPolicyValue.validate_environment!(
+      environment: Rails.env.to_s,
+      environment_variables: ENV,
+    )
+
+    current = Umaxica::Withdrawal::TimingPolicyValue.current
+
+    assert_equal expected.recovery_delay_seconds, current.recovery_delay_seconds
+    assert_equal expected.early_termination_delay_seconds, current.early_termination_delay_seconds
+    assert_equal expected.retention_period_seconds, current.retention_period_seconds
+  end
+
   test "rejects an override that becomes invalid after standard completion" do
     assert_raises(ArgumentError) do
       Umaxica::Withdrawal::TimingPolicyValue.validate_environment!(

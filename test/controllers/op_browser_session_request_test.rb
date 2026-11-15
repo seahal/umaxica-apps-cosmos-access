@@ -115,7 +115,7 @@ class OpBrowserSessionRequestTest < ActionDispatch::IntegrationTest
     now = ClientToken.database_now
     host! ENV.fetch("PRIVATE_VISA_SERVICE_URL")
     payload = AuthorizationTokenClaims.build(
-      resource: nil, subject: root.user_id.to_s, resource_type: "client",
+      resource: nil, subject: root.subject_public_id.to_s, resource_type: "client",
       issued_at: now, access_token_ttl: 60.seconds,
       session_public_id: root.device_session.public_id, oidc_jti: root.oidc_jti,
       authentication_context: "normal",
@@ -172,7 +172,7 @@ class OpBrowserSessionRequestTest < ActionDispatch::IntegrationTest
     root.update!(dbsc_challenge: "stopped-registration", dbsc_challenge_issued_at: Time.current)
     secret = root.rotate_refresh_token!
     OpAuthorityStopCommitter.stop_root(
-      root: root, cause: "risk", principal_public_id: root.principal_public_id,
+      root: root, cause: "risk", principal_public_id: root.subject_public_id,
       authority_evidence_ref: "dbsc-registration-stop-test",
     )
     before = root.reload.attributes

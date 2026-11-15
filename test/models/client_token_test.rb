@@ -84,13 +84,12 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   def setup
     @device = ClientDeviceSession.create!(
-      user_id: 1_000_000_000_000 + SecureRandom.random_number(1_000_000_000),
-      principal_public_id: PublicId.generate,
+      subject_public_id: PublicId.generate,
       public_id: PublicId.generate,
       status_id: DeviceSessionable::STATUS_ACTIVE,
     )
     @token = ClientToken.create!(
-      authentication_epoch: 0, device_session: @device, user_id: @device.user_id,
+      authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
   end
@@ -107,7 +106,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "device session owns the token while the Governance actor is a scalar reference" do
     assert_nil ClientToken.reflect_on_association(:user)
-    assert_equal @device.user_id, @token.user_id
+    assert_equal @device.subject_public_id, @token.subject_public_id
     assert_equal @device.id, @token.device_session_id
   end
 
@@ -144,7 +143,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "can be created with a device session and matching owner reference" do
     assert_not_nil @token
-    assert_equal @device.user_id, @token.user_id
+    assert_equal @device.subject_public_id, @token.subject_public_id
   end
 
   test "token cannot bind a device session belonging to another Client" do
@@ -158,17 +157,17 @@ class ClientTokenTest < ActiveSupport::TestCase
         end
       end
 
-    assert_equal "fk_client_tokens_on_user_id_and_device_session_id",
+    assert_equal "fk_client_tokens_on_subject_and_device_session",
                  error.cause.result.error_field(PG::Result::PG_DIAG_CONSTRAINT_NAME)
     assert_equal original_device_id, @token.reload.device_session_id
   end
 
   test "device session rejects a current token owned by another session" do
     other_device = ClientDeviceSession.create!(
-      user_id: @device.user_id, principal_public_id: @device.principal_public_id,
+      subject_public_id: @device.subject_public_id,
       public_id: PublicId.generate, status_id: DeviceSessionable::STATUS_ACTIVE,
     )
-    other_token = ClientToken.create!(authentication_epoch: 0, device_session: other_device, user_id: @device.user_id)
+    other_token = ClientToken.create!(authentication_epoch: 0, device_session: other_device, subject_public_id: @device.subject_public_id)
     session = @token.device_session
 
     error =
@@ -197,7 +196,7 @@ class ClientTokenTest < ActiveSupport::TestCase
         end
       end
     assert_equal "23503", error.cause.result.error_field(PG::Result::PG_DIAG_SQLSTATE)
-    assert_includes %w(fk_client_tokens_on_device_session_id fk_client_tokens_on_user_id_and_device_session_id),
+    assert_includes %w(fk_client_tokens_on_device_session_id fk_client_tokens_on_subject_and_device_session),
                     error.cause.result.error_field(PG::Result::PG_DIAG_CONSTRAINT_NAME)
 
     assert_raises(ActiveRecord::NotNullViolation) do
@@ -219,7 +218,7 @@ class ClientTokenTest < ActiveSupport::TestCase
         end
       end
     assert_equal "23503", error.cause.result.error_field(PG::Result::PG_DIAG_SQLSTATE)
-    assert_equal "fk_client_tokens_on_user_id_and_device_session_id",
+    assert_equal "fk_client_tokens_on_subject_and_device_session",
                  error.cause.result.error_field(PG::Result::PG_DIAG_CONSTRAINT_NAME)
   end
 
@@ -245,7 +244,7 @@ class ClientTokenTest < ActiveSupport::TestCase
         end
       end
     assert_equal "23001", error.cause.result.error_field(PG::Result::PG_DIAG_SQLSTATE)
-    assert_includes %w(fk_client_tokens_on_device_session_id fk_client_tokens_on_user_id_and_device_session_id),
+    assert_includes %w(fk_client_tokens_on_device_session_id fk_client_tokens_on_subject_and_device_session),
                     error.cause.result.error_field(PG::Result::PG_DIAG_CONSTRAINT_NAME)
 
     assert ClientDeviceSession.exists?(session.id)
@@ -269,30 +268,30 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "device association preserves the scalar owner reference" do
     assert_equal @device, @token.device_session
-    assert_equal @device.user_id, @token.device_session.user_id
+    assert_equal @device.subject_public_id, @token.device_session.subject_public_id
   end
 
   test "can load one fixture" do
     token_one = ClientToken.find_by!(public_id: "651xxxxxxxxxxxxxxxxxx")
 
     assert_not_nil token_one
-    assert_not_nil token_one.user_id
+    assert_not_nil token_one.subject_public_id
   end
 
   test "can load two fixture" do
     token_two = ClientToken.find_by!(public_id: "615xxxxxxxxxxxxxxxxxx")
 
     assert_not_nil token_two
-    assert_not_nil token_two.user_id
+    assert_not_nil token_two.subject_public_id
   end
 
   test "timestamp is set on creation" do
     device = ClientDeviceSession.create!(
-      user_id: @device.user_id + 1, principal_public_id: PublicId.generate,
+      subject_public_id: PublicId.generate,
       public_id: PublicId.generate, status_id: DeviceSessionable::STATUS_ACTIVE,
     )
     token = ClientToken.create!(
-      authentication_epoch: 0, device_session: device, user_id: device.user_id,
+      authentication_epoch: 0, device_session: device, subject_public_id: device.subject_public_id,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
 
@@ -312,7 +311,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "enforces maximum concurrent sessions per user" do
     device = ClientDeviceSession.create!(
-      user_id: @device.user_id + 1, principal_public_id: PublicId.generate,
+      subject_public_id: PublicId.generate,
       public_id: PublicId.generate, status_id: DeviceSessionable::STATUS_ACTIVE,
     )
     token_status = ClientTokenStatus.find(ClientTokenStatus::ACTIVE)
@@ -323,7 +322,7 @@ class ClientTokenTest < ActiveSupport::TestCase
     ClientToken::MAX_TOTAL_SESSIONS_PER_USER.times do
       ClientToken.create!(
         authentication_epoch: 0,
-        device_session: device, user_id: device.user_id,
+        device_session: device, subject_public_id: device.subject_public_id,
         user_token_status: token_status,
         user_token_kind: token_kind,
         user_token_binding_method: binding_method,
@@ -333,7 +332,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
     extra_token = ClientToken.new(
       authentication_epoch: 0,
-      device_session: device, user_id: device.user_id,
+      device_session: device, subject_public_id: device.subject_public_id,
       user_token_status: token_status,
       user_token_kind: token_kind,
       user_token_binding_method: binding_method,
@@ -347,7 +346,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "enforces maximum concurrent sessions per user ignores expired revoked discarded and rotated rows" do
     device = ClientDeviceSession.create!(
-      user_id: @device.user_id + 1, principal_public_id: PublicId.generate,
+      subject_public_id: PublicId.generate,
       public_id: PublicId.generate, status_id: DeviceSessionable::STATUS_ACTIVE,
     )
     token_kind = ClientTokenKind.find(ClientTokenKind::BROWSER_WEB)
@@ -359,7 +358,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
     base_attrs = {
       device_session: device,
-      user_id: device.user_id,
+      subject_public_id: device.subject_public_id,
       user_token_kind: token_kind,
       user_token_binding_method: binding_method,
       user_token_dbsc_status: dbsc_status,
@@ -387,14 +386,14 @@ class ClientTokenTest < ActiveSupport::TestCase
     extra_token = ClientToken.new(base_attrs.merge(authentication_epoch: 0, user_token_status: active_status))
 
     assert_predicate extra_token, :valid?
-    assert_difference -> { ClientToken.where(user_id: device.user_id).count }, 1 do
+    assert_difference -> { ClientToken.where(subject_public_id: device.subject_public_id).count }, 1 do
       extra_token.save!
     end
   end
 
   test "refresh token digest updates and authenticates" do
     @token.destroy
-    token = ClientToken.create!(authentication_epoch: 0, device_session: @device, user_id: @device.user_id)
+    token = ClientToken.create!(authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id)
 
     token.refresh_token = "verifier-value"
     token.save!
@@ -406,7 +405,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "active state reflects revoked and expired refresh tokens" do
     freeze_time do
-      token = ClientToken.create!(authentication_epoch: 0, device_session: @device, user_id: @device.user_id)
+      token = ClientToken.create!(authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id)
 
       assert_predicate token, :active?
 
@@ -424,7 +423,7 @@ class ClientTokenTest < ActiveSupport::TestCase
   end
 
   test "revoke! marks token expired and revoked" do
-    token = ClientToken.create!(authentication_epoch: 0, device_session: @device, user_id: @device.user_id)
+    token = ClientToken.create!(authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id)
 
     token.revoke!
 
@@ -435,7 +434,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "rotate_refresh_token! updates digest and timestamps" do
     @token.destroy
-    token = ClientToken.create!(authentication_epoch: 0, device_session: @device, user_id: @device.user_id)
+    token = ClientToken.create!(authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id)
     old_digest = token.refresh_token_digest
 
     new_token = token.rotate_refresh_token!
@@ -447,7 +446,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "rotate_refresh_token! generates token that authenticates" do
     @token.destroy
-    token = ClientToken.create!(authentication_epoch: 0, device_session: @device, user_id: @device.user_id)
+    token = ClientToken.create!(authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id)
     raw = token.rotate_refresh_token!
 
     public_id, verifier = ClientToken.parse_refresh_token(raw)
@@ -461,7 +460,7 @@ class ClientTokenTest < ActiveSupport::TestCase
     freeze_time do
       token = ClientToken.create!(
         authentication_epoch: 0,
-        device_session: @device, user_id: @device.user_id,
+        device_session: @device, subject_public_id: @device.subject_public_id,
         user_token_kind_id: ClientTokenKind::BROWSER_WEB,
         discard_at: 3.hours.from_now,
         purge_eligible_at: 4.days.from_now,
@@ -484,7 +483,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "parse_refresh_token splits public_id and verifier" do
     @token.destroy
-    token = ClientToken.create!(authentication_epoch: 0, device_session: @device, user_id: @device.user_id)
+    token = ClientToken.create!(authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id)
     raw = token.rotate_refresh_token!
 
     public_id, verifier = ClientToken.parse_refresh_token(raw)
@@ -499,10 +498,10 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "oidc identifiers are generated separately from token public id" do
     device = ClientDeviceSession.create!(
-      user_id: @device.user_id + 1, principal_public_id: PublicId.generate,
+      subject_public_id: PublicId.generate,
       public_id: PublicId.generate, status_id: DeviceSessionable::STATUS_ACTIVE,
     )
-    token = ClientToken.create!(authentication_epoch: 0, device_session: device, user_id: device.user_id)
+    token = ClientToken.create!(authentication_epoch: 0, device_session: device, subject_public_id: device.subject_public_id)
 
     assert_predicate token.oidc_sid, :present?
     assert_predicate token.oidc_jti, :present?
@@ -512,11 +511,11 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "public_id is generated and unique" do
     device = ClientDeviceSession.create!(
-      user_id: @device.user_id + 1, principal_public_id: PublicId.generate,
+      subject_public_id: PublicId.generate,
       public_id: PublicId.generate, status_id: DeviceSessionable::STATUS_ACTIVE,
     )
-    token1 = ClientToken.create!(authentication_epoch: 0, device_session: device, user_id: device.user_id)
-    token2 = ClientToken.create!(authentication_epoch: 0, device_session: device, user_id: device.user_id)
+    token1 = ClientToken.create!(authentication_epoch: 0, device_session: device, subject_public_id: device.subject_public_id)
+    token2 = ClientToken.create!(authentication_epoch: 0, device_session: device, subject_public_id: device.subject_public_id)
 
     assert_not_equal token1.public_id, token2.public_id
   end
@@ -540,7 +539,7 @@ class ClientTokenTest < ActiveSupport::TestCase
     purge_eligible_at = 2.days.from_now
     token = ClientToken.create!(
       authentication_epoch: 0,
-      device_session: @device, user_id: @device.user_id,
+      device_session: @device, subject_public_id: @device.subject_public_id,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       discard_at: discard_at,
       purge_eligible_at: purge_eligible_at,
@@ -553,7 +552,7 @@ class ClientTokenTest < ActiveSupport::TestCase
     purge_eligible_at = 4.days.from_now
     token = ClientToken.create!(
       authentication_epoch: 0,
-      device_session: @device, user_id: @device.user_id,
+      device_session: @device, subject_public_id: @device.subject_public_id,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       discard_at: 1.day.from_now,
       purge_eligible_at: purge_eligible_at,
@@ -567,15 +566,15 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "purgeability query returns only tokens purgeable at or before now" do
     device = ClientDeviceSession.create!(
-      user_id: @device.user_id + 1, principal_public_id: PublicId.generate,
+      subject_public_id: PublicId.generate,
       public_id: PublicId.generate, status_id: DeviceSessionable::STATUS_ACTIVE,
     )
     past_token = ClientToken.create!(
-      authentication_epoch: 0, device_session: device, user_id: device.user_id, discard_at: 20.minutes.ago,
+      authentication_epoch: 0, device_session: device, subject_public_id: device.subject_public_id, discard_at: 20.minutes.ago,
       purge_eligible_at: 10.minutes.ago,
     )
     future_token = ClientToken.create!(
-      authentication_epoch: 0, device_session: device, user_id: device.user_id, discard_at: 10.minutes.ago,
+      authentication_epoch: 0, device_session: device, subject_public_id: device.subject_public_id, discard_at: 10.minutes.ago,
       purge_eligible_at: 10.minutes.from_now,
     )
 
@@ -590,7 +589,7 @@ class ClientTokenTest < ActiveSupport::TestCase
   [0, 3].each do |epoch|
     test "rotate_refresh! keeps authentication epoch #{epoch} on the replacement" do
       token = ClientToken.create!(
-        authentication_epoch: epoch, device_session: @device, user_id: @device.user_id,
+        authentication_epoch: epoch, device_session: @device, subject_public_id: @device.subject_public_id,
         user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       )
       _, verifier = ClientToken.parse_refresh_token(token.rotate_refresh_token!)
@@ -604,7 +603,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "rotate_refresh! consumes old row and creates new generation in same family" do
     token = ClientToken.create!(
-      authentication_epoch: 0, device_session: @device, user_id: @device.user_id,
+      authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
     raw = token.rotate_refresh_token!
@@ -635,7 +634,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "rotate_refresh! allows missing presented device id" do
     token = ClientToken.create!(
-      authentication_epoch: 0, device_session: @device, user_id: @device.user_id,
+      authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
     raw = token.rotate_refresh_token!
@@ -649,7 +648,7 @@ class ClientTokenTest < ActiveSupport::TestCase
   test "rotate_refresh_token! preserves a finite absolute expiry and replaces an infinite cutoff" do
     token = ClientToken.create!(
       authentication_epoch: 0,
-      device_session: @device, user_id: @device.user_id, user_token_kind_id: ClientTokenKind::BROWSER_WEB,
+      device_session: @device, subject_public_id: @device.subject_public_id, user_token_kind_id: ClientTokenKind::BROWSER_WEB,
       discard_at: 1.day.from_now,
     )
     absolute_expiry = token.discard_at
@@ -671,7 +670,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "refresh token assignment and authentication handle blank values" do
     token = ClientToken.create!(
-      authentication_epoch: 0, device_session: @device, user_id: @device.user_id,
+      authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
 
@@ -688,7 +687,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "rotate_refresh! classifies second attempt as replay" do
     token = ClientToken.create!(
-      authentication_epoch: 0, device_session: @device, user_id: @device.user_id,
+      authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
     raw = token.rotate_refresh_token!
@@ -707,7 +706,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "rotate_refresh! classifies rotated token reuse as replay before device mismatch" do
     token = ClientToken.create!(
-      authentication_epoch: 0, device_session: @device, user_id: @device.user_id,
+      authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
     raw = token.rotate_refresh_token!
@@ -725,7 +724,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "rotate_refresh! does not require device fallback" do
     token = ClientToken.create!(
-      authentication_epoch: 0, device_session: @device, user_id: @device.user_id,
+      authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
     raw = token.rotate_refresh_token!
@@ -745,19 +744,19 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "rotate_refresh! rejects revoked compromised and expired tokens" do
     device = ClientDeviceSession.create!(
-      user_id: @device.user_id + 1, principal_public_id: PublicId.generate,
+      subject_public_id: PublicId.generate,
       public_id: PublicId.generate, status_id: DeviceSessionable::STATUS_ACTIVE,
     )
     revoked = ClientToken.create!(
-      authentication_epoch: 0, device_session: device, user_id: device.user_id,
+      authentication_epoch: 0, device_session: device, subject_public_id: device.subject_public_id,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
     compromised = ClientToken.create!(
-      authentication_epoch: 0, device_session: device, user_id: device.user_id,
+      authentication_epoch: 0, device_session: device, subject_public_id: device.subject_public_id,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
     expired = ClientToken.create!(
-      authentication_epoch: 0, device_session: device, user_id: device.user_id,
+      authentication_epoch: 0, device_session: device, subject_public_id: device.subject_public_id,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
     revoked_raw = revoked.rotate_refresh_token!
@@ -792,7 +791,7 @@ class ClientTokenTest < ActiveSupport::TestCase
 
   test "find_from_signed_ref resolves token when verifier payload has string keys" do
     token = ClientToken.create!(
-      authentication_epoch: 0, device_session: @device, user_id: @device.user_id,
+      authentication_epoch: 0, device_session: @device, subject_public_id: @device.subject_public_id,
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
     signed_ref = Rails.application.message_verifier(:session_ref).generate(

@@ -19,6 +19,8 @@ class IdentityStepUpCeremonyReplayStore
     @transaction_class = transaction_class
   end
 
+  public
+
   def create_transaction!(**attributes)
     transaction_class.create_transaction!(**attributes)
   end
@@ -38,4 +40,6 @@ class IdentityStepUpCeremonyReplayStore
   private
 
   attr_reader :transaction_class
+
+  public_class_method :for
 end

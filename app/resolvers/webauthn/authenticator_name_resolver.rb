@@ -28,5 +28,6 @@ module Webauthn
     end
 
     def self.catalog = CATALOG
+    public_class_method :resolve, :catalog
   end
 end

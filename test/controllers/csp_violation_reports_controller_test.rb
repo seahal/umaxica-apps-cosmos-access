@@ -219,4 +219,12 @@ class CspViolationReportsControllerTest < ActionDispatch::IntegrationTest
   def clear_rate_limit_store
     Rails.configuration.x.rate_limit.fetch(:store).clear
   end
+
+  def with_forgery_protection
+    previous = ActionController::Base.allow_forgery_protection
+    ActionController::Base.allow_forgery_protection = true
+    yield
+  ensure
+    ActionController::Base.allow_forgery_protection = previous
+  end
 end

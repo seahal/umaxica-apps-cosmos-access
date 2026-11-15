@@ -28,7 +28,7 @@ class AuthVisaAuthorityBoundaryTest < ActiveSupport::TestCase
       assert_includes controller.ancestors, OpBrowserSessionRequest, controller.name
       assert_includes controller.ancestors, FqdnAvailabilityGate, controller.name
       assert_includes controller.ancestors, DefaultNoStore, controller.name
-      assert_not_includes controller.ancestors, ActorSupport, controller.name
+      assert_not_includes controller.ancestors.map(&:name), "ActorSupport", controller.name
       assert_equal :deny_all, controller.const_get(:AUTHENTICATION_MODE)
     end
 

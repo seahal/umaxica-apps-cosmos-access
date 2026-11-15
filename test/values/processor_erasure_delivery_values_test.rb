@@ -66,6 +66,11 @@ class ProcessorErasureDeliveryValuesTest < Minitest::Test
     end
 
     assert_instance_of ProcessorErasureDispatchResult, ProcessorErasureDispatchResult.accepted_without_receipt
+    permanent = ProcessorErasureDispatchResult.permanent(code: "permanent", message: "no retry")
+
+    assert_equal :permanent_failure, permanent.outcome
+    assert_equal "permanent", permanent.error_code
+    assert_equal "no retry", permanent.error_message
     assert_raises(ArgumentError) do
       ProcessorErasureDispatchResult.retryable(code: "", message: "temporary")
     end

@@ -20,6 +20,8 @@ class DpopProofStatePurgeJob < ApplicationJob
     OperatorDpopProofState,
   ].freeze
 
+  public
+
   def perform(batch_size: 500)
     now = Time.current
 

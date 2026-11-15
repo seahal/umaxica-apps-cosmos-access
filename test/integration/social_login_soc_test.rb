@@ -6,15 +6,15 @@ class SocialLoginSocTest < ActionDispatch::IntegrationTest
   self.fixture_table_names = []
 
   test "provider entry and callbacks fail closed without changing existing OP authority" do
-    device = ClientDeviceSession.create!(user_id: 9_700_001, principal_public_id: "historical-subject")
-    root = ClientToken.create!(user_id: 9_700_001, device_session: device, authentication_epoch: 0)
+    device = ClientDeviceSession.create!(subject_public_id: "historical-subject")
+    root = ClientToken.create!(subject_public_id: device.subject_public_id, device_session: device, authentication_epoch: 0)
     root_before = root.reload.attributes
     device_before = device.reload.attributes
     counts = [ClientToken.count, ClientDeviceSession.count, OpAppGrant.count]
     host! ENV.fetch("PUBLIC_AUTH_SERVICE_URL")
     https!
     payload = AuthorizationTokenClaims.build(
-      resource: nil, subject: root.user_id.to_s, resource_type: "client", issued_at: Time.current,
+      resource: nil, subject: root.subject_public_id.to_s, resource_type: "client", issued_at: Time.current,
       access_token_ttl: 60.seconds, session_public_id: device.public_id, oidc_jti: root.oidc_jti,
       authentication_context: AuthenticationContextValue::NORMAL_KEY,
     )

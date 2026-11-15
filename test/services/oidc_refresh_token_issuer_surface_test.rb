@@ -20,7 +20,7 @@ class OidcRefreshTokenIssuerSurfaceTest < ActiveSupport::TestCase
     token = OperatorToken.find(ActiveRecord::FixtureSet.identify(:one))
     token.update!(authentication_context: "normal")
     connection = OperatorOidcConnection.create!(
-      staff_id: token.staff_id, client_id: "core-org-jp", last_used_at: 3.days.ago,
+      subject_public_id: token.subject_public_id, client_id: "core-org-jp", last_used_at: 3.days.ago,
     )
     usage = OpOrgGrant.create!(
       authentication_epoch: 0,
@@ -71,13 +71,13 @@ class OidcRefreshTokenIssuerSurfaceTest < ActiveSupport::TestCase
     assert_predicate OidcRefreshTokenIssuer.call(
       refresh_token: sibling_refresh, resource_type: "operator", client_id: "warp-org-jp",
     ), :success?
-    assert_equal [["refresh_reuse_detected", { staff_id: token.staff_id, user_token_id: usage.public_id }]],
+    assert_equal [["refresh_reuse_detected", { subject_public_id: token.subject_public_id, user_token_id: usage.public_id }]],
                  emitted
     audit =
       ChronicleRecord.connected_to(role: :writing) do
         OperatorChronicle.where(
           event_id: OperatorChronicleEvent::REFRESH_TOKEN_REUSE_DETECTED,
-          subject_id: token.staff_id.to_s,
+          subject_id: token.subject_public_id.to_s,
           subject_type: "Operator",
         ).order(occurred_at: :desc).first
       end

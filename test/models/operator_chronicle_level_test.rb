@@ -22,6 +22,7 @@ class OperatorChronicleLevelTest < ActiveSupport::TestCase
       subject_type: "Operator",
       subject_id: 123_456,
       occurred_at: Time.current,
+      discard_at: 12.hours.from_now,
       purge_eligible_at: 1.day.from_now,
       staff_chronicle_event: OperatorChronicleEvent.find(OperatorChronicleEvent::LOGIN_SUCCESS),
       staff_chronicle_level: level,

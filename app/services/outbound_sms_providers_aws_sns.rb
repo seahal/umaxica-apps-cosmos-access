@@ -12,6 +12,8 @@ class OutboundSmsProvidersAwsSns
     @client = Aws::SNS::Client.new(client_options)
   end
 
+  public
+
   def send_message(to:, title:, body:)
     validate_params(to: to, body: body)
 

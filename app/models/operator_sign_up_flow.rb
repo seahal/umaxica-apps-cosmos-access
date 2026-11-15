@@ -40,6 +40,38 @@
 #
 class OperatorSignUpFlow < OpBaseOrgRecord
   include SignFlow
+
+  before_validation :generate_public_id, on: :create
+  before_validation :refresh_generated_public_id_after_collision, on: :create
+  before_validation :assign_default_status_id
+  before_validation :sync_legacy_state_from_status
+  before_create :generate_public_id
+  around_create :retry_public_id_collision
+  validate :public_id_immutable_after_create, on: :update
+
+  validates :public_id, presence: true, length: { is: PublicId::GENERATION_SIZE }, uniqueness: true
+  attribute :discard_at, :datetime, default: -> { Retainable::SENTINEL }
+  attribute :purge_eligible_at, :datetime, default: -> { Retainable::SENTINEL }
+
+  validates :discard_at, presence: true
+  validates :purge_eligible_at, presence: true
+  validate :retention_order_valid
+  validate :retention_times_not_before_created_at, on: :update
+
+  Retainable.registry << self unless Retainable.registry.include?(self)
+  attribute :issued_at, :datetime, default: -> { Time.current }
+  attribute :expires_at, :datetime, default: -> { default_ttl.from_now }
+
+  validates :nonce_digest, presence: true
+  validates :issued_at, :expires_at, presence: true
+  validate :expires_after_issued_at
+
+  scope :recent_first, -> { order(created_at: :desc) }
+  scope :current,
+        -> do
+          where(arel_table[:discard_at].gt(Time.current))
+            .where(arel_table[:expires_at].gt(Time.current))
+        end
   include FlowSignUp
 
   cycle_status_column :status_id
@@ -96,6 +128,13 @@ class OperatorSignUpFlow < OpBaseOrgRecord
   validates :result_digest, length: { maximum: 64 }
   validates :result_digest, uniqueness: true, allow_nil: true
 
-  before_validation :assign_default_status_id
-  before_validation :sync_legacy_state_from_status
+  private
+
+  def transition_sign_up_to!(next_status_name, changes: {}, timestamp_fields: [])
+    unless %w(EXPIRED CANCELLED HALTED).include?(next_status_name)
+      raise GovernanceLookupUnavailableError, "Governance sign-up authority is unavailable"
+    end
+
+    super
+  end
 end

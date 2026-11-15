@@ -128,32 +128,4 @@ class AnomalyReportingAndAuthorizeFailuresTest < ActiveSupport::TestCase
     assert_not_includes payload.to_json, raw_jwt
   end
 
-  # Each way an authorization request can be refused maps to a distinct OAuth
-  # error, because the client decides whether to retry from that code alone.
-  test "a persistence failure answers server_error rather than raising out of the endpoint" do
-    coordinator =
-      OidcAuthorizeCoordinator.new(params: {}, resource: nil, session_token: nil)
-    coordinator.define_singleton_method(:validate_request!) do
-      raise Umaxica::Valkey::Unavailable, "authorization code store unavailable"
-    end
-
-    result = coordinator.call
-
-    assert_not result.success
-    assert_equal "server_error", result.error
-  end
-
-  test "an unknown client and an invalid scope answer their own OAuth errors" do
-    {
-      OidcClientRegistry::ClientNotFound => "unauthorized_client",
-      OidcAuthorizeRequestResolver::InvalidScope => "invalid_scope",
-      OidcClientRegistry::InvalidRedirectUri => "invalid_request",
-      ArgumentError => "invalid_request",
-    }.each do |error_class, expected|
-      coordinator = OidcAuthorizeCoordinator.new(params: {}, resource: nil, session_token: nil)
-      coordinator.define_singleton_method(:validate_request!) { raise error_class, "refused" }
-
-      assert_equal expected, coordinator.call.error, error_class.name
-    end
-  end
 end

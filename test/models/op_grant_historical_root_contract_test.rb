@@ -7,8 +7,8 @@ class OpGrantHistoricalRootContractTest < ActiveSupport::TestCase
 
   test "creation requires an existing historical root and its matching stable device" do
     [
-      ["app", ClientDeviceSession, ClientToken, OpAppGrant, :user_id, :client_token_id, "core-app-jp"],
-      ["org", OperatorDeviceSession, OperatorToken, OpOrgGrant, :staff_id, :operator_token_id, "core-org-jp"],
+      ["app", ClientDeviceSession, ClientToken, OpAppGrant, :subject_public_id, :client_token_id, "core-app-jp"],
+      ["org", OperatorDeviceSession, OperatorToken, OpOrgGrant, :subject_public_id, :operator_token_id, "core-org-jp"],
     ].each do |realm, device_class, root_class, grant_class, actor_key, root_key, client_id|
       kind_key, kind_id = {
         "app" => [:user_token_kind_id, ClientTokenKind::BROWSER_WEB],
@@ -17,15 +17,14 @@ class OpGrantHistoricalRootContractTest < ActiveSupport::TestCase
       device_ids =
         2.times.map do
           device_class.insert_all!(
-            [{ actor_key => 9_700_001,
-               :public_id => PublicId.generate,
-               :principal_public_id => "creation-contract-principal",
+            [{ :public_id => PublicId.generate,
+               :subject_public_id => "creation-contract-principal",
                :created_at => Time.current,
                :updated_at => Time.current, }],
           ).rows.first.first
         end
       root_id = root_class.insert_all!(
-        [{ actor_key => 9_700_001,
+        [{ actor_key => "creation-contract-principal",
            kind_key => kind_id,
            :public_id => PublicId.generate,
            :device_session_id => device_ids.first,
@@ -58,7 +57,7 @@ class OpGrantHistoricalRootContractTest < ActiveSupport::TestCase
       assert_equal device_ids.first, derived_device.device_session_id
 
       unsaved_root = root_class.new(
-        actor_key => 9_700_001, kind_key => kind_id, :id => root_id + 2_000_000,
+        actor_key => "creation-contract-principal", kind_key => kind_id, :id => root_id + 2_000_000,
         :public_id => PublicId.generate, :device_session_id => device_ids.first, :authentication_epoch => 0,
       )
       unsaved_parent = grant_class.new(attributes.merge(root_key => unsaved_root.id))
@@ -87,8 +86,8 @@ class OpGrantHistoricalRootContractTest < ActiveSupport::TestCase
 
   test "a saved grant cannot change its historical root or its device owner" do
     [
-      ["app", ClientDeviceSession, ClientToken, OpAppGrant, :user_id, :client_token_id, "core-app-jp"],
-      ["org", OperatorDeviceSession, OperatorToken, OpOrgGrant, :staff_id, :operator_token_id, "core-org-jp"],
+      ["app", ClientDeviceSession, ClientToken, OpAppGrant, :subject_public_id, :client_token_id, "core-app-jp"],
+      ["org", OperatorDeviceSession, OperatorToken, OpOrgGrant, :subject_public_id, :operator_token_id, "core-org-jp"],
     ].each do |realm, device_class, root_class, grant_class, actor_key, root_key, client_id|
       kind_key, kind_id = {
         "app" => [:user_token_kind_id, ClientTokenKind::BROWSER_WEB],
@@ -98,15 +97,14 @@ class OpGrantHistoricalRootContractTest < ActiveSupport::TestCase
       root_ids =
         2.times.map do
           device_id = device_class.insert_all!(
-            [{ actor_key => 9_700_002,
-               :public_id => PublicId.generate,
-               :principal_public_id => "immutable-contract-principal",
+            [{ :public_id => PublicId.generate,
+               :subject_public_id => "immutable-contract-principal",
                :created_at => Time.current,
                :updated_at => Time.current, }],
           ).rows.first.first
           device_ids << device_id
           root_class.insert_all!(
-            [{ actor_key => 9_700_002,
+            [{ actor_key => "immutable-contract-principal",
                kind_key => kind_id,
                :public_id => PublicId.generate,
                :device_session_id => device_id,
@@ -139,22 +137,21 @@ class OpGrantHistoricalRootContractTest < ActiveSupport::TestCase
 
   test "direct SQL still requires nonnull historical IDs and an existing nonnull device parent" do
     [
-      ["app", ClientDeviceSession, ClientToken, OpAppGrant, :user_id, :client_token_id, "core-app-jp"],
-      ["org", OperatorDeviceSession, OperatorToken, OpOrgGrant, :staff_id, :operator_token_id, "core-org-jp"],
+      ["app", ClientDeviceSession, ClientToken, OpAppGrant, :subject_public_id, :client_token_id, "core-app-jp"],
+      ["org", OperatorDeviceSession, OperatorToken, OpOrgGrant, :subject_public_id, :operator_token_id, "core-org-jp"],
     ].each do |realm, device_class, root_class, grant_class, actor_key, root_key, client_id|
       kind_key, kind_id = {
         "app" => [:user_token_kind_id, ClientTokenKind::BROWSER_WEB],
         "org" => [:staff_token_kind_id, OperatorTokenKind::BROWSER_WEB],
       }.fetch(realm)
       device_id = device_class.insert_all!(
-        [{ actor_key => 9_700_003,
-           :public_id => PublicId.generate,
-           :principal_public_id => "sql-contract-principal",
+        [{ :public_id => PublicId.generate,
+           :subject_public_id => "sql-contract-principal",
            :created_at => Time.current,
            :updated_at => Time.current, }],
       ).rows.first.first
       root_id = root_class.insert_all!(
-        [{ actor_key => 9_700_003,
+        [{ actor_key => "sql-contract-principal",
            kind_key => kind_id,
            :public_id => PublicId.generate,
            :device_session_id => device_id,
@@ -164,6 +161,7 @@ class OpGrantHistoricalRootContractTest < ActiveSupport::TestCase
       ).rows.first.first
       row = {
         root_key => root_id,
+        :subject_public_id => "sql-contract-principal",
         :device_session_id => device_id,
         :public_id => PublicId.generate,
         :authentication_epoch => 0,
@@ -192,12 +190,12 @@ class OpGrantHistoricalRootContractTest < ActiveSupport::TestCase
 
   test "grant-only authority stop survives physical purge of its historical issuing root" do
     [
-      ["app", ClientDeviceSession, ClientToken, OpAppGrant, :user_id, :client_token_id, "core-app-jp"],
-      ["org", OperatorDeviceSession, OperatorToken, OpOrgGrant, :staff_id, :operator_token_id, "core-org-jp"],
+      ["app", ClientDeviceSession, ClientToken, OpAppGrant, :subject_public_id, :client_token_id, "core-app-jp"],
+      ["org", OperatorDeviceSession, OperatorToken, OpOrgGrant, :subject_public_id, :operator_token_id, "core-org-jp"],
     ].each do |realm, devices, roots, grants, actor_key, root_key, client_id|
-      device = devices.create!(actor_key => 9_700_004, :principal_public_id => "purged-history-principal")
+      device = devices.create!(:subject_public_id => "purged-history-principal")
       root = roots.create!(
-        actor_key => 9_700_004, :device_session => device, :authentication_epoch => 0,
+        :subject_public_id => device.subject_public_id, :device_session => device, :authentication_epoch => 0,
         :discard_at => 1.day.from_now,
       )
       grant = grants.create!(
@@ -213,16 +211,16 @@ class OpGrantHistoricalRootContractTest < ActiveSupport::TestCase
       assert_predicate rotation, :success?
       assert_equal 1, roots.where(id: root.id).delete_all
       assert_not_predicate grant.reload, :revoked?
-      foreign_device = devices.create!(actor_key => 9_700_005, :principal_public_id => "foreign-principal")
+      foreign_device = devices.create!(:subject_public_id => "foreign-principal")
       foreign_root = roots.create!(
-        actor_key => 9_700_005, :device_session => foreign_device, :authentication_epoch => 0,
+        :subject_public_id => foreign_device.subject_public_id, :device_session => foreign_device, :authentication_epoch => 0,
         :discard_at => 1.day.from_now,
       )
       device.update!(current_refresh_token_id: foreign_root.id)
 
       assert_raises(ActiveRecord::RecordNotFound) do
         OpAuthorityStopCommitter.stop_grant(
-          grant:, cause: "token_revocation", principal_public_id: device.principal_public_id,
+          grant:, cause: "token_revocation", principal_public_id: device.subject_public_id,
           authority_evidence_ref: "historical-grant-contract",
         )
       end
@@ -230,7 +228,7 @@ class OpGrantHistoricalRootContractTest < ActiveSupport::TestCase
       assert_not_predicate grant.reload, :revoked?
       device.update!(current_refresh_token_id: rotation.token.id)
       result = OpAuthorityStopCommitter.stop_grant(
-        grant:, cause: "token_revocation", principal_public_id: device.principal_public_id,
+        grant:, cause: "token_revocation", principal_public_id: device.subject_public_id,
         authority_evidence_ref: "historical-grant-contract",
       )
 

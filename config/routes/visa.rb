@@ -57,7 +57,7 @@ scope(module: :visa, as: :visa) do
         namespace(:oauth) do
           resource(
             :authorization, only: %i(show create), path: "authorize",
-                            controller: "/visa/#{surface_namespace}/unavailable_ceremonies",
+                            controller: "/visa/#{surface_namespace}/oauth/authorizations",
           )
           resource(:token, only: :create, controller: :tokens)
           resource(:userinfo, only: %i(show create), controller: :userinfos)

@@ -144,7 +144,7 @@ module OpBrowserSessionRequest
     credentials
   rescue RefreshRefused => e
     OpAuthorityStopCommitter.stop_root(
-      root: e.root, cause: "risk", principal_public_id: e.root.principal_public_id,
+      root: e.root, cause: "risk", principal_public_id: e.root.subject_public_id,
       authority_evidence_ref: "browser_refresh_binding:#{e.root.public_id}",
     )
     clear_auth_cookies!

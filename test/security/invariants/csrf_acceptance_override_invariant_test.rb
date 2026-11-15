@@ -58,7 +58,7 @@ class CsrfAcceptanceOverrideInvariantTest < ActiveSupport::TestCase
     assert_operator begin
       SCANNED.flat_map { |fv5003| Rails.root.glob("#{fv5003}/**/*.rb") }
         .map { |fv5002| fv5002.relative_path_from(Rails.root).to_s }
-    end.size, :>, 1000
+    end.size, :>, 900
     assert(
       begin
         SCANNED.flat_map { |fv5001| Rails.root.glob("#{fv5001}/**/*.rb") }

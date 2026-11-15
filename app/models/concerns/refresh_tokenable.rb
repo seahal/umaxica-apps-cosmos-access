@@ -11,16 +11,6 @@ module RefreshTokenable
 
   REFRESH_TTL = SecurityTokenLifetimes::CLIENT_REFRESH_TOKEN_TTL
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    before_validation :ensure_lapses_at, on: :create
-    before_validation :ensure_refresh_token_family_id, on: :create
-    before_validation :ensure_refresh_token_generation, on: :create
-    before_validation :ensure_device_session_record, on: :create
-    after_create :set_initial_device_session_current_token
-    validates :refresh_token_digest, uniqueness: true, allow_nil: true
-  end
-
   class_methods do
     def rotate_refresh!(presented_refresh_digest:, now: nil)
       return { status: :invalid, token: nil } if presented_refresh_digest.blank?
@@ -244,11 +234,9 @@ module RefreshTokenable
       previous_token.update!(dbsc_session_id: nil)
     end
 
-    def actor_foreign_key_from(token)
-      return :user_id if token.has_attribute?(:user_id)
-      return :staff_id if token.has_attribute?(:staff_id)
-
-      raise FlowConfigurationError, "#{token.class.name} does not define a token actor"
+    # Root tokens of both realms are keyed by the Governance public identifier (owner, 2026-11-15).
+    def actor_foreign_key_from(_token)
+      :subject_public_id
     end
 
     def token_status_key_from(token)
@@ -277,8 +265,6 @@ module RefreshTokenable
   def device_session_record!
     device_session_class.find(device_session_id)
   end
-
-  delegate :principal_public_id, to: :device_session_record!
 
   # Whether the refresh token has expired.
   def expired_refresh?
@@ -424,9 +410,6 @@ module RefreshTokenable
   end
 
   def device_session_actor_key
-    return :user_id if has_attribute?(:user_id)
-    return :staff_id if has_attribute?(:staff_id)
-
-    raise FlowConfigurationError, "#{self.class.name} does not define a device-session actor"
+    :subject_public_id
   end
 end

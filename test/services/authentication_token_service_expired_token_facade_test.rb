@@ -27,11 +27,23 @@ class AuthenticationTokenServiceExpiredTokenFacadeTest < ActiveSupport::TestCase
       assert_equal payload, AuthenticationTokenService.decode_allow_expired(
         token, host: "audit.example", resource_type: "client",
       )
+      assert_equal "expired-facade-session", SecurityJwtAuthAccessTokenCodec.extract_session_id_allow_expired(
+        token, host: "audit.example", resource_type: "client",
+      )
+      assert_equal "expired-facade-session", AuthenticationTokenService.extract_session_id_allow_expired(
+        token, host: "audit.example", resource_type: "client",
+      )
+      assert_equal "expired-facade-session", AuthenticationToken.extract_session_id_allow_expired(
+        token, host: "audit.example", resource_type: "client",
+      )
       wrong_audience = JitSecurityJwtKeyring.encode(
         payload.merge("aud" => ["other-audience"]), typ: "at+jwt", issuer_id: "auth",
       )
 
       assert_nil AuthenticationTokenService.decode_allow_expired(
+        wrong_audience, host: "audit.example", resource_type: "client",
+      )
+      assert_nil SecurityJwtAuthAccessTokenCodec.extract_session_id_allow_expired(
         wrong_audience, host: "audit.example", resource_type: "client",
       )
     end

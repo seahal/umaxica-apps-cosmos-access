@@ -13,6 +13,8 @@ class TurnstileReplayStore
     )
   end
 
+  public
+
   def consume!(token:, ceremony_id:, action:, hostname:, cdata:, expires_at:)
     TurnstileReplay.create!(
       ceremony_id: ceremony_id.to_s,
@@ -27,4 +29,5 @@ class TurnstileReplayStore
   rescue ActiveRecord::RecordNotUnique
     raise
   end
+  public_class_method :consume!
 end

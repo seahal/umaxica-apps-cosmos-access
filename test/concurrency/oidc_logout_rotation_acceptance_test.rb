@@ -9,9 +9,9 @@ class OidcLogoutRotationAcceptanceTest < ActiveSupport::TestCase
 
   setup do
     @root = ClientToken.create!(
-      authentication_epoch: 0, user_id: 1001,
+      authentication_epoch: 0, subject_public_id: PublicId.generate,
       device_session: ClientDeviceSession.create!(
-        user_id: 1001, principal_public_id: PublicId.generate,
+        subject_public_id: PublicId.generate,
       ),
       user_token_kind_id: ClientTokenKind::BROWSER_WEB,
     )
@@ -100,7 +100,7 @@ class OidcLogoutRotationAcceptanceTest < ActiveSupport::TestCase
     ].each do |realm, token_class, grant_class, device_class, target_class, actor, owner, parent, type, record_class|
       root = token_class.create!(
         :authentication_epoch => 0, owner => actor,
-        :device_session => device_class.create!(owner => actor, :principal_public_id => PublicId.generate),
+        :device_session => device_class.create!(:subject_public_id => PublicId.generate),
       )
       root.rotate_refresh_token!
       grant = grant_class.create!(

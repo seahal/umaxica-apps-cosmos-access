@@ -48,6 +48,8 @@ class AuthenticationContextValue
     freeze
   end
 
+  public
+
   def normal? = key == NORMAL_KEY
 
   def standby? = key == STANDBY_KEY
@@ -143,4 +145,5 @@ class AuthenticationContextValue
   def capability_named_scope?(scope)
     CAPABILITY_NAMED_SCOPES.include?(scope.to_s)
   end
+  public_class_method :normal, :standby, :for, :from_claim, :from_claims
 end

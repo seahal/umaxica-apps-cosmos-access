@@ -4,11 +4,6 @@
 module DbscBindable
   extend ActiveSupport::Concern
 
-  # FIXME: Violates Umaxica/NoConcernInclusionHooks; move the declarations in this block into each class that includes this concern.
-  included do
-    validates :dbsc_session_id, uniqueness: true, allow_blank: true
-  end
-
   class_methods do
     def dbsc_binding_method_attribute_name
       return :binding_method_id if attribute_names.include?("binding_method_id")
@@ -48,6 +43,8 @@ module DbscBindable
       }
     end
   end
+
+  public
 
   def binding_method_nothing?
     binding_method_value == 0

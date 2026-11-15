@@ -31,6 +31,13 @@ grants under it and the device itself. Each root stop records cause `rp_initiate
 `root` and no epoch cutoff. Other devices and realms stay independent. Sign-out-all and
 revoke-other-sessions use their own explicit operations.
 
+Each Visa browser session holds one pending end-session request. Repeating the same resolved client,
+grant, registered return URI, OIDC `state`, `ui_locales` and legacy return-region claim resumes the
+pending confirmation. The canonical redirect continuation, which carries only `ri` and optional
+`lx`, renders the stored request. A distinct protocol request receives 403 and cannot replace that
+request or its return context. Concurrent conflicting requests remain outside the per-tab guarantee
+because Rails uses a cookie-backed session; see the implementation evidence for this boundary.
+
 A failed pre-commit stop retains the Visa credentials and pending request. An unknown commit retains
 them and returns 503 so retry can re-read the same device. After a confirmed commit, the browser is
 cleared and the result remains signed out even if later notice storage or redirect construction

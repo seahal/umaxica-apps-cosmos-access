@@ -7,21 +7,24 @@ class OpGrantStepUpHistoryRestrictionTest < ActiveSupport::TestCase
 
   [
     [OpAppGrant, ClientOidcAuthorizationTransaction, ClientStepUpContext, ClientStepUpContextState,
-     ClientStepUpCommit, "app", "app-client", :client_token,],
+     ClientStepUpCommit, "app", "app-client", :client_token_id,],
     [OpOrgGrant, OperatorOidcAuthorizationTransaction, OperatorStepUpContext, OperatorStepUpContextState,
-     OperatorStepUpCommit, "org", "org-client", :operator_token,],
+     OperatorStepUpCommit, "org", "org-client", :operator_token_id,],
   ].each do |grant_model, authorization_model, context_model, state_model, commit_model, realm, client_id, token_key|
     [:context, :commit].each do |history_kind|
       test "#{realm} grant cannot be destroyed while #{history_kind} refers to it" do
         now = grant_model.database_now
-        token = (token_key == :client_token) ? client_tokens(:one) : operator_tokens(:one)
-        grant = grant_model.create!(token_key => token, :authentication_epoch => 0, :oidc_client_id => client_id)
+        token = (token_key == :client_token_id) ? client_tokens(:one) : operator_tokens(:one)
+        grant = grant_model.create!(
+          token_key => token.id, :device_session_id => token.device_session_id,
+          :authentication_epoch => 0, :oidc_client_id => client_id,
+        )
         history =
           if history_kind == :context
             authorization = authorization_model.create_transaction!(
               surface: realm, intent: "step_up", client_id: client_id, redirect_uri: "https://example.com/callback",
               response_type: "code", scope: "openid", state: "state", nonce: "nonce",
-              code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", code_challenge_method: "S256",
+              pkce: { code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", code_challenge_method: "S256" },
               login_challenge: SecureRandom.base58(32), login_challenge_expires_at: now + 1.minute,
               expires_at: now + 15.minutes,
             )

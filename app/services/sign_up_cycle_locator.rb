@@ -66,7 +66,10 @@ class SignUpCycleLocator
     binding_class = BINDING_CLASSES.fetch(surface)
     binding_class.connection_owner.connected_to(role: :writing) do
       binding = admitted_owner!(binding_class, admission_binding, ceremony_session)
-      owned = cycle_class.current.where(auth_admission_binding_id: binding.id)
+      # `current` excludes expired and discarded cycles even when expiry cleanup or artifact cleanup
+      # has not run. Those attempts continue to hold the admission until their lifecycle writer
+      # records terminal cleanup completion.
+      owned = cycle_class.where(auth_admission_binding_id: binding.id)
       return true if owned.any? { |cycle| unreleased?(cycle) }
 
       payload = current_payload

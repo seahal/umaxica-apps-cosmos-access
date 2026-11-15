@@ -12,6 +12,7 @@ class Actor::AuthenticationContextPublicTest < ActiveSupport::TestCase
 
     context = authentication.authentication_context
 
+    assert_predicate authentication, :standby?
     assert_predicate context, :standby?
     assert_not context.step_up_permitted?
   end

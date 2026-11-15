@@ -39,7 +39,7 @@ class RefreshTokenReuseActivityRecorder
         ClientChronicle,
         ClientChronicleEvent::REFRESH_TOKEN_REUSE_DETECTED,
         "Client",
-        @token.user_id,
+        @token.subject_public_id,
         "app",
       ]
     when OperatorToken
@@ -47,7 +47,7 @@ class RefreshTokenReuseActivityRecorder
         OperatorChronicle,
         OperatorChronicleEvent::REFRESH_TOKEN_REUSE_DETECTED,
         "Operator",
-        @token.staff_id,
+        @token.subject_public_id,
         "org",
       ]
     else

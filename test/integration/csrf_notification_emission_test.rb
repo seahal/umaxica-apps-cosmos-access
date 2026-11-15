@@ -44,10 +44,10 @@ class CsrfNotificationEmissionTest < ActionDispatch::IntegrationTest
   end
 
   test "a cross-site POST is blocked and emits csrf_request_blocked with a usable payload" do
-    prepare_auth_sign_in_admission!
+    prepare_visa_authorization_request!
     events =
       capture_csrf_events do
-        post_cross_site_sign_in
+        post_cross_site_authorization
       end
 
     blocked = events.find { |event| event.name == "csrf_request_blocked.action_controller" }
@@ -59,8 +59,8 @@ class CsrfNotificationEmissionTest < ActionDispatch::IntegrationTest
   end
 
   test "the subscriber records a blocked request without logging the request or message" do
-    prepare_auth_sign_in_admission!
-    output = capture_logs { post_cross_site_sign_in }
+    prepare_visa_authorization_request!
+    output = capture_logs { post_cross_site_authorization }
 
     assert_match "security.csrf.request_blocked", output,
                  "The subscriber must turn the Rails event into an application log event."
@@ -99,8 +99,8 @@ class CsrfNotificationEmissionTest < ActionDispatch::IntegrationTest
   RESCUE_FROM_LINE_MARKER = "rescue_from handled"
 
   test "a blocked request is recorded once, by the subscriber, with no framework CSRF warning" do
-    prepare_auth_sign_in_admission!
-    output = capture_logs { post_cross_site_sign_in }
+    prepare_visa_authorization_request!
+    output = capture_logs { post_cross_site_authorization }
 
     assert_equal 1, output.scan("security.csrf.request_blocked").size,
                  "The blocked request must be recorded exactly once."
@@ -118,26 +118,19 @@ class CsrfNotificationEmissionTest < ActionDispatch::IntegrationTest
 
   private
 
-  def post_cross_site_sign_in
+  def post_cross_site_authorization
     with_forgery_protection do
       post(
-        "/sign/in/email?ri=jp",
-        params: { user_email: { address: "csrf-probe@example.com" } },
+        "/oauth/authorize",
+        params: { client_id: "csrf-probe", response_type: "code" },
         headers: { "Sec-Fetch-Site" => "cross-site" },
       )
     end
   end
 
-  def prepare_auth_sign_in_admission!
-    host!(ENV.fetch("PUBLIC_AUTH_SERVICE_URL"))
+  def prepare_visa_authorization_request!
+    host!(ENV.fetch("PUBLIC_VISA_SERVICE_URL"))
     https!
-    admission = OidcTestEntry.issue!(
-      surface: "app", intent: "sign_in",
-      base_browser_nonce: "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn", base_token: nil,
-    )
-    admit_auth_ceremony_entry!("/sign/in", reference: admission.reference, params: { ri: "jp" })
-
-    assert_response :see_other
   end
 
   # Both loggers have to be swapped: the application subscriber writes through

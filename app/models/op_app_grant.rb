@@ -4,10 +4,31 @@
 class OpAppGrant < OpBaseAppRecord
   include RpSession
 
+  before_validation :generate_public_id, on: :create
+  before_validation :refresh_generated_public_id_after_collision, on: :create
+  before_validation :bind_device_session_from_parent_token, on: :create
+  before_validation :bind_subject_from_parent_token, on: :create
+  before_validation :ensure_public_id, on: :create
+  before_create :generate_public_id
+  around_create :retry_public_id_collision
+  validate :public_id_immutable_after_create, on: :update
+
+  validates :public_id, presence: true, length: { is: PublicId::GENERATION_SIZE }, uniqueness: true
+
   has_many :step_up_contexts, class_name: "ClientStepUpContext", foreign_key: :grant_id,
                               inverse_of: :grant, dependent: :restrict_with_error
   has_many :step_up_commits, class_name: "ClientStepUpCommit", foreign_key: :grant_id,
                              inverse_of: :grant, dependent: :restrict_with_error
+  has_many :authority_stop_participants,
+           class_name: "OpAppAuthorityStopParticipant",
+           foreign_key: :grant_id,
+           inverse_of: :grant,
+           dependent: :restrict_with_error
+  has_many :authority_stop_grant_targets,
+           class_name: "OpAppAuthorityStopGrantTarget",
+           foreign_key: :grant_id,
+           inverse_of: :grant,
+           dependent: :restrict_with_error
 
   has_one :logout_hint, class_name: "OpAppGrantLogoutHint", foreign_key: :grant_id, inverse_of: :grant,
                         dependent: :destroy
@@ -19,6 +40,7 @@ class OpAppGrant < OpBaseAppRecord
 
   attr_readonly :client_token_id, :device_session_id
   validates :client_token_id, presence: true
+  validates :subject_public_id, presence: true, length: { maximum: 255 }
   validate :creating_root_matches_device, on: :create
 
   validates :public_id, presence: true, uniqueness: true, length: { maximum: 21 }
@@ -29,10 +51,6 @@ class OpAppGrant < OpBaseAppRecord
                                 if: -> { revoked_at.nil? }
   validates :last_logout_status, inclusion: { in: RpSession::LOGOUT_STATUSES }, allow_nil: true
   validates :refresh_token_digest, uniqueness: true, allow_nil: true
-
-  before_validation :bind_device_session_from_parent_token, on: :create
-
-  before_validation :ensure_public_id, on: :create
 
   scope :currently_usable_at,
         ->(now = Time.current) do
@@ -57,6 +75,11 @@ class OpAppGrant < OpBaseAppRecord
 
     token = ClientToken.find_by(id: client_token_id)
     self.device_session_id = token&.device_session_id
+  end
+
+  # The grant's subject is its root's; the composite foreign key admits no other value.
+  def bind_subject_from_parent_token
+    self.subject_public_id = ClientToken.find_by(id: client_token_id)&.subject_public_id
   end
 
   def parent_association_name

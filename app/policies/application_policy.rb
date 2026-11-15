@@ -19,6 +19,8 @@ class ApplicationPolicy < ActionPolicy::Base
   # here (docs/security/org-emergency-access.md).
   pre_check :deny_capability_restricted_context
 
+  public
+
   def edit? = update?
 
   def new? = create?
@@ -93,13 +95,6 @@ class ApplicationPolicy < ActionPolicy::Base
       elsif record.respond_to?(:organization_id)
         record.organization_id
       end
-  end
-
-  # Get JWT subject (user ID) from the current user token.
-  def jwt_subject
-    return nil if current_token.blank?
-
-    AuthorizationTokenClaims.subject(current_token)
   end
 
   # Role-based checks

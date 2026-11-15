@@ -3,8 +3,7 @@
 require "test_helper"
 
 class OidcPkceTest < ActiveSupport::TestCase
-  fixtures :clients
-  self.fixture_table_names = %w(clients)
+  self.fixture_table_names = []
 
   test "challenge generation matches the RFC 7636 S256 example" do
     verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"

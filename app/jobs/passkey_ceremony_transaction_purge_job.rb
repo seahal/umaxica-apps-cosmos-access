@@ -4,6 +4,8 @@
 class PasskeyCeremonyTransactionPurgeJob < ApplicationJob
   queue_as :retention
 
+  public
+
   def perform
     IdentityPasskeyCeremonyTransactionPurger.call
   end

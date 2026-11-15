@@ -5,6 +5,8 @@ class RpBaseOrgStepUpStateStatus < RpBaseOrgRecord
 
   include ReferenceRecord
 
+  self.record_timestamps = false
+
   PENDING = 10
   DISPATCHING = 15
   INSTALLED = 20

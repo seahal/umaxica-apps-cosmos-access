@@ -5,7 +5,7 @@ require "test_helper"
 
 # D-134: the database makes the ORG halt audit exactly-once per transaction and halt generation.
 class OperatorChronicleSignFlowHaltedTest < ActiveSupport::TestCase
-  self.fixture_table_names = []
+  self.fixture_table_names = %w(operator_chronicle_events operator_chronicle_levels)
 
   setup do
     @base_attributes = {
@@ -18,6 +18,33 @@ class OperatorChronicleSignFlowHaltedTest < ActiveSupport::TestCase
     }
   end
 
+  test "generated columns expose the canonical halted-flow identity after PostgreSQL computes it" do
+    record = OperatorChronicle.create!(
+      @base_attributes.merge(
+        context: { transaction_public_id: "txn-projection", halt_generation: 100 },
+      ),
+    )
+
+    record.reload
+
+    assert_equal "txn-projection", record.read_attribute(:sign_flow_halted_transaction_public_id)
+    assert_equal "100", record.read_attribute(:sign_flow_halted_generation)
+  end
+
+  test "generated halt identity columns are null for non-halt events" do
+    record = OperatorChronicle.create!(
+      @base_attributes.merge(
+        event_id: OperatorChronicleEvent::LOGGED_IN,
+        context: { transaction_public_id: "txn-other-event", halt_generation: 100 },
+      ),
+    )
+
+    record.reload
+
+    assert_nil record.read_attribute(:sign_flow_halted_transaction_public_id)
+    assert_nil record.read_attribute(:sign_flow_halted_generation)
+  end
+
   test "a second SIGN_FLOW_HALTED row for the same transaction and generation is rejected" do
     original = OperatorChronicle.create!(
       @base_attributes.merge(
@@ -28,10 +55,27 @@ class OperatorChronicleSignFlowHaltedTest < ActiveSupport::TestCase
     duplicate = original.dup
 
     assert_not_predicate duplicate, :valid?
-    assert duplicate.errors.of_kind?(:context, :taken)
+    assert duplicate.errors.of_kind?(:sign_flow_halted_transaction_public_id, :taken)
     assert_raises(ActiveRecord::RecordInvalid) { duplicate.save! }
     assert_raises(ActiveRecord::RecordNotUnique) do
       OperatorChronicle.transaction(requires_new: true) { duplicate.save!(validate: false) }
+    end
+  end
+
+  test "the PostgreSQL unique index rejects duplicate bulk inserts without Rails validation" do
+    original = OperatorChronicle.create!(
+      @base_attributes.merge(
+        context: { transaction_public_id: "txn-bulk-duplicate", halt_generation: "100" },
+      ),
+    )
+    attributes = original.attributes.except(
+      "id", "sign_flow_halted_generation", "sign_flow_halted_transaction_public_id",
+    )
+
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      OperatorChronicle.transaction(requires_new: true) do
+        OperatorChronicle.insert_all!([attributes])
+      end
     end
   end
 
@@ -51,7 +95,7 @@ class OperatorChronicleSignFlowHaltedTest < ActiveSupport::TestCase
     }
 
     assert_not_predicate duplicate, :valid?
-    assert duplicate.errors.of_kind?(:context, :taken)
+    assert duplicate.errors.of_kind?(:sign_flow_halted_transaction_public_id, :taken)
 
     original.update!(context: original.context.merge("reason_code" => "updated-reason"))
 
@@ -70,34 +114,12 @@ class OperatorChronicleSignFlowHaltedTest < ActiveSupport::TestCase
     duplicate.context = original.context.merge("reason_code" => "another-reason")
 
     assert_not_predicate duplicate, :valid?
-    assert duplicate.errors.of_kind?(:context, :taken)
+    assert duplicate.errors.of_kind?(:sign_flow_halted_transaction_public_id, :taken)
     unrelated = OperatorChronicle.create!(
       @base_attributes.merge(context: { transaction_public_id: "unrelated-txn", halt_generation: "100" }),
     )
 
     assert_predicate unrelated, :persisted?
-  end
-
-  test "JSON uniqueness retains PostgreSQL NULL distinctness independently of the owner presence contract" do
-    original = OperatorChronicle.create!(
-      @base_attributes.merge(
-        context: { transaction_public_id: "txn-null",
-                   halt_generation: "100", },
-      ),
-    )
-    validator = JsonbKeysUniquenessValidator.new(
-      attributes: [:context], class: OperatorChronicle, keys: %w(transaction_public_id halt_generation),
-      conditions: -> { where(event_id: OperatorChronicleEvent::SIGN_FLOW_HALTED) },
-    )
-    [{}, { "transaction_public_id" => "txn-null", "halt_generation" => nil }].each do |context|
-      record = original.dup
-      record.context = context
-      validator.validate(record)
-
-      assert_empty record.errors
-      assert_not_predicate record, :valid?
-      assert record.errors.of_kind?(:context, :invalid)
-    end
   end
 
   test "another generation or another transaction is a separate halt" do

@@ -44,6 +44,8 @@ module ExternalAuthentication
       @clock = clock
     end
 
+    public
+
     def call
       validate_header!
       payload = decode_payload
@@ -121,5 +123,6 @@ module ExternalAuthentication
 
       raise VerificationError.new(code)
     end
+    public_class_method :from_credentials
   end
 end

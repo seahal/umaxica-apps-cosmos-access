@@ -6,14 +6,6 @@ require "test_helper"
 class BranchCoverageBatch28ConcernEasyArmsTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
-  test "ActorSupport step_up null when StepUpResolver undefined path is skipped safely" do
-    helper = Class.new(ApplicationController) { include ActorSupport }.new
-    helper.set_request!(ActionDispatch::TestRequest.create)
-    helper.set_response!(ActionDispatch::TestResponse.new)
-
-    assert_not helper.respond_to?(:current_step_up, true)
-  end
-
   test "SignErrorResponses null Origin classification" do
     helper = Class.new(ApplicationController) { include SignErrorResponses }.new
     request = ActionDispatch::TestRequest.create
@@ -24,5 +16,4 @@ class BranchCoverageBatch28ConcernEasyArmsTest < ActiveSupport::TestCase
     assert_not helper.respond_to?(:csrf_failure_reason, true)
     assert_not helper.respond_to?(:reject_csrf!, true)
   end
-
 end

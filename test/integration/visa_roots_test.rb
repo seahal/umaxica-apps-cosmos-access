@@ -25,14 +25,14 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
       {
         host: ENV.fetch("PUBLIC_VISA_SERVICE_URL"),
         resource_type: "client",
-        owner_attribute: :user_id,
+        owner_attribute: :subject_public_id,
         token_class: ClientToken,
         device_class: ClientDeviceSession,
       },
       {
         host: ENV.fetch("PUBLIC_VISA_STAFF_URL"),
         resource_type: "operator",
-        owner_attribute: :staff_id,
+        owner_attribute: :subject_public_id,
         token_class: OperatorToken,
         device_class: OperatorDeviceSession,
       },
@@ -40,11 +40,10 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
       owner_id = 100_001
       owner_attribute = configuration.fetch(:owner_attribute)
       device = configuration.fetch(:device_class).create!(
-        owner_attribute => owner_id,
-        :principal_public_id => "device-owner",
+        :subject_public_id => "device-owner",
       )
       token = configuration.fetch(:token_class).create!(
-        owner_attribute => owner_id, :authentication_epoch => 0, :device_session => device,
+        owner_attribute => "device-owner", :authentication_epoch => 0, :device_session => device,
       )
       token.update!(authentication_context: "normal") if configuration.fetch(:resource_type) == "operator"
       token.rotate_refresh_token!
@@ -88,15 +87,14 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
         [-1, 0, 1].each do |offset|
           case surface
           when "app"
-            device = ClientDeviceSession.create!(user_id: 101_000 + offset, principal_public_id: "client-#{offset}")
-            token = ClientToken.create!(authentication_epoch: 0, user_id: device.user_id, device_session: device)
+            device = ClientDeviceSession.create!(subject_public_id: "client-#{offset}")
+            token = ClientToken.create!(authentication_epoch: 0, subject_public_id: device.subject_public_id, device_session: device)
             host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
           when "org"
             device = OperatorDeviceSession.create!(
-              staff_id: 102_000 + offset,
-              principal_public_id: "operator-#{offset}",
+              subject_public_id: "operator-#{offset}",
             )
-            token = OperatorToken.create!(authentication_epoch: 0, staff_id: device.staff_id, device_session: device)
+            token = OperatorToken.create!(authentication_epoch: 0, subject_public_id: device.subject_public_id, device_session: device)
             host = ENV.fetch("PUBLIC_VISA_STAFF_URL")
           else
             raise ArgumentError, "unsupported Visa surface"
@@ -136,8 +134,8 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
   end
 
   test "Visa APP DBSC registration accepts a session-bound proof and rejects a wrong audience" do
-    device = ClientDeviceSession.create!(user_id: 103_001, principal_public_id: "client-dbsc")
-    token = ClientToken.create!(authentication_epoch: 0, user_id: device.user_id, device_session: device)
+    device = ClientDeviceSession.create!(subject_public_id: "client-dbsc")
+    token = ClientToken.create!(authentication_epoch: 0, subject_public_id: device.subject_public_id, device_session: device)
     token.update!(dbsc_challenge: SecureRandom.hex(16), dbsc_challenge_issued_at: ClientToken.database_now)
     browser = open_session
     host = ENV.fetch("PUBLIC_VISA_SERVICE_URL")
@@ -204,8 +202,8 @@ class VisaRootsTest < ActionDispatch::IntegrationTest
   end
 
   test "Visa ORG DBSC registration accepts a session-bound proof and rejects a wrong audience" do
-    device = OperatorDeviceSession.create!(staff_id: 103_002, principal_public_id: "operator-dbsc")
-    token = OperatorToken.create!(authentication_epoch: 0, staff_id: device.staff_id, device_session: device)
+    device = OperatorDeviceSession.create!(subject_public_id: "operator-dbsc")
+    token = OperatorToken.create!(authentication_epoch: 0, subject_public_id: device.subject_public_id, device_session: device)
     token.update!(dbsc_challenge: SecureRandom.hex(16), dbsc_challenge_issued_at: OperatorToken.database_now)
     browser = open_session
     host = ENV.fetch("PUBLIC_VISA_STAFF_URL")

@@ -37,9 +37,9 @@ class RedirectsPathTargetResolverSecurityTest < ActiveSupport::TestCase
   end
 
   test "redirect rejection has a durable event name at authentication pt call sites" do
-    source = Rails.root.join("app/controllers/concerns/authentication_redirects.rb").read
+    source = Rails.root.join("app/controllers/concerns/common_redirect.rb").read
 
-    assert_includes source, "path_target.rejected"
-    assert_includes source, "log_signed_target_rejection"
+    assert_includes source, "redirect_target.rejected"
+    assert_includes source, "log_redirect_target_failure"
   end
 end

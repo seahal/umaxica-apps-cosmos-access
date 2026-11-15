@@ -7,8 +7,8 @@ require "test_helper"
 class OidcTokenExchangeBoundaryTest < ActiveSupport::TestCase
   self.fixture_table_names = []
 
-  test "authenticated authorization code exchange is explicitly unavailable without Governance lookup" do
-    client = Struct.new(:registered_token_endpoint_auth_method).new("none")
+  test "authenticated authorization code exchange is explicitly unavailable without transaction facts" do
+    client = Struct.new(:registered_token_endpoint_auth_method, :authorization_response_type).new("none", "code")
 
     OidcClientRegistry.stub(:find, client) do
       result = OidcTokenExchangeCoordinator.call(
@@ -20,8 +20,41 @@ class OidcTokenExchangeBoundaryTest < ActiveSupport::TestCase
 
       assert_not result.success?
       assert_equal "temporarily_unavailable", result.error
-      assert_equal "Governance credential lookup is unavailable", result.error_description
+      assert_equal "authorization-code issuance is unavailable for this client", result.error_description
       assert_nil result.token_response
+    end
+  end
+
+  test "Base clients cannot receive tokens from either Token Endpoint grant" do
+    %w(base-app-ww base-org-ww).each do |client_id|
+      client = OidcClientRegistry.find!(client_id)
+      assertion_result = OidcClientRegistry::AssertionAuthenticationResult.new(
+        authenticated: true,
+        client: client,
+        step_up_claims_state: :none,
+        step_up_expectation: nil,
+      )
+
+      OidcClientRegistry.stub(:verify_client_assertion, assertion_result) do
+        [
+          { grant_type: "authorization_code", code: "unredeemed-code" },
+          { grant_type: "refresh_token", refresh_token: "unredeemed-refresh-token" },
+        ].each do |grant|
+          result = OidcTokenExchangeCoordinator.call(
+            **grant,
+            client_id: client_id,
+            client_assertion_type: OidcClientAssertionJwt::ASSERTION_TYPE,
+            client_assertion: "verified-assertion",
+            token_endpoint_uri: OidcIssuer.token_endpoint(client.resource_type),
+            expected_resource_type: client.resource_type,
+          )
+
+          assert_not result.success?, "#{client_id} #{grant.fetch(:grant_type)} must fail closed"
+          assert_equal "unauthorized_client", result.error
+          assert_equal "Base front-channel clients do not use the Token Endpoint", result.error_description
+          assert_nil result.token_response
+        end
+      end
     end
   end
 
@@ -80,7 +113,7 @@ class OidcTokenExchangeBoundaryTest < ActiveSupport::TestCase
 
     assert_equal "invalid_client", unknown.error
 
-    public_client = Struct.new(:registered_token_endpoint_auth_method).new("none")
+    public_client = Struct.new(:registered_token_endpoint_auth_method, :authorization_response_type).new("none", "code")
     credential_sets = [
       { client_secret: "unexpected-secret" },
       { client_assertion: "unexpected-assertion" },
@@ -104,7 +137,7 @@ class OidcTokenExchangeBoundaryTest < ActiveSupport::TestCase
   end
 
   test "refresh exchange rejects unresolved and mismatched token ownership before rotation" do
-    client = Struct.new(:registered_token_endpoint_auth_method).new("none")
+    client = Struct.new(:registered_token_endpoint_auth_method, :authorization_response_type).new("none", "code")
     mismatched_client = Struct.new(:usage).new(Struct.new(:oidc_client_id).new("another-client"))
     unsupported_usage = Struct.new(:usage).new(Struct.new(:oidc_client_id).new("public-client"))
 

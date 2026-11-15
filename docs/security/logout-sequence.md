@@ -43,10 +43,15 @@ session, Visa stages the current device for its independent confirmation. An ID 
 required to select or revoke the initiating RP session.
 
 A valid request stores the device and resolved grant in the Visa browser session and presents a
-confirmation. The CSRF-protected confirmation POST rechecks the device. A changed device is refused;
-an already-revoked device is reported as already signed out. A valid confirmation stops every root
-row of that device's rotation lineage, writes one root stop per row, stops their grants and revokes
-the device. Other device sessions remain active.
+confirmation. The session carries one pending request: a repeated request with the same resolved
+client, grant, return URI, OIDC `state`, `ui_locales` and legacy return-region claim can resume it,
+while a canonical GET with only `ri` and optional `lx` can render the stored confirmation after its
+redirect. A distinct protocol request in that browser session receives 403 and does not replace the
+pending request. This keeps a second tab from silently using the first tab's return context. The
+CSRF-protected confirmation POST rechecks the device. A changed device is refused; an
+already-revoked device is reported as already signed out. A valid confirmation stops every root row
+of that device's rotation lineage, writes one root stop per row, stops their grants and revokes the
+device. Other device sessions remain active.
 
 A rolled-back stop retains Visa cookies and the pending request and returns an error. An unknown
 commit returns 503 while preserving them; retry rechecks the same device. Once the stop is known

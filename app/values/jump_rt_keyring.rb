@@ -1,8 +1,7 @@
 # typed: false
 # frozen_string_literal: true
 
-require "base64"
-require "openssl"
+require "jit_security_jwt_key_material"
 require "jit_security_jwt_registry"
 
 module JumpRtKeyring
@@ -18,13 +17,8 @@ module JumpRtKeyring
   end
 
   def decode_private_key(value)
-    return nil if value.blank?
-
-    raw = value.to_s
-    return OpenSSL::PKey.read(raw) if raw.include?("BEGIN")
-
-    OpenSSL::PKey::EC.new(Base64.decode64(raw))
-  rescue OpenSSL::PKey::PKeyError, ArgumentError
+    JitSecurityJwtKeyMaterial.decode_private_key(value)
+  rescue JitSecurityJwtKeyMaterial::Error
     nil
   end
 end

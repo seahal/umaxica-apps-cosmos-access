@@ -15,7 +15,7 @@ class AcceptanceWu02ClientAssertionAudienceTest < ActionDispatch::IntegrationTes
       client = OidcClientRegistry.find!(realm.fetch(:client_id))
       host!(visa_host_for_test_surface(realm.fetch(:surface)))
       https!
-      retired_endpoint = "#{JitSecurityJwtRegistry.surface(realm.fetch(:base_namespace)).issuer}/oauth/token"
+      retired_endpoint = "#{JitSecurityJwtRegistry.oidc_client(realm.fetch(:base_namespace)).issuer}/oauth/token"
       assertion = OidcClientAssertionJwt.issue(client_id: client.client_id, token_url: retired_endpoint)
 
       post "/oauth/token", params: {

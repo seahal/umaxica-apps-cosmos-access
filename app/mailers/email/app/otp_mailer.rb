@@ -15,6 +15,8 @@ module Email::App
       "sign_in" => "mail.email.app.otp_mailer.create.subjects.sign_in",
     }.freeze
 
+    public
+
     def create
       @pass_code = OutboundSensitivePayload.decrypt_email_otp(params[:encrypted_hotp_token])
       reject_plaintext_verification_token!

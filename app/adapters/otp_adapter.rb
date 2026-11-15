@@ -19,6 +19,8 @@ class OtpAdapter
     end
   end
 
+  public
+
   def deliver(**)
     raise NotImplementedError, "#{self.class}#deliver is not implemented"
   end
@@ -59,4 +61,5 @@ class OtpAdapter
     )
     nil
   end
+  public_class_method :for
 end
